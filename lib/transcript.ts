@@ -8,9 +8,150 @@ export interface TranscriptSegment {
   duration: number;
 }
 
-export async function getTranscript(videoId: string): Promise<TranscriptSegment[] | null> {
+interface CaptionTrack {
+  baseUrl: string;
+  languageCode: string;
+  kind?: string;
+}
+
+function extractInlineJson(html: string, varName: string): unknown {
+  const tokens = [`var ${varName} = `, `${varName} = `];
+  for (const token of tokens) {
+    const startIndex = html.indexOf(token);
+    if (startIndex === -1) continue;
+    const jsonStart = startIndex + token.length;
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = jsonStart; i < html.length; i++) {
+      const ch = html[i];
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+      if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(html.slice(jsonStart, i + 1));
+          } catch {
+            return null;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+async function fetchCaptionTracks(videoId: string): Promise<CaptionTrack[] | null> {
   try {
-    const raw = await YoutubeTranscript.fetchTranscript(videoId);
+    const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+    const html = await res.text();
+    const data = extractInlineJson(html, "ytInitialPlayerResponse") as
+      | { captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } } }
+      | null;
+    const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    return Array.isArray(tracks) && tracks.length > 0 ? tracks : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
+}
+
+function parseSrv3(xml: string): TranscriptSegment[] {
+  const segments: TranscriptSegment[] = [];
+  const pRegex = /<p\s+t="(\d+)"\s+d="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
+  let m;
+  while ((m = pRegex.exec(xml)) !== null) {
+    const startMs = parseInt(m[1], 10);
+    const durMs = parseInt(m[2], 10);
+    const inner = m[3];
+    let text = "";
+    const sRegex = /<s[^>]*>([^<]*)<\/s>/g;
+    let sMatch;
+    while ((sMatch = sRegex.exec(inner)) !== null) {
+      text += sMatch[1];
+    }
+    if (!text) text = inner.replace(/<[^>]+>/g, "");
+    text = decodeHtmlEntities(text).trim();
+    if (text) {
+      segments.push({ text, offset: startMs, duration: durMs });
+    }
+  }
+  return segments;
+}
+
+function parseClassic(xml: string): TranscriptSegment[] {
+  const segments: TranscriptSegment[] = [];
+  const regex = /<text start="([\d.]+)" dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
+  let m;
+  while ((m = regex.exec(xml)) !== null) {
+    const text = decodeHtmlEntities(m[3]).trim();
+    if (text) {
+      segments.push({
+        text,
+        offset: parseFloat(m[1]) * 1000,
+        duration: parseFloat(m[2]) * 1000,
+      });
+    }
+  }
+  return segments;
+}
+
+async function fetchAndParseTranscript(url: string): Promise<TranscriptSegment[] | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const xml = await res.text();
+
+    const srv3 = parseSrv3(xml);
+    if (srv3.length > 0) return srv3;
+
+    const classic = parseClassic(xml);
+    if (classic.length > 0) return classic;
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function tryPackage(
+  videoId: string,
+  lang?: string
+): Promise<TranscriptSegment[] | null> {
+  try {
+    const raw = await YoutubeTranscript.fetchTranscript(
+      videoId,
+      lang ? { lang } : undefined
+    );
+    if (!raw || raw.length === 0) return null;
     return raw.map((s) => ({
       text: s.text,
       offset: s.offset,
@@ -19,6 +160,41 @@ export async function getTranscript(videoId: string): Promise<TranscriptSegment[
   } catch {
     return null;
   }
+}
+
+export async function getTranscript(videoId: string): Promise<TranscriptSegment[] | null> {
+  for (const lang of ["iw", "he"]) {
+    const result = await tryPackage(videoId, lang);
+    if (result) {
+      console.log(`[transcript] ${videoId}: native ${lang} (${result.length} segments)`);
+      return result;
+    }
+  }
+
+  const tracks = await fetchCaptionTracks(videoId);
+  const english = tracks?.find((t) => t.languageCode === "en");
+  if (english) {
+    const translated = await fetchAndParseTranscript(`${english.baseUrl}&tlang=he`);
+    if (translated) {
+      console.log(`[transcript] ${videoId}: translated en→he (${translated.length} segments)`);
+      return translated;
+    }
+  }
+
+  const englishOriginal = await tryPackage(videoId, "en");
+  if (englishOriginal) {
+    console.log(`[transcript] ${videoId}: english fallback (${englishOriginal.length} segments)`);
+    return englishOriginal;
+  }
+
+  const any = await tryPackage(videoId);
+  if (any) {
+    console.log(`[transcript] ${videoId}: default fallback (${any.length} segments)`);
+    return any;
+  }
+
+  console.log(`[transcript] ${videoId}: no transcript available`);
+  return null;
 }
 
 function sliceTranscript(
