@@ -20,9 +20,6 @@ export default async function WatchPage({ params }: Props) {
         <Link href="/" className="text-xl font-bold text-white">
           Ort<span className="text-blue-400">Tube</span>
         </Link>
-        <span className="text-xs text-gray-600 bg-gray-800 px-3 py-1 rounded-full">
-          Demo mode — quizzes are placeholders
-        </span>
       </header>
 
       {/* Player */}
@@ -31,9 +28,6 @@ export default async function WatchPage({ params }: Props) {
           <div className="rounded-xl overflow-hidden border border-gray-800 shadow-2xl">
             <VideoPlayer videoId={videoId} />
           </div>
-          <p className="mt-4 text-gray-600 text-sm text-center">
-            Quizzes appear automatically at 25%, 50%, and 75% of the video.
-          </p>
         </div>
       </main>
     </div>

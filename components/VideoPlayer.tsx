@@ -24,6 +24,11 @@ export default function VideoPlayer({ videoId }: Props) {
 
   // Fetch AI-generated quizzes in the background while the video loads
   useEffect(() => {
+    triggeredRef.current.clear();
+    setQuizSource("loading");
+    setTranscript(null);
+    setCheckpoints(QUIZ_CHECKPOINTS);
+
     fetch(`/api/quizzes?videoId=${videoId}`)
       .then((r) => r.json())
       .then(({ checkpoints: aiCheckpoints, source, transcript: segments }) => {

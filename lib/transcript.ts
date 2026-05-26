@@ -271,6 +271,112 @@ Rules:
   }));
 }
 
+// ─── Teacher quiz generation (saved to DB) ──────────────────────────────────
+
+function sliceTranscriptBySeconds(
+  segments: TranscriptSegment[],
+  fromSec: number,
+  toSec: number
+): string {
+  return segments
+    .filter((s) => s.offset / 1000 >= fromSec && s.offset / 1000 < toSec)
+    .map((s) => s.text.replace(/\n/g, " ").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+export interface DBQuestion {
+  question: string;
+  options: string[];
+  correct_index: number;
+  explanation: string;
+}
+
+async function generateQuestionsForDB(
+  client: Anthropic,
+  section: string,
+  count: number
+): Promise<DBQuestion[]> {
+  const msg = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 512 + count * 256,
+    system:
+      "You are an educational quiz generator. Respond with a JSON array only — no markdown, no explanation, just the raw JSON.",
+    messages: [
+      {
+        role: "user",
+        content: `Generate ${count} multiple-choice comprehension questions based on this video transcript section:
+
+"""
+${section.slice(0, 3000)}
+"""
+
+Rules:
+- Questions must be specific to the content, not generic
+- Exactly 4 answer options each
+- If the transcript is in Hebrew, generate questions and options in Hebrew
+- Return ONLY a JSON array, nothing else
+
+[
+  {
+    "question": "...",
+    "options": ["...", "...", "...", "..."],
+    "correct_index": 0,
+    "explanation": "..."
+  }
+]`,
+      },
+    ],
+  });
+
+  const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
+  const match = raw.match(/\[[\s\S]*\]/);
+  if (!match) throw new Error("No JSON array in Claude response");
+
+  const parsed = JSON.parse(match[0]) as Array<{
+    question: string;
+    options: string[];
+    correct_index: number;
+    explanation: string;
+  }>;
+
+  return parsed.slice(0, count).map((q) => ({
+    question: q.question,
+    options: (q.options ?? []).slice(0, 4),
+    correct_index: Math.max(0, Math.min(3, q.correct_index ?? 0)),
+    explanation: q.explanation ?? "",
+  }));
+}
+
+export async function generateQuestionsAtPositions(
+  segments: TranscriptSegment[],
+  positionsSec: number[],
+  count: number
+): Promise<Array<{ position_seconds: number; questions: DBQuestion[] }>> {
+  const sorted = [...positionsSec].sort((a, b) => a - b);
+  const client = new Anthropic();
+
+  const results = await Promise.all(
+    sorted.map(async (pos, i) => {
+      const fromSec = i === 0 ? 0 : sorted[i - 1];
+      const section = sliceTranscriptBySeconds(segments, fromSec, pos + 60);
+      if (section.trim().length < 50) {
+        return { position_seconds: pos, questions: [] as DBQuestion[] };
+      }
+      try {
+        const questions = await generateQuestionsForDB(client, section, count);
+        return { position_seconds: pos, questions };
+      } catch {
+        return { position_seconds: pos, questions: [] as DBQuestion[] };
+      }
+    })
+  );
+
+  return results;
+}
+
+// ─── Legacy: in-memory checkpoints at fixed % positions ─────────────────────
+
 const CHECKPOINT_DEFS = [
   { percent: 25 as const, label: "First Quarter Check", from: 0, to: 25 },
   { percent: 50 as const, label: "Halfway Check", from: 25, to: 50 },
