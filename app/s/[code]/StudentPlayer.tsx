@@ -23,11 +23,18 @@ interface Props {
 }
 
 const POLL_MS = 500;
+const YT_STATE_PLAYING = 1;
 
 export default function StudentPlayer({ videoId, checkpoints }: Props) {
   const playerRef = useRef<YouTubePlayer | null>(null);
   const triggeredRef = useRef<Set<string>>(new Set());
+  const activeQuizRef = useRef<QuizCheckpoint | null>(null);
   const [activeQuiz, setActiveQuiz] = useState<QuizCheckpoint | null>(null);
+
+  // Keep the ref in sync so onStateChange can read the latest value
+  useEffect(() => {
+    activeQuizRef.current = activeQuiz;
+  }, [activeQuiz]);
 
   useEffect(() => {
     triggeredRef.current.clear();
@@ -71,6 +78,15 @@ export default function StudentPlayer({ videoId, checkpoints }: Props) {
     playerRef.current = e.target;
   }
 
+  // Guard against the player resuming after a seek while a quiz is open.
+  // pauseVideo() can be silently ignored during the buffering→playing
+  // transition that follows a seek, so re-pause whenever it tries to play.
+  function onStateChange(e: YouTubeEvent) {
+    if (activeQuizRef.current && e.data === YT_STATE_PLAYING) {
+      e.target.pauseVideo();
+    }
+  }
+
   function handleComplete() {
     setActiveQuiz(null);
     playerRef.current?.playVideo();
@@ -82,6 +98,7 @@ export default function StudentPlayer({ videoId, checkpoints }: Props) {
         <YouTube
           videoId={videoId}
           onReady={onReady}
+          onStateChange={onStateChange}
           opts={{
             width: "100%",
             height: "100%",

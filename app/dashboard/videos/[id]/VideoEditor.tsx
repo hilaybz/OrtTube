@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import YouTube, { type YouTubeEvent, type YouTubePlayer } from "react-youtube";
 import GenerateModal from "./GenerateModal";
 
@@ -51,6 +52,7 @@ export function parseMinSec(s: string): number | null {
 // ─── VideoEditor ──────────────────────────────────────────────────────────────
 
 export default function VideoEditor({ video, initialCheckpoints }: Props) {
+  const router = useRouter();
   const playerRef = useRef<YouTubePlayer | null>(null);
   const [checkpoints, setCheckpoints] = useState<SavedCheckpoint[]>(initialCheckpoints);
   const [duration, setDuration] = useState(0);
@@ -59,9 +61,74 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
   const [showAddManual, setShowAddManual] = useState(false);
   const [busyCpId, setBusyCpId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showNoTranscriptGate, setShowNoTranscriptGate] = useState(
+    video.transcript_status === "unavailable"
+  );
+  const [deleting, setDeleting] = useState(false);
 
   const hasTranscript = video.transcript_status === "ready";
   const sorted = [...checkpoints].sort((a, b) => a.position_seconds - b.position_seconds);
+
+  async function handleDeleteVideo() {
+    setDeleting(true);
+    const res = await fetch(`/api/videos/${video.id}`, { method: "DELETE" });
+    if (res.ok) {
+      router.push("/dashboard");
+      router.refresh();
+    } else {
+      setDeleting(false);
+      setError("Failed to delete video.");
+    }
+  }
+
+  if (showNoTranscriptGate) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
+        <div className="w-full max-w-md bg-[#161920] border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="px-6 py-5 border-b border-gray-700 flex items-center gap-3">
+            <span className="w-8 h-8 rounded-full bg-yellow-500/20 border border-yellow-500/40 text-yellow-400 flex items-center justify-center text-base">
+              !
+            </span>
+            <h3 className="text-white font-semibold">No transcript found</h3>
+          </div>
+          <div className="px-6 py-5 space-y-3 text-sm text-gray-300 leading-relaxed">
+            <p>
+              We couldn&apos;t find a transcript for this video. AI features
+              won&apos;t work for it:
+            </p>
+            <ul className="list-disc list-inside text-gray-400 space-y-1 text-xs">
+              <li>Quizzes can&apos;t be generated automatically</li>
+              <li>Questions can&apos;t be regenerated</li>
+              <li>The student-facing AI tutor will have no context</li>
+            </ul>
+            <p>
+              You can still add quizzes manually, or delete this video and try
+              another one.
+            </p>
+          </div>
+          <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-700">
+            <button
+              onClick={handleDeleteVideo}
+              disabled={deleting}
+              className="text-sm text-red-400 hover:text-red-300 disabled:opacity-50 transition-colors px-3 py-2"
+            >
+              {deleting ? "Deleting…" : "Delete video"}
+            </button>
+            <button
+              onClick={() => setShowNoTranscriptGate(false)}
+              disabled={deleting}
+              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded-xl transition-colors"
+            >
+              Confirm and continue
+            </button>
+          </div>
+          {error && (
+            <p className="text-red-400 text-xs px-6 pb-3">{error}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   function onPlayerReady(e: YouTubeEvent) {
     playerRef.current = e.target;
@@ -477,6 +544,7 @@ function QuestionList({
       {checkpoint.questions.map((q, i) => (
         <QuestionCard
           key={q.id}
+          checkpointId={checkpoint.id}
           question={q}
           index={i}
           onDelete={() => handleDelete(q.id)}
@@ -506,11 +574,13 @@ function QuestionList({
 const LETTERS = ["A", "B", "C", "D"];
 
 function QuestionCard({
+  checkpointId,
   question: q,
   index,
   onDelete,
   onUpdated,
 }: {
+  checkpointId: string;
   question: SavedQuestion;
   index: number;
   onDelete: () => void;
@@ -521,7 +591,7 @@ function QuestionCard({
   if (editing) {
     return (
       <QuestionForm
-        checkpointId={q.id}
+        checkpointId={checkpointId}
         questionId={q.id}
         initialValues={q}
         onSaved={(updated) => {
