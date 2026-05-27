@@ -47,6 +47,7 @@ export default async function SharePage({ params }: Props) {
     questions: (questions ?? [])
       .filter((q) => q.checkpoint_id === cp.id)
       .map((q) => ({
+        id: q.id,
         question: q.question,
         options: (q.options as unknown as string[]) ?? [],
         correct: q.correct_index,
@@ -66,6 +67,7 @@ export default async function SharePage({ params }: Props) {
         <div className="w-full max-w-4xl">
           <div className="rounded-xl overflow-hidden border border-gray-800 shadow-2xl">
             <StudentPlayer
+              videoUuid={video.id}
               videoId={video.youtube_video_id}
               checkpoints={checkpoints}
             />

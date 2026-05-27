@@ -82,7 +82,15 @@ export default async function VideoDetailPage({ params }: Props) {
               <span className="text-gray-300">{video.share_code}</span>
             </span>
           </div>
-          <CopyLinkButton shareCode={video.share_code} />
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/dashboard/videos/${id}/analytics`}
+              className="text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              📊 Analytics
+            </Link>
+            <CopyLinkButton shareCode={video.share_code} />
+          </div>
         </div>
 
         <VideoEditor

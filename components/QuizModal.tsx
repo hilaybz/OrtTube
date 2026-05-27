@@ -6,9 +6,11 @@ import type { QuizCheckpoint } from "@/lib/demoQuiz";
 interface Props {
   checkpoint: QuizCheckpoint;
   onComplete: () => void;
+  onAnswer?: (questionIndex: number, selectedIndex: number, isCorrect: boolean) => void;
+  onAskAi?: (query: string, response: string) => void;
 }
 
-export default function QuizModal({ checkpoint, onComplete }: Props) {
+export default function QuizModal({ checkpoint, onComplete, onAnswer, onAskAi }: Props) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -24,8 +26,10 @@ export default function QuizModal({ checkpoint, onComplete }: Props) {
 
   function handleSubmit() {
     if (selected === null) return;
-    if (selected === question.correct) setScore((s) => s + 1);
+    const isCorrect = selected === question.correct;
+    if (isCorrect) setScore((s) => s + 1);
     setSubmitted(true);
+    onAnswer?.(currentIndex, selected, isCorrect);
   }
 
   function handleNext() {
@@ -112,6 +116,7 @@ export default function QuizModal({ checkpoint, onComplete }: Props) {
                   <AskAI
                     quizContext={`Question: ${question.question}\nCorrect answer: ${question.options[question.correct]}\nExplanation: ${question.explanation}`}
                     transcriptContext={checkpoint.transcriptContext}
+                    onAsked={onAskAi}
                   />
                 </>
               )}
@@ -170,9 +175,10 @@ export default function QuizModal({ checkpoint, onComplete }: Props) {
 interface AskAIProps {
   quizContext: string;
   transcriptContext?: string;
+  onAsked?: (query: string, response: string) => void;
 }
 
-function AskAI({ quizContext, transcriptContext }: AskAIProps) {
+function AskAI({ quizContext, transcriptContext, onAsked }: AskAIProps) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
@@ -203,6 +209,8 @@ function AskAI({ quizContext, transcriptContext }: AskAIProps) {
         text += decoder.decode(value, { stream: true });
         setAnswer(text);
       }
+
+      if (text.trim()) onAsked?.(q, text);
     } catch {
       setAnswer("Something went wrong. Try again.");
     } finally {
