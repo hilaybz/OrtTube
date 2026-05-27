@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getTranscript } from "@/lib/transcript";
+import { fetchYouTubeTitle } from "@/lib/youtube";
 import type { Json } from "@/lib/supabase/types";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -16,7 +17,7 @@ export async function POST(
 
   const { data: video } = await supabase
     .from("videos")
-    .select("id, youtube_video_id, transcript_status")
+    .select("id, youtube_video_id, transcript_status, title")
     .eq("id", id)
     .eq("teacher_id", user.id)
     .single();
@@ -26,7 +27,11 @@ export async function POST(
     return NextResponse.json({ status: video.transcript_status });
   }
 
-  const segments = await getTranscript(video.youtube_video_id);
+  const [segments, fetchedTitle] = await Promise.all([
+    getTranscript(video.youtube_video_id),
+    video.title ? Promise.resolve(null) : fetchYouTubeTitle(video.youtube_video_id),
+  ]);
+
   const status: "ready" | "unavailable" = segments ? "ready" : "unavailable";
 
   if (segments) {
@@ -38,6 +43,11 @@ export async function POST(
     });
   }
 
-  await supabase.from("videos").update({ transcript_status: status }).eq("id", id);
+  const updates: { transcript_status: typeof status; title?: string } = {
+    transcript_status: status,
+  };
+  if (fetchedTitle) updates.title = fetchedTitle;
+
+  await supabase.from("videos").update(updates).eq("id", id);
   return NextResponse.json({ status });
 }

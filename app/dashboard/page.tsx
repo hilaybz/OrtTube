@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { fetchYouTubeTitle } from "@/lib/youtube";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -53,6 +54,30 @@ export default async function DashboardPage() {
     .eq("teacher_id", user.id)
     .order("created_at", { ascending: false });
 
+  // One-time backfill of YouTube titles for existing videos that don't have one yet.
+  // After this, the column stays populated.
+  const missingTitle = (videos ?? []).filter((v) => !v.title);
+  if (missingTitle.length > 0) {
+    const fetched = await Promise.all(
+      missingTitle.map(async (v) => ({
+        id: v.id,
+        title: await fetchYouTubeTitle(v.youtube_video_id),
+      }))
+    );
+    await Promise.all(
+      fetched
+        .filter((f): f is { id: string; title: string } => Boolean(f.title))
+        .map((f) =>
+          supabase.from("videos").update({ title: f.title }).eq("id", f.id)
+        )
+    );
+    for (const f of fetched) {
+      if (!f.title) continue;
+      const v = videos?.find((x) => x.id === f.id);
+      if (v) v.title = f.title;
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#0f1117]">
       {/* Nav */}
@@ -96,10 +121,17 @@ export default async function DashboardPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-white font-medium truncate">
-                      {v.title ?? v.youtube_video_id}
+                      {v.title ?? "Untitled"}
                     </p>
                     <p className="text-gray-500 text-xs mt-0.5">
-                      Share code: <span className="font-mono text-gray-400">{v.share_code}</span>
+                      <span className="font-mono text-gray-600">
+                        {v.youtube_video_id}
+                      </span>
+                      {" · "}
+                      Share code:{" "}
+                      <span className="font-mono text-gray-400">
+                        {v.share_code}
+                      </span>
                       {" · "}
                       {new Date(v.created_at).toLocaleDateString()}
                     </p>

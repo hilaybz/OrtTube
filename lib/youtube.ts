@@ -16,3 +16,17 @@ export function extractVideoId(url: string): string | null {
 export function isValidYouTubeUrl(url: string): boolean {
   return extractVideoId(url) !== null;
 }
+
+export async function fetchYouTubeTitle(videoId: string): Promise<string | null> {
+  try {
+    const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&format=json`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { title?: string };
+    return data.title?.trim() || null;
+  } catch {
+    return null;
+  }
+}
