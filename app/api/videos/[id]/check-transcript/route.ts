@@ -34,7 +34,10 @@ export async function POST(
   const status: "ready" | "unavailable" = segments ? "ready" : "unavailable";
 
   if (segments) {
-    const summary = await summarizeTranscript(segments).catch(() => "");
+    const summary = await summarizeTranscript(segments).catch((err) => {
+      console.error("[transcript] summary generation failed:", err);
+      return "";
+    });
     await supabase.from("youtube_transcripts").upsert({
       youtube_video_id: video.youtube_video_id,
       language: "auto",

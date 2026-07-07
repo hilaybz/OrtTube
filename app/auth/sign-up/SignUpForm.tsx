@@ -22,7 +22,7 @@ export default function SignUpForm() {
       email,
       password,
       options: {
-        data: { display_name: displayName },
+        data: { display_name: displayName, role: "teacher" },
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });

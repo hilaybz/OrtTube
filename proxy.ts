@@ -31,17 +31,27 @@ export async function proxy(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
-  console.log(`[proxy] ${path} → user.email=${user?.email ?? "null"}`);
+  // Role comes from auth metadata; accounts created before roles existed
+  // are teachers.
+  const isSignedIn = Boolean(user?.email);
+  const isStudent = isSignedIn && user?.user_metadata?.role === "student";
 
-  // Protect teacher dashboard — anonymous users (students) have no email
-  if (path.startsWith("/dashboard") && (!user || !user.email)) {
-    const redirectResponse = NextResponse.redirect(
-      new URL("/auth/sign-in", request.url)
-    );
+  function redirectTo(target: string) {
+    const redirectResponse = NextResponse.redirect(new URL(target, request.url));
     supabaseResponse.cookies.getAll().forEach((c) => {
       redirectResponse.cookies.set(c.name, c.value, c);
     });
     return redirectResponse;
+  }
+
+  if (path.startsWith("/dashboard")) {
+    if (!isSignedIn) return redirectTo("/auth/sign-in");
+    if (isStudent) return redirectTo("/student");
+  }
+
+  if (path.startsWith("/student")) {
+    if (!isSignedIn) return redirectTo("/auth/sign-in");
+    if (!isStudent) return redirectTo("/dashboard");
   }
 
   return supabaseResponse;

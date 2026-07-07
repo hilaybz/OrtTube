@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import SignInForm from "./SignInForm";
+import StudentSignUpForm from "./StudentSignUpForm";
 
-export default async function SignInPage() {
+export default async function StudentSignUpPage() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -12,5 +12,5 @@ export default async function SignInPage() {
     redirect(user.user_metadata?.role === "student" ? "/student" : "/dashboard");
   }
 
-  return <SignInForm />;
+  return <StudentSignUpForm />;
 }

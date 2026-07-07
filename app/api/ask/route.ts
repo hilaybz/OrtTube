@@ -19,6 +19,9 @@ export async function POST(req: NextRequest) {
   if (!question?.trim()) {
     return new Response("Question is required", { status: 400 });
   }
+  if (question.length > 2000) {
+    return new Response("Question too long", { status: 400 });
+  }
 
   const client = new Anthropic();
 

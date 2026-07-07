@@ -26,6 +26,16 @@ interface Props {
   videoId: string;
   summary: string | null;
   checkpoints: DBCheckpoint[];
+  /** Set when this student already completed the quizzes for this video —
+   * they can rewatch, but questions won't fire again. */
+  previousResult: { score: number | null; total: number | null } | null;
+  /** Set when this student has an unfinished attempt — its session is
+   * reused, already-answered questions are skipped, and the score carries. */
+  resume: {
+    sessionId: string;
+    answeredQuestionIds: string[];
+    correctCount: number;
+  } | null;
 }
 
 const POLL_MS = 500;
@@ -36,7 +46,14 @@ function fmtSec(s: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints }: Props) {
+export default function StudentPlayer({
+  videoUuid,
+  videoId,
+  summary,
+  checkpoints,
+  previousResult,
+  resume,
+}: Props) {
   // One supabase instance for this mount — avoids any auth-state drift
   // between multiple createClient() calls.
   const supabase = useMemo(() => createClient(), []);
@@ -52,11 +69,32 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
 
   const [activeCheckpoint, setActiveCheckpoint] = useState<DBCheckpoint | null>(null);
   const [passedCpIds, setPassedCpIds] = useState<Set<string>>(new Set());
-  const [finished, setFinished] = useState(false);
+  const [videoEnded, setVideoEnded] = useState(false);
   const [finalScore, setFinalScore] = useState(0);
   const [askOpen, setAskOpen] = useState(false);
+  const [hasAccount, setHasAccount] = useState(false);
 
   const totalQuestions = checkpoints.reduce((s, cp) => s + cp.questions.length, 0);
+
+  // Resume support: strip questions the student already answered; a
+  // checkpoint with nothing left to ask is treated as already passed.
+  const answeredIds = useMemo(
+    () => new Set(resume?.answeredQuestionIds ?? []),
+    [resume]
+  );
+  const effectiveCheckpoints = useMemo(
+    () =>
+      checkpoints.map((cp) => ({
+        ...cp,
+        questions: cp.questions.filter((q) => !answeredIds.has(q.id)),
+      })),
+    [checkpoints, answeredIds]
+  );
+  const donePositions = effectiveCheckpoints
+    .filter((cp, i) => cp.questions.length === 0 && checkpoints[i].questions.length > 0)
+    .map((cp) => cp.position_seconds);
+  // Start playback just after the last fully-answered checkpoint.
+  const startSeconds = donePositions.length > 0 ? Math.max(...donePositions) : 0;
 
   useEffect(() => {
     activeCpRef.current = activeCheckpoint;
@@ -64,11 +102,21 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
 
   // Start the session: anonymous sign-in + insert a student_sessions row.
   // sessionInitRef guards against React strict-mode double-invocation.
+  // When the student already completed this video, no new session is
+  // tracked — it's a free rewatch.
   useEffect(() => {
     if (sessionInitRef.current) return;
     sessionInitRef.current = true;
 
     (async () => {
+      if (previousResult) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        setHasAccount(Boolean(user?.email));
+        return;
+      }
+
       let {
         data: { user },
       } = await supabase.auth.getUser();
@@ -81,11 +129,27 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
         if (!data.user) return;
         user = data.user;
       }
+      setHasAccount(Boolean(user.email));
+
+      if (resume) {
+        // Continue the unfinished attempt: same session, carried score.
+        sessionIdRef.current = resume.sessionId;
+        answeredCountRef.current = resume.answeredQuestionIds.length;
+        correctCountRef.current = resume.correctCount;
+        console.log(
+          `[student] resuming session ${resume.sessionId} (${resume.answeredQuestionIds.length}/${totalQuestions} answered)`
+        );
+        return;
+      }
+
+      const studentName =
+        (user.user_metadata?.display_name as string | undefined) ?? null;
       const { data: session, error } = await supabase
         .from("student_sessions")
         .insert({
           video_id: videoUuid,
           supabase_user_id: user.id,
+          student_name: studentName,
           total_questions: totalQuestions,
         })
         .select("id")
@@ -99,22 +163,38 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
         console.log("[student] session started:", session.id);
       }
     })();
-  }, [supabase, videoUuid, totalQuestions]);
+  }, [supabase, videoUuid, totalQuestions, previousResult, resume]);
 
   useEffect(() => {
     triggeredRef.current.clear();
-    setPassedCpIds(new Set());
+    // Fully-answered checkpoints never fire again. Checkpoints that never
+    // had questions (teacher hasn't added any) are excluded so they don't
+    // show as "passed" — the trigger loop skips them instead.
+    for (let i = 0; i < effectiveCheckpoints.length; i++) {
+      if (
+        effectiveCheckpoints[i].questions.length === 0 &&
+        checkpoints[i].questions.length > 0
+      ) {
+        triggeredRef.current.add(effectiveCheckpoints[i].id);
+      }
+    }
+    setPassedCpIds(new Set(triggeredRef.current));
     setActiveCheckpoint(null);
+    // effectiveCheckpoints is derived from props that only change with the
+    // video, so videoId is the real reset trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId]);
 
   useEffect(() => {
+    if (previousResult) return; // quizzes only fire on the first attempt
     const interval = setInterval(() => {
       const player = playerRef.current;
       if (!player || activeCheckpoint) return;
 
       const currentTime: number = player.getCurrentTime();
 
-      for (const cp of checkpoints) {
+      for (const cp of effectiveCheckpoints) {
+        if (cp.questions.length === 0) continue; // nothing to ask
         if (
           currentTime >= cp.position_seconds &&
           !triggeredRef.current.has(cp.id)
@@ -129,14 +209,15 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
     }, POLL_MS);
 
     return () => clearInterval(interval);
-  }, [activeCheckpoint, checkpoints]);
+  }, [activeCheckpoint, effectiveCheckpoints, previousResult]);
 
+  // DB-only completion — the finish overlay is driven separately by the
+  // video actually ending, so answering the last quiz early doesn't
+  // interrupt the remaining minutes of the lesson.
   async function markComplete() {
     const sid = sessionIdRef.current;
     if (!sid || completedRef.current) return;
     completedRef.current = true;
-    setFinalScore(correctCountRef.current);
-    setFinished(true);
     const { error } = await supabase
       .from("student_sessions")
       .update({
@@ -164,7 +245,11 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
       return;
     }
     if (e.data === YT_STATE_ENDED) {
-      void markComplete();
+      if (!previousResult) {
+        setFinalScore(correctCountRef.current);
+        setVideoEnded(true);
+        void markComplete();
+      }
     }
   }
 
@@ -245,6 +330,31 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
 
   return (
     <div className="w-full space-y-4">
+      {/* Already-completed banner (rewatch mode) */}
+      {previousResult && (
+        <div className="flex flex-wrap items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 text-sm text-green-400">
+          <span>✓</span>
+          <span>
+            כבר השלמתם את השאלות בשיעור הזה
+            {previousResult.score !== null && previousResult.total
+              ? ` — הציון שלכם ${previousResult.score}/${previousResult.total}`
+              : ""}
+            . אפשר לצפות שוב בחופשיות.
+          </span>
+        </div>
+      )}
+
+      {/* Resume banner */}
+      {!previousResult && resume && resume.answeredQuestionIds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 bg-blue-500/10 border border-blue-500/30 rounded-xl px-4 py-3 text-sm text-blue-400">
+          <span>↻</span>
+          <span>
+            ממשיכים מהנקודה שבה עצרתם — כבר עניתם על{" "}
+            {resume.answeredQuestionIds.length} מתוך {totalQuestions} שאלות.
+          </span>
+        </div>
+      )}
+
       {/* Player */}
       <div className="rounded-xl overflow-hidden border border-gray-800 shadow-2xl">
         <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
@@ -255,7 +365,13 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
             opts={{
               width: "100%",
               height: "100%",
-              playerVars: { autoplay: 0, rel: 0, modestbranding: 1, fs: 1 },
+              playerVars: {
+                autoplay: 0,
+                rel: 0,
+                modestbranding: 1,
+                fs: 1,
+                start: startSeconds,
+              },
             }}
             className="absolute inset-0 w-full h-full"
             iframeClassName="w-full h-full"
@@ -267,7 +383,7 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
       {checkpoints.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {checkpoints.map((cp) => {
-            const passed = passedCpIds.has(cp.id);
+            const passed = Boolean(previousResult) || passedCpIds.has(cp.id);
             return (
               <span
                 key={cp.id}
@@ -335,10 +451,10 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
         />
       )}
 
-      {/* Finish screen */}
-      {finished && !activeCheckpoint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
-          <div className="w-full max-w-sm bg-[#161920] border border-gray-700 rounded-2xl shadow-2xl p-8 text-center space-y-4 animate-modal-in">
+      {/* Finish screen — only when the video itself has ended */}
+      {videoEnded && !activeCheckpoint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4 py-6">
+          <div className="w-full max-w-sm max-h-[85dvh] overflow-y-auto bg-[#161920] border border-gray-700 rounded-2xl shadow-2xl p-8 text-center space-y-4 animate-modal-in">
             <p className="text-4xl">🎉</p>
             <h3 className="text-white text-xl font-bold">סיימתם את השיעור!</h3>
             {totalQuestions > 0 ? (
@@ -358,19 +474,38 @@ export default function StudentPlayer({ videoUuid, videoId, summary, checkpoints
                   {finalScore === totalQuestions
                     ? "ציון מושלם — כל הכבוד!"
                     : finalScore >= totalQuestions / 2
-                    ? "עבודה יפה! אפשר לצפות שוב כדי להשתפר."
-                    : "שווה לצפות בסרטון שוב ולנסות שנית."}
+                    ? "עבודה יפה!"
+                    : "לא נורא — למדתם משהו חדש."}
                 </p>
               </>
             ) : (
               <p className="text-gray-400 text-sm">תודה שצפיתם עד הסוף.</p>
             )}
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-3 rounded-xl transition-colors"
-            >
-              צפייה חוזרת
-            </button>
+
+            <div className="text-start">
+              <AskAI
+                videoSummary={summary ?? undefined}
+                currentTimeSeconds={videoTimestamp}
+                onAsked={handleAskAi}
+                triggerLabel="יש לכם עוד שאלה על השיעור? שאלו את ה-AI"
+              />
+            </div>
+
+            {hasAccount ? (
+              <a
+                href="/student"
+                className="block w-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-3 rounded-xl transition-colors"
+              >
+                סגירת המשימה וחזרה לשיעורים
+              </a>
+            ) : (
+              <button
+                onClick={() => setVideoEnded(false)}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-3 rounded-xl transition-colors"
+              >
+                סגירת המשימה
+              </button>
+            )}
           </div>
         </div>
       )}

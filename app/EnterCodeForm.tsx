@@ -14,10 +14,22 @@ function extractShareCode(input: string): string | null {
   return null;
 }
 
-export default function EnterCodeForm() {
+export default function EnterCodeForm({ collapsible = false }: { collapsible?: boolean }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(!collapsible);
   const router = useRouter();
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+      >
+        יש לכם קוד שיעור מהמורה? הזינו אותו כאן
+      </button>
+    );
+  }
 
   function handleSubmit(e: { preventDefault(): void }) {
     e.preventDefault();

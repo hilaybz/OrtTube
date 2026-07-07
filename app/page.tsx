@@ -16,16 +16,32 @@ export default function Home() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Student card */}
-          <div className="bg-[#161920] border border-gray-800 rounded-2xl p-6 space-y-4">
-            <div className="space-y-1">
+          <div className="bg-[#161920] border border-gray-800 rounded-2xl p-6 flex flex-col space-y-4">
+            <div className="space-y-1 flex-1">
               <p className="text-2xl">🎓</p>
               <h2 className="text-white font-semibold text-lg">תלמידים</h2>
               <p className="text-gray-500 text-sm leading-relaxed">
-                קיבלתם קישור לשיעור מהמורה? הדביקו אותו כאן או הקלידו את קוד
-                השיעור.
+                נכנסים לחשבון, רואים את כל השיעורים, עונים על שאלות ושואלים את
+                ה-AI.
               </p>
             </div>
-            <EnterCodeForm />
+            <div className="space-y-2">
+              <Link
+                href="/auth/sign-in"
+                className="block w-full text-center bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-3 rounded-xl transition-colors"
+              >
+                כניסת תלמידים
+              </Link>
+              <Link
+                href="/auth/sign-up-student"
+                className="block w-full text-center text-gray-400 hover:text-white text-sm py-2 transition-colors"
+              >
+                עדיין אין לכם חשבון? הרשמה
+              </Link>
+              <div className="text-center">
+                <EnterCodeForm collapsible />
+              </div>
+            </div>
           </div>
 
           {/* Teacher card */}

@@ -14,6 +14,9 @@ export default async function DashboardPage() {
   if (!user) {
     redirect("/auth/sign-in");
   }
+  if (user.user_metadata?.role === "student") {
+    redirect("/student");
+  }
 
   let teacher: { display_name: string | null } | null = null;
 

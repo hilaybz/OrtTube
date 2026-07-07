@@ -23,6 +23,55 @@ export default async function SharePage({ params }: Props) {
 
   if (!video) redirect("/");
 
+  // One attempt per student: if this user already completed the quizzes
+  // for this video, they can rewatch but the questions won't fire again.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: completedSession } = user
+    ? await supabase
+        .from("student_sessions")
+        .select("final_score, total_questions")
+        .eq("video_id", video.id)
+        .eq("supabase_user_id", user.id)
+        .not("completed_at", "is", null)
+        .order("completed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
+
+  // Partial attempt: reuse the latest unfinished session so the student
+  // continues where they stopped instead of starting over.
+  const { data: partialSession } =
+    user && !completedSession
+      ? await supabase
+          .from("student_sessions")
+          .select("id")
+          .eq("video_id", video.id)
+          .eq("supabase_user_id", user.id)
+          .is("completed_at", null)
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null };
+
+  let resume: {
+    sessionId: string;
+    answeredQuestionIds: string[];
+    correctCount: number;
+  } | null = null;
+  if (partialSession) {
+    const { data: prevAnswers } = await supabase
+      .from("student_answers")
+      .select("question_id, is_correct")
+      .eq("session_id", partialSession.id);
+    resume = {
+      sessionId: partialSession.id,
+      answeredQuestionIds: (prevAnswers ?? []).map((a) => a.question_id),
+      correctCount: (prevAnswers ?? []).filter((a) => a.is_correct).length,
+    };
+  }
+
   const { data: transcriptRow } = await supabase
     .from("youtube_transcripts")
     .select("summary")
@@ -65,10 +114,18 @@ export default async function SharePage({ params }: Props) {
 
   return (
     <div className="min-h-screen bg-[#0f1117] flex flex-col">
-      <header className="px-4 sm:px-6 py-4 flex items-center border-b border-gray-800">
+      <header className="px-4 sm:px-6 py-4 flex items-center justify-between border-b border-gray-800">
         <Link href="/" className="text-xl font-bold text-white">
           Ort<span className="text-blue-400">Tube</span>
         </Link>
+        {user?.email && user.user_metadata?.role === "student" && (
+          <Link
+            href="/student"
+            className="text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            → השיעורים שלי
+          </Link>
+        )}
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-start pt-6 px-4 pb-10">
@@ -90,6 +147,15 @@ export default async function SharePage({ params }: Props) {
             videoId={video.youtube_video_id}
             summary={transcriptRow?.summary ?? null}
             checkpoints={checkpoints}
+            previousResult={
+              completedSession
+                ? {
+                    score: completedSession.final_score,
+                    total: completedSession.total_questions,
+                  }
+                : null
+            }
+            resume={resume}
           />
         </div>
       </main>
