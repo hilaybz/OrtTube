@@ -236,7 +236,7 @@ ${transcriptSection.slice(0, 3000)}
 Rules:
 - Questions must be specific to the content, not generic
 - Exactly 4 answer options each
-- If the transcript is in Hebrew, generate questions and options in Hebrew
+- Always write the question, options, and explanation in Hebrew (עברית), regardless of what language the transcript is in
 - Return ONLY a JSON array, nothing else
 
 [
@@ -269,6 +269,77 @@ Rules:
     correct: Math.max(0, Math.min(3, q.correct)),
     explanation: q.explanation,
   }));
+}
+
+// ─── Video summary (timestamped, for cheap Ask-AI context) ─────────────────
+
+function fmtTimestamp(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function buildTimestampedTranscript(
+  segments: TranscriptSegment[],
+  blockSeconds = 20,
+  maxChars = 24000
+): string {
+  const blocks = new Map<number, string[]>();
+  for (const seg of segments) {
+    const blockStart = Math.floor(seg.offset / 1000 / blockSeconds) * blockSeconds;
+    const text = seg.text.replace(/\n/g, " ").trim();
+    if (!text) continue;
+    if (!blocks.has(blockStart)) blocks.set(blockStart, []);
+    blocks.get(blockStart)!.push(text);
+  }
+
+  const lines = [...blocks.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([start, texts]) => `[${fmtTimestamp(start)}] ${texts.join(" ")}`);
+
+  let out = "";
+  for (const line of lines) {
+    if (out.length + line.length + 1 > maxChars) break;
+    out += line + "\n";
+  }
+  return out.trim();
+}
+
+export async function summarizeTranscript(
+  segments: TranscriptSegment[]
+): Promise<string> {
+  const timestamped = buildTimestampedTranscript(segments);
+  if (timestamped.trim().length < 50) return "";
+
+  const client = new Anthropic();
+  const msg = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1200,
+    system:
+      "You produce compact, chronological, timestamped outlines of educational video transcripts.",
+    messages: [
+      {
+        role: "user",
+        content: `Here is a timestamped transcript of an educational video (each line is "[MM:SS] spoken text"):
+
+"""
+${timestamped}
+"""
+
+Produce a chronological outline of the ENTIRE video as a list of lines in the format:
+[MM:SS] 1–2 sentence description of what is covered starting at this point
+
+Rules:
+- One line per topic or natural section change — cover the whole video from start to finish, don't skip sections
+- Timestamps must be in ascending order and roughly match where each topic actually starts
+- If the transcript is in Hebrew, write the descriptions in Hebrew
+- Return ONLY the list of timestamped lines, nothing else — no intro, no markdown headers`,
+      },
+    ],
+  });
+
+  const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
+  return raw;
 }
 
 // ─── Teacher quiz generation (saved to DB) ──────────────────────────────────
@@ -314,7 +385,7 @@ ${section.slice(0, 3000)}
 Rules:
 - Questions must be specific to the content, not generic
 - Exactly 4 answer options each
-- If the transcript is in Hebrew, generate questions and options in Hebrew
+- Always write the question, options, and explanation in Hebrew (עברית), regardless of what language the transcript is in
 - Return ONLY a JSON array, nothing else
 
 [

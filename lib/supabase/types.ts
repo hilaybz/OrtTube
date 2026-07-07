@@ -74,22 +74,22 @@ export interface Database {
         Row: {
           youtube_video_id: string;
           language: string;
-          segments: Json;
           source: string | null;
+          summary: string | null;
           fetched_at: string;
         };
         Insert: {
           youtube_video_id: string;
           language: string;
-          segments: Json;
           source?: string | null;
+          summary?: string | null;
           fetched_at?: string;
         };
         Update: {
           youtube_video_id?: string;
           language?: string;
-          segments?: Json;
           source?: string | null;
+          summary?: string | null;
           fetched_at?: string;
         };
         Relationships: [];

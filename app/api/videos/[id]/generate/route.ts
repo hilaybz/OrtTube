@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { generateQuestionsAtPositions } from "@/lib/transcript";
-import type { TranscriptSegment } from "@/lib/transcript";
+import { generateQuestionsAtPositions, getTranscript } from "@/lib/transcript";
 import type { Json } from "@/lib/supabase/types";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -36,17 +35,10 @@ export async function POST(
 
   const body = (await req.json()) as Body;
 
-  const { data: transcriptRow } = await supabase
-    .from("youtube_transcripts")
-    .select("segments")
-    .eq("youtube_video_id", video.youtube_video_id)
-    .single();
-
-  if (!transcriptRow) {
-    return NextResponse.json({ error: "Transcript not cached" }, { status: 400 });
+  const segments = await getTranscript(video.youtube_video_id);
+  if (!segments) {
+    return NextResponse.json({ error: "Transcript unavailable" }, { status: 400 });
   }
-
-  const segments = transcriptRow.segments as unknown as TranscriptSegment[];
 
   let positions: number[];
   if (body.mode === "at_times") {
@@ -81,7 +73,7 @@ export async function POST(
       .insert({
         video_id: id,
         position_seconds: result.position_seconds,
-        label: `Quiz at ${fmtSec(result.position_seconds)}`,
+        label: `שאלות ב-${fmtSec(result.position_seconds)}`,
         order_index: orderBase,
       })
       .select("id, position_seconds, label, order_index")

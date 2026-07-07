@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import { getTranscript } from "@/lib/transcript";
+import { getTranscript, summarizeTranscript } from "@/lib/transcript";
 import { fetchYouTubeTitle } from "@/lib/youtube";
-import type { Json } from "@/lib/supabase/types";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function POST(
@@ -35,11 +34,12 @@ export async function POST(
   const status: "ready" | "unavailable" = segments ? "ready" : "unavailable";
 
   if (segments) {
+    const summary = await summarizeTranscript(segments).catch(() => "");
     await supabase.from("youtube_transcripts").upsert({
       youtube_video_id: video.youtube_video_id,
       language: "auto",
-      segments: segments as unknown as Json,
       source: "fetch",
+      summary: summary || null,
     });
   }
 

@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { generateQuestionsAtPositions } from "@/lib/transcript";
-import type { TranscriptSegment } from "@/lib/transcript";
+import { generateQuestionsAtPositions, getTranscript } from "@/lib/transcript";
 import type { Json } from "@/lib/supabase/types";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -32,16 +31,11 @@ export async function POST(
     .single();
   if (!video) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { data: transcriptRow } = await supabase
-    .from("youtube_transcripts")
-    .select("segments")
-    .eq("youtube_video_id", video.youtube_video_id)
-    .single();
-  if (!transcriptRow) {
-    return NextResponse.json({ error: "No transcript" }, { status: 400 });
+  const segments = await getTranscript(video.youtube_video_id);
+  if (!segments) {
+    return NextResponse.json({ error: "Transcript unavailable" }, { status: 400 });
   }
 
-  const segments = transcriptRow.segments as unknown as TranscriptSegment[];
   const results = await generateQuestionsAtPositions(
     segments,
     [cp.position_seconds],
