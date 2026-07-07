@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { fetchYouTubeTitle } from "@/lib/youtube";
+import DeleteVideoButton from "./DeleteVideoButton";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -10,10 +11,7 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  console.log(`[dashboard] user.id=${user?.id} email=${user?.email}`);
-
   if (!user) {
-    console.log("[dashboard] no user → redirect to sign-in");
     redirect("/auth/sign-in");
   }
 
@@ -25,10 +23,6 @@ export default async function DashboardPage() {
     .eq("id", user.id)
     .single();
 
-  console.log(
-    `[dashboard] SELECT teacher → data=${JSON.stringify(selectResult.data)} error=${JSON.stringify(selectResult.error)}`
-  );
-
   if (selectResult.data) {
     teacher = selectResult.data;
   } else {
@@ -37,14 +31,10 @@ export default async function DashboardPage() {
       .insert({ id: user.id, email: user.email! })
       .select("display_name")
       .single();
-    console.log(
-      `[dashboard] INSERT teacher → data=${JSON.stringify(insertResult.data)} error=${JSON.stringify(insertResult.error)}`
-    );
     teacher = insertResult.data;
   }
 
   if (!teacher) {
-    console.log("[dashboard] no teacher → redirect to sign-in");
     redirect("/auth/sign-in");
   }
 
@@ -114,10 +104,10 @@ export default async function DashboardPage() {
         ) : (
           <ul className="space-y-3">
             {videos.map((v) => (
-              <li key={v.id}>
+              <li key={v.id} className="group flex items-center gap-2">
                 <Link
                   href={`/dashboard/videos/${v.id}`}
-                  className="flex items-center gap-4 bg-[#161920] border border-gray-800 rounded-xl px-5 py-4 hover:border-gray-600 transition-colors group"
+                  className="flex-1 flex items-center gap-4 bg-[#161920] border border-gray-800 rounded-xl px-5 py-4 hover:border-gray-600 transition-colors group"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-white font-medium truncate">
@@ -139,6 +129,7 @@ export default async function DashboardPage() {
                   <StatusBadge status={v.transcript_status} />
                   <span className="text-gray-600 group-hover:text-gray-400 transition-colors text-sm">→</span>
                 </Link>
+                <DeleteVideoButton videoId={v.id} />
               </li>
             ))}
           </ul>
