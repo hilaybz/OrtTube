@@ -83,23 +83,30 @@ export default async function DashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-10">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
         <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-white">My Videos</h2>
+          <h2 className="text-2xl font-bold text-white">הסרטונים שלי</h2>
           <Link
             href="/dashboard/videos/new"
             className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
           >
-            + Add video
+            + הוספת סרטון
           </Link>
         </div>
 
         {!videos || videos.length === 0 ? (
-          <div className="text-center py-20 space-y-3">
-            <p className="text-gray-400">No videos yet.</p>
+          <div className="text-center py-20 space-y-4">
+            <p className="text-4xl">🎬</p>
+            <p className="text-gray-400">עדיין אין סרטונים.</p>
             <p className="text-gray-600 text-sm">
-              Add a YouTube video to generate quizzes and share with students.
+              מוסיפים סרטון יוטיוב, יוצרים שאלות ומשתפים עם התלמידים.
             </p>
+            <Link
+              href="/dashboard/videos/new"
+              className="inline-block bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors"
+            >
+              + הוסיפו את הסרטון הראשון
+            </Link>
           </div>
         ) : (
           <ul className="space-y-3">
@@ -107,27 +114,27 @@ export default async function DashboardPage() {
               <li key={v.id} className="group flex items-center gap-2">
                 <Link
                   href={`/dashboard/videos/${v.id}`}
-                  className="flex-1 flex items-center gap-4 bg-[#161920] border border-gray-800 rounded-xl px-5 py-4 hover:border-gray-600 transition-colors group"
+                  className="flex-1 min-w-0 flex items-center gap-4 bg-[#161920] border border-gray-800 rounded-xl px-4 sm:px-5 py-4 hover:border-gray-600 transition-colors group"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-white font-medium truncate">
-                      {v.title ?? "Untitled"}
+                    <p dir="auto" className="text-white font-medium truncate">
+                      {v.title ?? "ללא שם"}
                     </p>
-                    <p className="text-gray-500 text-xs mt-0.5">
-                      <span className="font-mono text-gray-600">
+                    <p className="text-gray-500 text-xs mt-0.5 truncate">
+                      <span className="font-mono text-gray-600" dir="ltr">
                         {v.youtube_video_id}
                       </span>
                       {" · "}
-                      Share code:{" "}
-                      <span className="font-mono text-gray-400">
+                      קוד שיתוף:{" "}
+                      <span className="font-mono text-gray-400" dir="ltr">
                         {v.share_code}
                       </span>
                       {" · "}
-                      {new Date(v.created_at).toLocaleDateString()}
+                      {new Date(v.created_at).toLocaleDateString("he-IL")}
                     </p>
                   </div>
                   <StatusBadge status={v.transcript_status} />
-                  <span className="text-gray-600 group-hover:text-gray-400 transition-colors text-sm">→</span>
+                  <span className="hidden sm:inline text-gray-600 group-hover:text-gray-400 transition-colors text-sm">←</span>
                 </Link>
                 <DeleteVideoButton videoId={v.id} />
               </li>
@@ -142,19 +149,19 @@ export default async function DashboardPage() {
 function StatusBadge({ status }: { status: string }) {
   if (status === "ready")
     return (
-      <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
-        Ready
+      <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 whitespace-nowrap">
+        מוכן
       </span>
     );
   if (status === "unavailable")
     return (
-      <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
-        No transcript
+      <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 whitespace-nowrap">
+        אין תמלול
       </span>
     );
   return (
-    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-400 border border-gray-700">
-      Pending
+    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-400 border border-gray-700 whitespace-nowrap">
+      בבדיקה
     </span>
   );
 }
@@ -168,7 +175,7 @@ function SignOutButton() {
         type="submit"
         className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
       >
-        Sign out
+        התנתקות
       </button>
     </form>
   );

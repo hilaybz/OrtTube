@@ -43,16 +43,17 @@ export default function SignUpForm() {
             Ort<span className="text-blue-400">Tube</span>
           </h1>
           <div className="bg-[#161920] border border-gray-800 rounded-2xl p-6 space-y-3">
-            <p className="text-white font-medium">Check your email</p>
+            <p className="text-white font-medium">בדקו את האימייל שלכם</p>
             <p className="text-gray-400 text-sm">
-              We sent a confirmation link to <span className="text-gray-200">{email}</span>.
-              Click it to activate your account.
+              שלחנו קישור אישור אל{" "}
+              <span dir="ltr" className="text-gray-200">{email}</span>. לחצו
+              עליו כדי להפעיל את החשבון.
             </p>
           </div>
           <p className="text-gray-500 text-sm">
-            Already confirmed?{" "}
+            כבר אישרתם?{" "}
             <Link href="/auth/sign-in" className="text-blue-400 hover:text-blue-300 transition-colors">
-              Sign in
+              כניסה
             </Link>
           </p>
         </div>
@@ -67,7 +68,7 @@ export default function SignUpForm() {
           <h1 className="text-3xl font-bold text-white">
             Ort<span className="text-blue-400">Tube</span>
           </h1>
-          <p className="text-gray-400 mt-2 text-sm">Create a teacher account</p>
+          <p className="text-gray-400 mt-2 text-sm">יצירת חשבון מורה</p>
         </div>
 
         <form
@@ -76,27 +77,29 @@ export default function SignUpForm() {
         >
           <div className="space-y-1.5">
             <label htmlFor="display-name" className="text-sm text-gray-300">
-              Name
+              שם
             </label>
             <input
               id="display-name"
               type="text"
+              dir="auto"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               required
               autoFocus
-              placeholder="Your name"
+              placeholder="השם שלכם"
               className="w-full bg-[#1c1f26] border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors text-sm"
             />
           </div>
 
           <div className="space-y-1.5">
             <label htmlFor="email" className="text-sm text-gray-300">
-              Email
+              אימייל
             </label>
             <input
               id="email"
               type="email"
+              dir="ltr"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -106,11 +109,12 @@ export default function SignUpForm() {
 
           <div className="space-y-1.5">
             <label htmlFor="password" className="text-sm text-gray-300">
-              Password
+              סיסמה
             </label>
             <input
               id="password"
               type="password"
+              dir="ltr"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -126,14 +130,14 @@ export default function SignUpForm() {
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl transition-colors text-sm"
           >
-            {loading ? "Creating account…" : "Create account"}
+            {loading ? "יוצר חשבון…" : "יצירת חשבון"}
           </button>
         </form>
 
         <p className="text-center text-gray-500 text-sm mt-4">
-          Already have an account?{" "}
+          כבר יש לכם חשבון?{" "}
           <Link href="/auth/sign-in" className="text-blue-400 hover:text-blue-300 transition-colors">
-            Sign in
+            כניסה
           </Link>
         </p>
       </div>

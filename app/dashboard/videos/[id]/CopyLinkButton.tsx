@@ -20,12 +20,12 @@ export default function CopyLinkButton({ shareCode }: { shareCode: string }) {
       {copied ? (
         <>
           <span className="text-green-400">✓</span>
-          <span className="text-green-400">Copied!</span>
+          <span className="text-green-400">הועתק!</span>
         </>
       ) : (
         <>
           <span>🔗</span>
-          Copy student link
+          העתקת קישור לתלמידים
         </>
       )}
     </button>

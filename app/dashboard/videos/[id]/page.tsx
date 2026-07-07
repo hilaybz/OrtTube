@@ -62,24 +62,24 @@ export default async function VideoDetailPage({ params }: Props) {
           Ort<span className="text-blue-400">Tube</span>
         </Link>
         <span className="text-gray-700">·</span>
-        <span className="text-gray-400 text-sm truncate">
+        <span dir="auto" className="text-gray-400 text-sm truncate">
           {video.title ?? video.youtube_video_id}
         </span>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8">
+      <main className="max-w-6xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <Link
               href="/dashboard"
               className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
             >
-              ← Dashboard
+              → כל הסרטונים
             </Link>
             <span className="text-gray-700 text-sm">·</span>
-            <span className="font-mono text-sm text-gray-500">
-              Share code:{" "}
-              <span className="text-gray-300">{video.share_code}</span>
+            <span className="text-sm text-gray-500">
+              קוד שיתוף:{" "}
+              <span dir="ltr" className="font-mono text-gray-300">{video.share_code}</span>
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export default async function VideoDetailPage({ params }: Props) {
               href={`/dashboard/videos/${id}/analytics`}
               className="text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors"
             >
-              📊 Analytics
+              📊 נתונים
             </Link>
             <CopyLinkButton shareCode={video.share_code} />
           </div>

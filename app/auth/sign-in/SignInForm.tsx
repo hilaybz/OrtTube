@@ -36,7 +36,7 @@ export default function SignInForm() {
           <h1 className="text-3xl font-bold text-white">
             Ort<span className="text-blue-400">Tube</span>
           </h1>
-          <p className="text-gray-400 mt-2 text-sm">Sign in to your teacher account</p>
+          <p className="text-gray-400 mt-2 text-sm">כניסה לחשבון המורה שלך</p>
         </div>
 
         <form
@@ -45,11 +45,12 @@ export default function SignInForm() {
         >
           <div className="space-y-1.5">
             <label htmlFor="email" className="text-sm text-gray-300">
-              Email
+              אימייל
             </label>
             <input
               id="email"
               type="email"
+              dir="ltr"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -60,11 +61,12 @@ export default function SignInForm() {
 
           <div className="space-y-1.5">
             <label htmlFor="password" className="text-sm text-gray-300">
-              Password
+              סיסמה
             </label>
             <input
               id="password"
               type="password"
+              dir="ltr"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -79,14 +81,14 @@ export default function SignInForm() {
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl transition-colors text-sm"
           >
-            {loading ? "Signing in…" : "Sign in"}
+            {loading ? "מתחבר…" : "כניסה"}
           </button>
         </form>
 
         <p className="text-center text-gray-500 text-sm mt-4">
-          No account?{" "}
+          אין לכם חשבון?{" "}
           <Link href="/auth/sign-up" className="text-blue-400 hover:text-blue-300 transition-colors">
-            Sign up
+            הרשמה
           </Link>
         </p>
       </div>

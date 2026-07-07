@@ -1,29 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import YouTube, { type YouTubeEvent, type YouTubePlayer } from "react-youtube";
 import GenerateModal from "./GenerateModal";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface SavedQuestion {
-  id: string;
-  question: string;
-  options: string[];
-  correct_index: number;
-  explanation: string | null;
-  ai_generated: boolean;
-  order_index: number;
-}
-
-export interface SavedCheckpoint {
-  id: string;
-  position_seconds: number;
-  label: string | null;
-  order_index: number;
-  questions: SavedQuestion[];
-}
+import Timeline from "./Timeline";
+import {
+  fmtSec,
+  parseMinSec,
+  type SavedCheckpoint,
+  type SavedQuestion,
+} from "./shared";
 
 interface Props {
   video: {
@@ -35,19 +22,7 @@ interface Props {
   initialCheckpoints: SavedCheckpoint[];
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-export function fmtSec(s: number) {
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
-export function parseMinSec(s: string): number | null {
-  const colonMatch = s.trim().match(/^(\d+):(\d{1,2})$/);
-  if (colonMatch) return parseInt(colonMatch[1]) * 60 + parseInt(colonMatch[2]);
-  const numMatch = s.trim().match(/^\d+$/);
-  if (numMatch) return parseInt(s.trim());
-  return null;
-}
+const PLAYHEAD_POLL_MS = 500;
 
 // ─── VideoEditor ──────────────────────────────────────────────────────────────
 
@@ -56,10 +31,12 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
   const playerRef = useRef<YouTubePlayer | null>(null);
   const [checkpoints, setCheckpoints] = useState<SavedCheckpoint[]>(initialCheckpoints);
   const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const [expandedCpId, setExpandedCpId] = useState<string | null>(null);
   const [showGenerate, setShowGenerate] = useState(false);
   const [showAddManual, setShowAddManual] = useState(false);
   const [busyCpId, setBusyCpId] = useState<string | null>(null);
+  const [addingAtTime, setAddingAtTime] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showNoTranscriptGate, setShowNoTranscriptGate] = useState(
     video.transcript_status === "unavailable"
@@ -69,6 +46,14 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
   const hasTranscript = video.transcript_status === "ready";
   const sorted = [...checkpoints].sort((a, b) => a.position_seconds - b.position_seconds);
 
+  useEffect(() => {
+    const tick = setInterval(() => {
+      const t = playerRef.current?.getCurrentTime?.();
+      if (typeof t === "number" && Number.isFinite(t)) setCurrentTime(t);
+    }, PLAYHEAD_POLL_MS);
+    return () => clearInterval(tick);
+  }, []);
+
   async function handleDeleteVideo() {
     setDeleting(true);
     const res = await fetch(`/api/videos/${video.id}`, { method: "DELETE" });
@@ -77,33 +62,30 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
       router.refresh();
     } else {
       setDeleting(false);
-      setError("Failed to delete video.");
+      setError("מחיקת הסרטון נכשלה.");
     }
   }
 
   if (showNoTranscriptGate) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
-        <div className="w-full max-w-md bg-[#161920] border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="w-full max-w-md bg-[#161920] border border-gray-700 rounded-2xl shadow-2xl overflow-hidden animate-modal-in">
           <div className="px-6 py-5 border-b border-gray-700 flex items-center gap-3">
             <span className="w-8 h-8 rounded-full bg-yellow-500/20 border border-yellow-500/40 text-yellow-400 flex items-center justify-center text-base">
               !
             </span>
-            <h3 className="text-white font-semibold">No transcript found</h3>
+            <h3 className="text-white font-semibold">לא נמצא תמלול</h3>
           </div>
           <div className="px-6 py-5 space-y-3 text-sm text-gray-300 leading-relaxed">
-            <p>
-              We couldn&apos;t find a transcript for this video. AI features
-              won&apos;t work for it:
-            </p>
+            <p>לא מצאנו תמלול לסרטון הזה. תכונות ה-AI לא יעבדו עבורו:</p>
             <ul className="list-disc list-inside text-gray-400 space-y-1 text-xs">
-              <li>Quizzes can&apos;t be generated automatically</li>
-              <li>Questions can&apos;t be regenerated</li>
-              <li>The student-facing AI tutor will have no context</li>
+              <li>לא ניתן ליצור שאלות אוטומטית</li>
+              <li>לא ניתן ליצור שאלות מחדש</li>
+              <li>למורה ה-AI של התלמידים לא יהיה הקשר</li>
             </ul>
             <p>
-              You can still add quizzes manually, or delete this video and try
-              another one.
+              עדיין אפשר להוסיף שאלות ידנית, או למחוק את הסרטון ולנסות סרטון
+              אחר.
             </p>
           </div>
           <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-700">
@@ -112,14 +94,14 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
               disabled={deleting}
               className="text-sm text-red-400 hover:text-red-300 disabled:opacity-50 transition-colors px-3 py-2"
             >
-              {deleting ? "Deleting…" : "Delete video"}
+              {deleting ? "מוחק…" : "מחיקת הסרטון"}
             </button>
             <button
               onClick={() => setShowNoTranscriptGate(false)}
               disabled={deleting}
               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded-xl transition-colors"
             >
-              Confirm and continue
+              אישור והמשך
             </button>
           </div>
           {error && (
@@ -135,12 +117,55 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
     setDuration(e.target.getDuration());
   }
 
+  function seekTo(seconds: number) {
+    playerRef.current?.seekTo(seconds, true);
+    setCurrentTime(seconds);
+  }
+
   async function handleDelete(cpId: string) {
     setError(null);
     const res = await fetch(`/api/checkpoints/${cpId}`, { method: "DELETE" });
-    if (!res.ok) { setError("Failed to delete."); return; }
+    if (!res.ok) { setError("המחיקה נכשלה."); return; }
     setCheckpoints((prev) => prev.filter((c) => c.id !== cpId));
     if (expandedCpId === cpId) setExpandedCpId(null);
+  }
+
+  async function handleMove(cpId: string, seconds: number) {
+    setError(null);
+    const previous = checkpoints;
+    setCheckpoints((prev) =>
+      prev.map((c) => (c.id === cpId ? { ...c, position_seconds: seconds } : c))
+    );
+    const res = await fetch(`/api/checkpoints/${cpId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position_seconds: seconds }),
+    });
+    if (!res.ok) {
+      setCheckpoints(previous);
+      setError("הזזת השאלה נכשלה. נסו שוב.");
+    }
+  }
+
+  async function handleAddAtCurrentTime() {
+    setAddingAtTime(true);
+    setError(null);
+    try {
+      const seconds = Math.floor(currentTime);
+      const res = await fetch(`/api/videos/${video.id}/checkpoints`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ position_seconds: seconds }),
+      });
+      if (!res.ok) throw new Error();
+      const { checkpoint } = (await res.json()) as { checkpoint: SavedCheckpoint };
+      setCheckpoints((prev) => [...prev, checkpoint]);
+      setExpandedCpId(checkpoint.id);
+    } catch {
+      setError("הוספת השאלה נכשלה.");
+    } finally {
+      setAddingAtTime(false);
+    }
   }
 
   async function handleRegenerate(cpId: string) {
@@ -158,7 +183,7 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
         prev.map((c) => (c.id === cpId ? { ...c, questions } : c))
       );
     } catch {
-      setError("Regeneration failed. Try again.");
+      setError("יצירת השאלות מחדש נכשלה. נסו שוב.");
     } finally {
       setBusyCpId(null);
     }
@@ -186,64 +211,61 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Player + timeline */}
-      <div className="rounded-xl overflow-hidden border border-gray-800">
-        <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
-          <YouTube
-            videoId={video.youtube_video_id}
-            onReady={onPlayerReady}
-            opts={{
-              width: "100%",
-              height: "100%",
-              playerVars: { rel: 0, modestbranding: 1 },
-            }}
-            className="absolute inset-0 w-full h-full"
-            iframeClassName="w-full h-full"
-          />
-        </div>
-        <div className="px-4 py-3 bg-[#161920] border-t border-gray-800">
-          <TimelineBar
-            checkpoints={sorted}
-            duration={duration}
-            expandedCpId={expandedCpId}
-            onSelect={(id) =>
-              setExpandedCpId(expandedCpId === id ? null : id)
-            }
-          />
-        </div>
-      </div>
-
-      {/* Quiz controls */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-semibold">
-            Quizzes
-            {checkpoints.length > 0 && (
-              <span className="ml-2 text-sm text-gray-500 font-normal">
-                ({checkpoints.length})
-              </span>
-            )}
-          </h3>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowAddManual((v) => !v)}
-              className="text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors"
-            >
-              + Add manually
-            </button>
-            {hasTranscript && (
-              <button
-                onClick={() => setShowGenerate(true)}
-                className="text-sm bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
-              >
-                <span>⚡</span> Generate
-              </button>
-            )}
+    <div className="flex flex-col lg:flex-row gap-6 items-start">
+      {/* Left: player + timeline + actions (sticky on desktop) */}
+      <div className="w-full lg:w-[55%] lg:sticky lg:top-6 space-y-4">
+        <div className="rounded-xl overflow-hidden border border-gray-800 bg-[#161920]">
+          <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
+            <YouTube
+              videoId={video.youtube_video_id}
+              onReady={onPlayerReady}
+              opts={{
+                width: "100%",
+                height: "100%",
+                playerVars: { rel: 0, modestbranding: 1 },
+              }}
+              className="absolute inset-0 w-full h-full"
+              iframeClassName="w-full h-full"
+            />
+          </div>
+          <div className="px-4 pt-1 pb-2 border-t border-gray-800">
+            <Timeline
+              checkpoints={sorted}
+              duration={duration}
+              selectedCpId={expandedCpId}
+              currentTime={currentTime}
+              onSelect={(id) => setExpandedCpId(id)}
+              onSeek={seekTo}
+              onMove={handleMove}
+            />
           </div>
         </div>
 
-        {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
+        <div className="flex flex-wrap items-center gap-2">
+          {hasTranscript && (
+            <button
+              onClick={() => setShowGenerate(true)}
+              className="text-sm bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+            >
+              <span>⚡</span> יצירה אוטומטית
+            </button>
+          )}
+          <button
+            onClick={handleAddAtCurrentTime}
+            disabled={addingAtTime || duration === 0}
+            className="text-sm text-white bg-gray-700/60 hover:bg-gray-600/60 disabled:opacity-50 border border-gray-700 px-3 py-2 rounded-lg transition-colors"
+          >
+            {addingAtTime
+              ? "מוסיף…"
+              : `+ שאלה ב-${fmtSec(Math.floor(currentTime))}`}
+          </button>
+          <button
+            onClick={() => setShowAddManual((v) => !v)}
+            className="text-xs text-gray-500 hover:text-gray-300 px-2 py-2 transition-colors"
+          >
+            או הזנת זמן ידנית
+          </button>
+        </div>
 
         {showAddManual && (
           <AddManualForm
@@ -253,13 +275,34 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
           />
         )}
 
-        {sorted.length === 0 && !showAddManual ? (
+        <p className="text-xs text-gray-600">
+          טיפ: גררו סמן על ציר הזמן כדי להזיז שאלה. לחיצה על הציר מקפיצה את
+          הסרטון לאותה נקודה.
+        </p>
+      </div>
+
+      {/* Right: quiz list */}
+      <div className="w-full lg:flex-1 min-w-0">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-semibold">
+            שאלות
+            {checkpoints.length > 0 && (
+              <span className="ms-2 text-sm text-gray-500 font-normal">
+                ({checkpoints.length})
+              </span>
+            )}
+          </h3>
+        </div>
+
+        {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
+
+        {sorted.length === 0 ? (
           <div className="text-center py-12 border border-dashed border-gray-800 rounded-xl">
-            <p className="text-gray-500 text-sm">No quizzes yet.</p>
+            <p className="text-gray-500 text-sm">עדיין אין שאלות.</p>
             <p className="text-gray-600 text-xs mt-1">
               {hasTranscript
-                ? "Generate quizzes automatically or add them manually."
-                : "No transcript found — add quizzes manually."}
+                ? "צרו שאלות אוטומטית, או עצרו את הסרטון והוסיפו שאלה בנקודה הנוכחית."
+                : "לא נמצא תמלול — עצרו את הסרטון והוסיפו שאלות ידנית."}
             </p>
           </div>
         ) : (
@@ -271,11 +314,14 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
                 expanded={expandedCpId === cp.id}
                 busy={busyCpId === cp.id}
                 hasTranscript={hasTranscript}
-                onToggle={() =>
-                  setExpandedCpId(expandedCpId === cp.id ? null : cp.id)
-                }
+                onToggle={() => {
+                  const opening = expandedCpId !== cp.id;
+                  setExpandedCpId(opening ? cp.id : null);
+                  if (opening) seekTo(cp.position_seconds);
+                }}
                 onDelete={() => handleDelete(cp.id)}
                 onRegenerate={() => handleRegenerate(cp.id)}
+                onMoveTime={(sec) => handleMove(cp.id, sec)}
                 onQuestionsChange={(qs) => handleQuestionsChange(cp.id, qs)}
               />
             ))}
@@ -291,54 +337,6 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
           onClose={() => setShowGenerate(false)}
         />
       )}
-    </div>
-  );
-}
-
-// ─── Timeline bar ─────────────────────────────────────────────────────────────
-
-function TimelineBar({
-  checkpoints,
-  duration,
-  expandedCpId,
-  onSelect,
-}: {
-  checkpoints: SavedCheckpoint[];
-  duration: number;
-  expandedCpId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <div className="relative h-1.5 bg-gray-700 rounded-full mt-1 mb-2">
-      {checkpoints.map((cp) => {
-        const pct =
-          duration > 0
-            ? Math.min(98, (cp.position_seconds / duration) * 100)
-            : 0;
-        const active = expandedCpId === cp.id;
-        return (
-          <button
-            key={cp.id}
-            title={`${fmtSec(cp.position_seconds)} — ${cp.questions.length} Q`}
-            style={{ left: `${pct}%` }}
-            onClick={() => onSelect(cp.id)}
-            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 group z-10"
-          >
-            <div
-              className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ring-2 ring-[#161920] transition-colors ${
-                active
-                  ? "bg-blue-400 text-white"
-                  : "bg-gray-500 text-gray-300 group-hover:bg-blue-500 group-hover:text-white"
-              }`}
-            >
-              {cp.questions.length}
-            </div>
-            <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 pointer-events-none">
-              {fmtSec(cp.position_seconds)}
-            </div>
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -363,7 +361,7 @@ function AddManualForm({
     e.preventDefault();
     const seconds = parseMinSec(time);
     if (seconds === null || seconds < 0) {
-      setError("Enter a valid time (e.g. 3:24)");
+      setError("הזינו זמן תקין (למשל 3:24)");
       return;
     }
     setSaving(true);
@@ -378,7 +376,7 @@ function AddManualForm({
       const { checkpoint } = (await res.json()) as { checkpoint: SavedCheckpoint };
       onAdd(checkpoint);
     } catch {
-      setError("Failed to create.");
+      setError("היצירה נכשלה.");
       setSaving(false);
     }
   }
@@ -386,14 +384,15 @@ function AddManualForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="mb-4 bg-[#161920] border border-gray-700 rounded-xl p-4 space-y-3"
+      className="bg-[#161920] border border-gray-700 rounded-xl p-4 space-y-3"
     >
-      <p className="text-sm font-medium text-white">Add quiz manually</p>
+      <p className="text-sm font-medium text-white">הוספת שאלות ידנית</p>
       <div className="flex gap-3">
         <div className="flex-1">
-          <label className="block text-xs text-gray-500 mb-1">Time (mm:ss)</label>
+          <label className="block text-xs text-gray-500 mb-1">זמן (דקות:שניות)</label>
           <input
             type="text"
+            dir="ltr"
             value={time}
             onChange={(e) => setTime(e.target.value)}
             placeholder="3:24"
@@ -403,13 +402,14 @@ function AddManualForm({
         </div>
         <div className="flex-[2]">
           <label className="block text-xs text-gray-500 mb-1">
-            Label (optional)
+            כותרת (לא חובה)
           </label>
           <input
             type="text"
+            dir="auto"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="Mid-video check"
+            placeholder="בדיקת אמצע שיעור"
             className="w-full bg-[#0f1117] border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
           />
         </div>
@@ -421,17 +421,67 @@ function AddManualForm({
           disabled={!time.trim() || saving}
           className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors"
         >
-          {saving ? "Creating…" : "Create"}
+          {saving ? "יוצר…" : "יצירה"}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="text-sm text-gray-500 hover:text-gray-300 px-3 py-1.5 transition-colors"
         >
-          Cancel
+          ביטול
         </button>
       </div>
     </form>
+  );
+}
+
+// ─── Editable time chip ───────────────────────────────────────────────────────
+
+function TimeChip({
+  seconds,
+  onChange,
+}: {
+  seconds: number;
+  onChange: (sec: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+
+  function commit() {
+    const parsed = parseMinSec(value);
+    if (parsed !== null && parsed >= 0 && parsed !== seconds) onChange(parsed);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        type="text"
+        dir="ltr"
+        value={value}
+        autoFocus
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        className="w-14 bg-[#0f1117] border border-blue-500 rounded px-1.5 py-0.5 text-white text-sm font-mono focus:outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={() => {
+        setValue(fmtSec(seconds));
+        setEditing(true);
+      }}
+      title="לחצו לעריכת הזמן"
+      className="text-white text-sm font-mono px-1.5 py-0.5 rounded border border-transparent hover:border-gray-600 hover:bg-gray-800 transition-colors"
+    >
+      {fmtSec(seconds)}
+    </button>
   );
 }
 
@@ -445,6 +495,7 @@ function CheckpointRow({
   onToggle,
   onDelete,
   onRegenerate,
+  onMoveTime,
   onQuestionsChange,
 }: {
   cp: SavedCheckpoint;
@@ -454,26 +505,29 @@ function CheckpointRow({
   onToggle: () => void;
   onDelete: () => void;
   onRegenerate: () => void;
+  onMoveTime: (sec: number) => void;
   onQuestionsChange: (qs: SavedQuestion[]) => void;
 }) {
   return (
-    <div className="bg-[#161920] border border-gray-800 rounded-xl overflow-hidden">
-      <div className="flex items-center gap-3 px-4 py-3">
+    <div
+      className={`bg-[#161920] border rounded-xl overflow-hidden transition-colors ${
+        expanded ? "border-blue-500/40" : "border-gray-800"
+      }`}
+    >
+      <div className="flex items-center gap-2 px-3 py-3">
+        <TimeChip seconds={cp.position_seconds} onChange={onMoveTime} />
         <button
           onClick={onToggle}
-          className="flex-1 flex items-center gap-3 text-left min-w-0"
+          className="flex-1 flex items-center gap-3 text-start min-w-0"
         >
-          <span className="text-gray-600 text-xs shrink-0">
-            {expanded ? "▼" : "►"}
-          </span>
-          <span className="text-white text-sm font-mono shrink-0">
-            {fmtSec(cp.position_seconds)}
-          </span>
-          <span className="text-gray-400 text-sm truncate">
-            {cp.label ?? `Quiz at ${fmtSec(cp.position_seconds)}`}
+          <span dir="auto" className="text-gray-400 text-sm truncate">
+            {cp.label ?? `שאלות ב-${fmtSec(cp.position_seconds)}`}
           </span>
           <span className="text-xs text-gray-600 shrink-0">
-            {cp.questions.length}Q
+            {cp.questions.length} שאלות
+          </span>
+          <span className="text-gray-600 text-xs shrink-0 ms-auto">
+            {expanded ? "▼" : "◄"}
           </span>
         </button>
         <div className="flex items-center gap-1 shrink-0">
@@ -481,7 +535,7 @@ function CheckpointRow({
             <button
               onClick={onRegenerate}
               disabled={busy}
-              title="Regenerate questions with AI"
+              title="יצירת שאלות מחדש עם AI"
               className="p-1.5 text-gray-600 hover:text-blue-400 disabled:opacity-40 transition-colors rounded-lg hover:bg-gray-800 text-sm"
             >
               {busy ? (
@@ -493,7 +547,7 @@ function CheckpointRow({
           )}
           <button
             onClick={onDelete}
-            title="Delete checkpoint"
+            title="מחיקת נקודת העצירה"
             className="p-1.5 text-gray-600 hover:text-red-400 transition-colors rounded-lg hover:bg-gray-800 text-sm"
           >
             ✕
@@ -539,7 +593,7 @@ function QuestionList({
   return (
     <div className="border-t border-gray-800 px-4 py-3 space-y-3">
       {checkpoint.questions.length === 0 && !showAddForm && (
-        <p className="text-gray-600 text-xs">No questions yet.</p>
+        <p className="text-gray-600 text-xs">עדיין אין שאלות.</p>
       )}
       {checkpoint.questions.map((q, i) => (
         <QuestionCard
@@ -562,7 +616,7 @@ function QuestionList({
           onClick={() => setShowAddForm(true)}
           className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
         >
-          + Add question
+          + הוספת שאלה
         </button>
       )}
     </div>
@@ -606,8 +660,8 @@ function QuestionCard({
   return (
     <div className="bg-[#0f1117] rounded-lg p-3 space-y-2">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm text-white leading-snug">
-          <span className="text-gray-600 text-xs mr-1">Q{index + 1}.</span>
+        <p dir="auto" className="text-sm text-white leading-snug">
+          <span className="text-gray-600 text-xs me-1">{index + 1}.</span>
           {q.question}
         </p>
         <div className="flex gap-1 shrink-0">
@@ -615,7 +669,7 @@ function QuestionCard({
             onClick={() => setEditing(true)}
             className="text-xs text-gray-600 hover:text-gray-300 px-1.5 py-0.5 rounded hover:bg-gray-800 transition-colors"
           >
-            Edit
+            עריכה
           </button>
           <button
             onClick={onDelete}
@@ -629,19 +683,20 @@ function QuestionCard({
         {q.options.map((opt, i) => (
           <div
             key={i}
+            dir="auto"
             className={`text-xs px-2 py-1 rounded ${
               i === q.correct_index
                 ? "bg-green-900/30 text-green-400 border border-green-800/50"
                 : "text-gray-500"
             }`}
           >
-            <span className="font-mono mr-1">{LETTERS[i]}.</span>
+            <span className="font-mono me-1">{LETTERS[i]}.</span>
             {opt}
           </div>
         ))}
       </div>
       {q.explanation && (
-        <p className="text-xs text-gray-600 italic">{q.explanation}</p>
+        <p dir="auto" className="text-xs text-gray-600 italic">{q.explanation}</p>
       )}
     </div>
   );
@@ -682,7 +737,7 @@ function QuestionForm({
   async function handleSubmit(e: { preventDefault(): void }) {
     e.preventDefault();
     if (!question.trim() || options.some((o) => !o.trim())) {
-      setError("Fill in all fields.");
+      setError("מלאו את כל השדות.");
       return;
     }
     setSaving(true);
@@ -705,7 +760,7 @@ function QuestionForm({
       const data = (await res.json()) as { question: SavedQuestion };
       onSaved(data.question);
     } catch {
-      setError("Failed to save.");
+      setError("השמירה נכשלה.");
       setSaving(false);
     }
   }
@@ -716,12 +771,13 @@ function QuestionForm({
       className="bg-[#0f1117] border border-gray-700 rounded-lg p-3 space-y-3"
     >
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Question</label>
+        <label className="block text-xs text-gray-500 mb-1">שאלה</label>
         <input
           type="text"
+          dir="auto"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="What is…?"
+          placeholder="מה…?"
           className="w-full bg-[#161920] border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
           autoFocus
         />
@@ -732,7 +788,7 @@ function QuestionForm({
             <button
               type="button"
               onClick={() => setCorrect(i)}
-              title={`Mark ${LETTERS[i]} as correct`}
+              title={`סימון ${LETTERS[i]} כתשובה הנכונה`}
               className={`shrink-0 w-5 h-5 rounded-full border text-[10px] font-mono transition-colors ${
                 correct === i
                   ? "border-green-500 bg-green-500/20 text-green-400"
@@ -743,9 +799,10 @@ function QuestionForm({
             </button>
             <input
               type="text"
+              dir="auto"
               value={opt}
               onChange={(e) => setOption(i, e.target.value)}
-              placeholder={`Option ${LETTERS[i]}`}
+              placeholder={`תשובה ${LETTERS[i]}`}
               className="flex-1 min-w-0 bg-[#161920] border border-gray-700 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -753,10 +810,11 @@ function QuestionForm({
       </div>
       <div>
         <label className="block text-xs text-gray-500 mb-1">
-          Explanation (optional)
+          הסבר (לא חובה)
         </label>
         <input
           type="text"
+          dir="auto"
           value={explanation}
           onChange={(e) => setExplanation(e.target.value)}
           className="w-full bg-[#161920] border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
@@ -769,14 +827,14 @@ function QuestionForm({
           disabled={saving}
           className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
         >
-          {saving ? "Saving…" : questionId ? "Save changes" : "Add question"}
+          {saving ? "שומר…" : questionId ? "שמירת שינויים" : "הוספת שאלה"}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="text-xs text-gray-500 hover:text-gray-300 px-3 py-1.5 transition-colors"
         >
-          Cancel
+          ביטול
         </button>
       </div>
     </form>

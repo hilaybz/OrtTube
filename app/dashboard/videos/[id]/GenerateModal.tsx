@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { SavedCheckpoint } from "./VideoEditor";
-import { fmtSec, parseMinSec } from "./VideoEditor";
+import type { SavedCheckpoint } from "./shared";
+import { fmtSec, parseMinSec } from "./shared";
 
 interface Props {
   videoId: string;
@@ -47,7 +47,7 @@ export default function GenerateModal({ videoId, duration, onDone, onClose }: Pr
     let body: object;
     if (mode === "every") {
       if (!duration) {
-        setError("Wait for the video to load first.");
+        setError("המתינו שהסרטון ייטען קודם.");
         setGenerating(false);
         return;
       }
@@ -62,7 +62,7 @@ export default function GenerateModal({ videoId, duration, onDone, onClose }: Pr
         .map(parseMinSec)
         .filter((t): t is number => t !== null && t > 0);
       if (positions.length === 0) {
-        setError("Enter at least one valid time.");
+        setError("הזינו לפחות זמן אחד תקין.");
         setGenerating(false);
         return;
       }
@@ -81,17 +81,17 @@ export default function GenerateModal({ videoId, duration, onDone, onClose }: Pr
       };
       onDone(checkpoints);
     } catch {
-      setError("Generation failed. Try again.");
+      setError("היצירה נכשלה. נסו שוב.");
       setGenerating(false);
     }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
-      <div className="w-full max-w-md bg-[#161920] border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
+      <div className="w-full max-w-md bg-[#161920] border border-gray-700 rounded-2xl shadow-2xl overflow-hidden animate-modal-in">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-          <h3 className="text-white font-semibold">Generate Quizzes</h3>
+          <h3 className="text-white font-semibold">יצירת שאלות אוטומטית</h3>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-300 transition-colors"
@@ -114,7 +114,7 @@ export default function GenerateModal({ videoId, duration, onDone, onClose }: Pr
                     : "text-gray-400 hover:text-white"
                 }`}
               >
-                {m === "every" ? "Every X minutes" : "At specific times"}
+                {m === "every" ? "כל X דקות" : "בזמנים מסוימים"}
               </button>
             ))}
           </div>
@@ -122,7 +122,7 @@ export default function GenerateModal({ videoId, duration, onDone, onClose }: Pr
           {mode === "every" ? (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
-                <label className="text-sm text-gray-400 shrink-0">Every</label>
+                <label className="text-sm text-gray-400 shrink-0">כל</label>
                 <input
                   type="number"
                   min={1}
@@ -131,34 +131,36 @@ export default function GenerateModal({ videoId, duration, onDone, onClose }: Pr
                   onChange={(e) => setIntervalMin(e.target.value)}
                   className="w-20 bg-[#0f1117] border border-gray-700 rounded-lg px-3 py-2 text-white text-sm text-center focus:outline-none focus:border-blue-500"
                 />
-                <span className="text-sm text-gray-400">minutes</span>
+                <span className="text-sm text-gray-400">דקות</span>
               </div>
               {duration > 0 && everyPositions.length > 0 ? (
                 <p className="text-xs text-gray-500">
-                  Will create {everyPositions.length} checkpoint
-                  {everyPositions.length !== 1 ? "s" : ""} at:{" "}
-                  {everyPositions.slice(0, 6).map(fmtSec).join(", ")}
-                  {everyPositions.length > 6 ? "…" : ""}
+                  ייווצרו {everyPositions.length} נקודות עצירה ב:{" "}
+                  <span dir="ltr">
+                    {everyPositions.slice(0, 6).map(fmtSec).join(", ")}
+                    {everyPositions.length > 6 ? "…" : ""}
+                  </span>
                 </p>
               ) : duration > 0 ? (
                 <p className="text-xs text-yellow-600">
-                  Interval too large — no checkpoints would be created.
+                  המרווח גדול מדי — לא ייווצרו נקודות עצירה.
                 </p>
               ) : (
                 <p className="text-xs text-gray-600">
-                  Load the video first to preview checkpoints.
+                  המתינו שהסרטון ייטען כדי לראות תצוגה מקדימה.
                 </p>
               )}
             </div>
           ) : (
             <div className="space-y-2">
               <label className="block text-sm text-gray-400">
-                Times (mm:ss)
+                זמנים (דקות:שניות)
               </label>
               {times.map((t, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <input
                     type="text"
+                    dir="ltr"
                     value={t}
                     onChange={(e) => setTime(i, e.target.value)}
                     placeholder="3:24"
@@ -181,7 +183,7 @@ export default function GenerateModal({ videoId, duration, onDone, onClose }: Pr
                   onClick={addTime}
                   className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
                 >
-                  + Add time
+                  + הוספת זמן
                 </button>
               )}
             </div>
@@ -190,7 +192,7 @@ export default function GenerateModal({ videoId, duration, onDone, onClose }: Pr
           {/* Questions per checkpoint */}
           <div className="flex items-center gap-3 flex-wrap">
             <label className="text-sm text-gray-400 shrink-0">
-              Questions per checkpoint
+              שאלות בכל נקודת עצירה
             </label>
             <div className="flex items-center gap-1">
               {[1, 2, 3, 4, 5].map((n) => (
@@ -219,7 +221,7 @@ export default function GenerateModal({ videoId, duration, onDone, onClose }: Pr
             onClick={onClose}
             className="text-sm text-gray-500 hover:text-gray-300 transition-colors px-4 py-2"
           >
-            Cancel
+            ביטול
           </button>
           <button
             onClick={handleGenerate}
@@ -229,10 +231,10 @@ export default function GenerateModal({ videoId, duration, onDone, onClose }: Pr
             {generating ? (
               <>
                 <span className="inline-block w-3.5 h-3.5 border border-white border-t-transparent rounded-full animate-spin" />
-                Generating…
+                יוצר…
               </>
             ) : (
-              "⚡ Generate"
+              "⚡ יצירה"
             )}
           </button>
         </div>

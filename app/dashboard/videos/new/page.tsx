@@ -20,7 +20,7 @@ export default function NewVideoPage() {
 
     const videoId = extractVideoId(url.trim());
     if (!videoId) {
-      setError("Please paste a valid YouTube URL.");
+      setError("הדביקו קישור יוטיוב תקין.");
       return;
     }
 
@@ -65,7 +65,7 @@ export default function NewVideoPage() {
       router.push(`/dashboard/videos/${videoRowId}`);
     } catch (err) {
       setStep("input");
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : "משהו השתבש.");
     }
   }
 
@@ -81,12 +81,12 @@ export default function NewVideoPage() {
         {step === "checking" ? (
           <div className="text-center space-y-4">
             <div className="inline-block w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-gray-400">Checking for transcript…</p>
-            <p className="text-gray-600 text-sm">This takes a few seconds</p>
+            <p className="text-gray-400">בודק אם קיים תמלול…</p>
+            <p className="text-gray-600 text-sm">זה לוקח כמה שניות</p>
           </div>
         ) : (
           <>
-            <h2 className="text-2xl font-bold text-white mb-8">Add Video</h2>
+            <h2 className="text-2xl font-bold text-white mb-8">הוספת סרטון</h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -94,11 +94,12 @@ export default function NewVideoPage() {
                   htmlFor="url"
                   className="block text-sm text-gray-400 mb-1.5"
                 >
-                  YouTube URL
+                  קישור יוטיוב
                 </label>
                 <input
                   id="url"
                   type="text"
+                  dir="ltr"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://www.youtube.com/watch?v=..."
@@ -115,13 +116,13 @@ export default function NewVideoPage() {
                   disabled={!url.trim()}
                   className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors"
                 >
-                  Add Video
+                  הוספת סרטון
                 </button>
                 <Link
                   href="/dashboard"
                   className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
                 >
-                  Cancel
+                  ביטול
                 </Link>
               </div>
             </form>

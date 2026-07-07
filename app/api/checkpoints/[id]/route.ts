@@ -42,7 +42,29 @@ export async function PATCH(
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { label } = (await req.json()) as { label: string };
+  const { label, position_seconds } = (await req.json()) as {
+    label?: string;
+    position_seconds?: number;
+  };
+
+  const updates: { label?: string; position_seconds?: number } = {};
+  if (label !== undefined) updates.label = label;
+  if (position_seconds !== undefined) {
+    if (
+      typeof position_seconds !== "number" ||
+      !Number.isFinite(position_seconds) ||
+      position_seconds < 0
+    ) {
+      return NextResponse.json(
+        { error: "position_seconds must be a non-negative number" },
+        { status: 400 }
+      );
+    }
+    updates.position_seconds = Math.round(position_seconds);
+  }
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
 
   const { data: cp } = await supabase
     .from("quiz_checkpoints")
@@ -59,6 +81,6 @@ export async function PATCH(
     .single();
   if (!video) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await supabase.from("quiz_checkpoints").update({ label }).eq("id", id);
+  await supabase.from("quiz_checkpoints").update(updates).eq("id", id);
   return NextResponse.json({ ok: true });
 }

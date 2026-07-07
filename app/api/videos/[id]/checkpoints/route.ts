@@ -93,7 +93,7 @@ export async function POST(
     .insert({
       video_id: id,
       position_seconds,
-      label: label ?? `Quiz at ${fmtSec(position_seconds)}`,
+      label: label ?? `שאלות ב-${fmtSec(position_seconds)}`,
       order_index,
     })
     .select("id, position_seconds, label, order_index")

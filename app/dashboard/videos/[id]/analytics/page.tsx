@@ -100,42 +100,42 @@ export default async function AnalyticsPage({ params }: Props) {
           Ort<span className="text-blue-400">Tube</span>
         </Link>
         <span className="text-gray-700">·</span>
-        <span className="text-gray-400 text-sm truncate">
+        <span dir="auto" className="text-gray-400 text-sm truncate">
           {video.title ?? video.youtube_video_id}
         </span>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
         <div className="flex items-center gap-3 mb-6">
           <Link
             href={`/dashboard/videos/${id}`}
             className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
           >
-            ← Back to editor
+            → חזרה לעורך
           </Link>
         </div>
 
-        <h2 className="text-2xl font-bold text-white mb-1">Analytics</h2>
-        <p className="text-gray-500 text-sm mb-8">
+        <h2 className="text-2xl font-bold text-white mb-1">נתוני תלמידים</h2>
+        <p dir="auto" className="text-gray-500 text-sm mb-8">
           {video.title ?? video.youtube_video_id}
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
           <StatCard
-            label="Total sessions"
+            label="סך הצפיות"
             value={totalSessions.toString()}
           />
           <StatCard
-            label="Completion rate"
+            label="אחוז סיום"
             value={totalSessions > 0 ? `${completionRate.toFixed(0)}%` : "—"}
             sub={
               totalSessions > 0
-                ? `${completed.length} of ${totalSessions}`
+                ? `${completed.length} מתוך ${totalSessions}`
                 : undefined
             }
           />
           <StatCard
-            label="Average score"
+            label="ציון ממוצע"
             value={
               completed.length > 0
                 ? `${avgScore.toFixed(1)} / ${avgTotal.toFixed(0)}`
@@ -143,7 +143,7 @@ export default async function AnalyticsPage({ params }: Props) {
             }
             sub={
               completed.length > 0
-                ? `${completed.length} completed`
+                ? `${completed.length} סיימו`
                 : undefined
             }
           />
@@ -151,9 +151,9 @@ export default async function AnalyticsPage({ params }: Props) {
 
         {totalSessions === 0 ? (
           <div className="text-center py-12 border border-dashed border-gray-800 rounded-xl">
-            <p className="text-gray-500 text-sm">No student sessions yet.</p>
+            <p className="text-gray-500 text-sm">עדיין אין צפיות של תלמידים.</p>
             <p className="text-gray-600 text-xs mt-1">
-              Share the link with students to see analytics here.
+              שתפו את הקישור עם התלמידים כדי לראות כאן נתונים.
             </p>
           </div>
         ) : (
@@ -164,17 +164,17 @@ export default async function AnalyticsPage({ params }: Props) {
                 className="bg-[#161920] border border-gray-800 rounded-xl overflow-hidden"
               >
                 <div className="px-5 py-3 border-b border-gray-800 flex items-center gap-3">
-                  <span className="text-white text-sm font-mono shrink-0">
+                  <span className="text-white text-sm font-mono shrink-0" dir="ltr">
                     {fmtSec(cp.position_seconds)}
                   </span>
-                  <span className="text-gray-400 text-sm truncate">
-                    {cp.label ?? `Quiz at ${fmtSec(cp.position_seconds)}`}
+                  <span dir="auto" className="text-gray-400 text-sm truncate">
+                    {cp.label ?? `שאלות ב-${fmtSec(cp.position_seconds)}`}
                   </span>
                 </div>
                 <div className="px-5 py-4 space-y-4">
                   {cp.questions.length === 0 && (
                     <p className="text-gray-600 text-xs">
-                      No questions in this checkpoint.
+                      אין שאלות בנקודת עצירה זו.
                     </p>
                   )}
                   {cp.questions.map((q, i) => (
@@ -217,34 +217,49 @@ interface StatsShape {
 }
 
 function QuestionStats({ q, index }: { q: StatsShape; index: number }) {
+  const tierColor =
+    q.totalAnswers === 0
+      ? "text-gray-500"
+      : q.correctPct >= 70
+      ? "text-green-400"
+      : q.correctPct >= 40
+      ? "text-yellow-400"
+      : "text-red-400";
+  const barColor =
+    q.correctPct >= 70
+      ? "bg-green-500"
+      : q.correctPct >= 40
+      ? "bg-yellow-500"
+      : "bg-red-500";
+
   return (
-    <div className="bg-[#0f1117] rounded-lg p-3 flex items-start justify-between gap-3">
-      <p className="text-sm text-white leading-snug">
-        <span className="text-gray-600 text-xs mr-1">Q{index + 1}.</span>
-        {q.question}
-      </p>
-      <div className="shrink-0 text-right">
-        <p
-          className={`text-sm font-semibold ${
-            q.totalAnswers === 0
-              ? "text-gray-500"
-              : q.correctPct >= 70
-              ? "text-green-400"
-              : q.correctPct >= 40
-              ? "text-yellow-400"
-              : "text-red-400"
-          }`}
-        >
-          {q.totalAnswers > 0
-            ? `${q.correctCount} / ${q.totalAnswers}`
-            : "—"}
+    <div className="bg-[#0f1117] rounded-lg p-3 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <p dir="auto" className="text-sm text-white leading-snug">
+          <span className="text-gray-600 text-xs me-1">{index + 1}.</span>
+          {q.question}
         </p>
-        {q.totalAnswers > 0 && (
-          <p className="text-xs text-gray-500 mt-0.5">
-            {q.correctPct.toFixed(0)}% correct
+        <div className="shrink-0 text-end">
+          <p className={`text-sm font-semibold ${tierColor}`}>
+            {q.totalAnswers > 0
+              ? `${q.correctCount} / ${q.totalAnswers}`
+              : "—"}
           </p>
-        )}
+          {q.totalAnswers > 0 && (
+            <p className="text-xs text-gray-500 mt-0.5">
+              {q.correctPct.toFixed(0)}% ענו נכון
+            </p>
+          )}
+        </div>
       </div>
+      {q.totalAnswers > 0 && (
+        <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
+          <div
+            className={`h-full rounded-full ${barColor}`}
+            style={{ width: `${q.correctPct}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }
