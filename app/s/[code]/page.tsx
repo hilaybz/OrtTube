@@ -55,22 +55,12 @@ export default async function SharePage({ params }: Props) {
           .maybeSingle()
       : { data: null };
 
-  let resume: {
-    sessionId: string;
-    answeredQuestionIds: string[];
-    correctCount: number;
-  } | null = null;
-  if (partialSession) {
-    const { data: prevAnswers } = await supabase
-      .from("student_answers")
-      .select("question_id, is_correct")
-      .eq("session_id", partialSession.id);
-    resume = {
-      sessionId: partialSession.id,
-      answeredQuestionIds: (prevAnswers ?? []).map((a) => a.question_id),
-      correctCount: (prevAnswers ?? []).filter((a) => a.is_correct).length,
-    };
-  }
+  const { data: prevAnswers } = partialSession
+    ? await supabase
+        .from("student_answers")
+        .select("question_id, is_correct")
+        .eq("session_id", partialSession.id)
+    : { data: null };
 
   const { data: transcriptRow } = await supabase
     .from("youtube_transcripts")
@@ -111,6 +101,21 @@ export default async function SharePage({ params }: Props) {
   }));
 
   const totalQuestions = checkpoints.reduce((s, cp) => s + cp.questions.length, 0);
+
+  // Resume state is built against the questions that exist NOW — answers to
+  // questions the teacher has since deleted/regenerated must not carry into
+  // the count or score, or the session could complete early.
+  const currentQuestionIds = new Set((questions ?? []).map((q) => q.id));
+  const validAnswers = (prevAnswers ?? []).filter((a) =>
+    currentQuestionIds.has(a.question_id)
+  );
+  const resume = partialSession
+    ? {
+        sessionId: partialSession.id,
+        answeredQuestionIds: validAnswers.map((a) => a.question_id),
+        correctCount: validAnswers.filter((a) => a.is_correct).length,
+      }
+    : null;
 
   return (
     <div className="min-h-screen bg-[#0f1117] flex flex-col">
