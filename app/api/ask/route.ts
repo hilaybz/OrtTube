@@ -1,5 +1,29 @@
 import { type NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { createClient } from "@/lib/supabase/server";
+
+const MAX_QUESTION_CHARS = 1000;
+
+// Per-user sliding-window rate limit. In-memory, so each serverless
+// instance counts separately — good enough to stop cost abuse at pilot
+// scale; swap for a shared store (e.g. Upstash) if the app grows.
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX_REQUESTS = 10;
+const rateBuckets = new Map<string, number[]>();
+
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const recent = (rateBuckets.get(userId) ?? []).filter(
+    (t) => now - t < RATE_WINDOW_MS
+  );
+  if (recent.length >= RATE_MAX_REQUESTS) {
+    rateBuckets.set(userId, recent);
+    return true;
+  }
+  recent.push(now);
+  rateBuckets.set(userId, recent);
+  return false;
+}
 
 function fmtTimestamp(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -8,6 +32,22 @@ function fmtTimestamp(seconds: number): string {
 }
 
 export async function POST(req: NextRequest) {
+  // Every legitimate caller has a Supabase session — students get one
+  // automatically (anonymous or account). Unauthenticated calls can only
+  // be cost abuse.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  if (isRateLimited(user.id)) {
+    return new Response("Too many requests — try again in a minute", {
+      status: 429,
+    });
+  }
+
   const { question, quizContext, videoSummary, currentTimeSeconds } =
     (await req.json()) as {
       question: string;
@@ -19,7 +59,7 @@ export async function POST(req: NextRequest) {
   if (!question?.trim()) {
     return new Response("Question is required", { status: 400 });
   }
-  if (question.length > 2000) {
+  if (question.length > MAX_QUESTION_CHARS) {
     return new Response("Question too long", { status: 400 });
   }
 

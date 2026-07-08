@@ -86,6 +86,7 @@ export default function AskAI({
           type="text"
           dir="auto"
           value={question}
+          maxLength={1000}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAsk()}
           placeholder="שאלו כל דבר על השיעור…"
