@@ -75,7 +75,7 @@ export default async function StudentDashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#0f1117]">
-      <header className="px-4 sm:px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-[#0f1117]/80 backdrop-blur-md px-4 sm:px-6 py-4 border-b border-gray-800 flex items-center justify-between">
         <Link href="/student" className="text-xl font-bold text-white">
           Ort<span className="text-blue-400">Tube</span>
         </Link>
@@ -100,7 +100,7 @@ export default async function StudentDashboardPage() {
           <h2 dir="auto" className="text-2xl font-bold text-white">
             שלום, {displayName}
           </h2>
-          <div className="flex flex-wrap gap-3 mt-4">
+          <div className="flex flex-wrap gap-3 mt-4 tabular-nums">
             <span className="text-sm px-3 py-1.5 rounded-full bg-[#161920] border border-gray-800 text-gray-300">
               🎬 {videos?.length ?? 0} שיעורים זמינים
             </span>
@@ -132,7 +132,7 @@ export default async function StudentDashboardPage() {
                 <li key={v.id}>
                   <Link
                     href={`/s/${v.share_code}`}
-                    className="flex items-center gap-4 bg-[#161920] border border-gray-800 rounded-xl px-4 sm:px-5 py-4 hover:border-gray-600 transition-colors group"
+                    className="flex items-center gap-4 bg-[#161920] hover:bg-[#1b212c] border border-gray-800 rounded-xl px-4 sm:px-5 py-4 hover:border-gray-600 transition-colors group"
                   >
                     <div className="flex-1 min-w-0">
                       <p dir="auto" className="text-white font-medium truncate">

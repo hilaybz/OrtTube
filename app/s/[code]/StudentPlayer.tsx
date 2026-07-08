@@ -100,6 +100,14 @@ export default function StudentPlayer({
     activeCpRef.current = activeCheckpoint;
   }, [activeCheckpoint]);
 
+  // Drop the player handle on unmount so stale timers/callbacks from a
+  // back/forward navigation can't call into a destroyed YouTube widget.
+  useEffect(() => {
+    return () => {
+      playerRef.current = null;
+    };
+  }, []);
+
   // Start the session: anonymous sign-in + insert a student_sessions row.
   // sessionInitRef guards against React strict-mode double-invocation.
   // When the student already completed this video, no new session is
@@ -191,7 +199,15 @@ export default function StudentPlayer({
       const player = playerRef.current;
       if (!player || activeCheckpoint) return;
 
-      const currentTime: number = player.getCurrentTime();
+      // The widget can be mid-teardown during back/forward navigation —
+      // treat any player API failure as "no reading this tick".
+      let currentTime: number;
+      try {
+        currentTime = player.getCurrentTime();
+      } catch {
+        return;
+      }
+      if (typeof currentTime !== "number" || Number.isNaN(currentTime)) return;
 
       for (const cp of effectiveCheckpoints) {
         if (cp.questions.length === 0) continue; // nothing to ask
@@ -201,7 +217,11 @@ export default function StudentPlayer({
         ) {
           triggeredRef.current.add(cp.id);
           setPassedCpIds(new Set(triggeredRef.current));
-          player.pauseVideo();
+          try {
+            player.pauseVideo();
+          } catch {
+            // player already destroyed — the quiz modal still opens
+          }
           setActiveCheckpoint(cp);
           break;
         }
@@ -323,10 +343,19 @@ export default function StudentPlayer({
 
   function handleQuizComplete() {
     setActiveCheckpoint(null);
-    playerRef.current?.playVideo();
+    try {
+      playerRef.current?.playVideo();
+    } catch {
+      // player torn down mid-navigation — nothing to resume
+    }
   }
 
-  const videoTimestamp = Math.round(playerRef.current?.getCurrentTime?.() ?? 0);
+  let videoTimestamp = 0;
+  try {
+    videoTimestamp = Math.round(playerRef.current?.getCurrentTime?.() ?? 0);
+  } catch {
+    // player not ready / already destroyed
+  }
 
   return (
     <div className="w-full space-y-4">

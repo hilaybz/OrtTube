@@ -57,7 +57,7 @@ export default async function VideoDetailPage({ params }: Props) {
 
   return (
     <div className="min-h-screen bg-[#0f1117]">
-      <header className="px-6 py-4 border-b border-gray-800 flex items-center gap-4">
+      <header className="sticky top-0 z-40 bg-[#0f1117]/80 backdrop-blur-md px-4 sm:px-6 py-4 border-b border-gray-800 flex items-center gap-4">
         <Link href="/dashboard" className="text-xl font-bold text-white shrink-0">
           Ort<span className="text-blue-400">Tube</span>
         </Link>

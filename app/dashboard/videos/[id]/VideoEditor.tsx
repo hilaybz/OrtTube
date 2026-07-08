@@ -48,10 +48,17 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
 
   useEffect(() => {
     const tick = setInterval(() => {
-      const t = playerRef.current?.getCurrentTime?.();
-      if (typeof t === "number" && Number.isFinite(t)) setCurrentTime(t);
+      try {
+        const t = playerRef.current?.getCurrentTime?.();
+        if (typeof t === "number" && Number.isFinite(t)) setCurrentTime(t);
+      } catch {
+        // player mid-teardown during navigation — skip this tick
+      }
     }, PLAYHEAD_POLL_MS);
-    return () => clearInterval(tick);
+    return () => {
+      clearInterval(tick);
+      playerRef.current = null;
+    };
   }, []);
 
   async function handleDeleteVideo() {
@@ -118,7 +125,11 @@ export default function VideoEditor({ video, initialCheckpoints }: Props) {
   }
 
   function seekTo(seconds: number) {
-    playerRef.current?.seekTo(seconds, true);
+    try {
+      playerRef.current?.seekTo(seconds, true);
+    } catch {
+      // player mid-teardown — position state still updates
+    }
     setCurrentTime(seconds);
   }
 

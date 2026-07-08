@@ -74,7 +74,7 @@ export default async function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#0f1117]">
       {/* Nav */}
-      <header className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-[#0f1117]/80 backdrop-blur-md px-4 sm:px-6 py-4 border-b border-gray-800 flex items-center justify-between">
         <Link href="/dashboard" className="text-xl font-bold text-white">
           Ort<span className="text-blue-400">Tube</span>
         </Link>
@@ -91,7 +91,7 @@ export default async function DashboardPage() {
           <h2 className="text-2xl font-bold text-white">הסרטונים שלי</h2>
           <Link
             href="/dashboard/videos/new"
-            className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
+            className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-500/30"
           >
             + הוספת סרטון
           </Link>
@@ -117,7 +117,7 @@ export default async function DashboardPage() {
               <li key={v.id} className="group flex items-center gap-2">
                 <Link
                   href={`/dashboard/videos/${v.id}`}
-                  className="flex-1 min-w-0 flex items-center gap-4 bg-[#161920] border border-gray-800 rounded-xl px-4 sm:px-5 py-4 hover:border-gray-600 transition-colors group"
+                  className="flex-1 min-w-0 flex items-center gap-4 bg-[#161920] hover:bg-[#1b212c] border border-gray-800 rounded-xl px-4 sm:px-5 py-4 hover:border-gray-600 transition-colors group"
                 >
                   <div className="flex-1 min-w-0">
                     <p dir="auto" className="text-white font-medium truncate">

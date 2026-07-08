@@ -71,7 +71,7 @@ export default function NewVideoPage() {
 
   return (
     <div className="min-h-screen bg-[#0f1117]">
-      <header className="px-6 py-4 border-b border-gray-800">
+      <header className="sticky top-0 z-40 bg-[#0f1117]/80 backdrop-blur-md px-4 sm:px-6 py-4 border-b border-gray-800">
         <Link href="/dashboard" className="text-xl font-bold text-white">
           Ort<span className="text-blue-400">Tube</span>
         </Link>

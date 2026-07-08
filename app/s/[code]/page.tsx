@@ -114,7 +114,7 @@ export default async function SharePage({ params }: Props) {
 
   return (
     <div className="min-h-screen bg-[#0f1117] flex flex-col">
-      <header className="px-4 sm:px-6 py-4 flex items-center justify-between border-b border-gray-800">
+      <header className="sticky top-0 z-40 bg-[#0f1117]/80 backdrop-blur-md px-4 sm:px-6 py-4 flex items-center justify-between border-b border-gray-800">
         <Link href="/" className="text-xl font-bold text-white">
           Ort<span className="text-blue-400">Tube</span>
         </Link>
