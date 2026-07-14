@@ -43,7 +43,7 @@ export default async function Home() {
             href="/sign-up"
             className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-5 py-3 font-medium text-[var(--heading)] transition-colors hover:bg-[var(--glass-bg-hover)]"
           >
-            תלמיד/ה חדש/ה? הצטרפות עם קוד הזמנה
+            תלמיד/ה שהמורה הוסיף/ה לכיתה? יצירת חשבון
           </Link>
         </div>
       </GlassCard>

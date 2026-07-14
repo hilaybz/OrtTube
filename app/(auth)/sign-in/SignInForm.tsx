@@ -52,9 +52,9 @@ export function SignInForm() {
         {busy ? <Spinner size={18} /> : "התחברות"}
       </Button>
       <p className="text-center text-sm text-[var(--body)]">
-        תלמיד/ה חדש/ה?{" "}
+        תלמיד/ה שהמורה הוסיף/ה לכיתה?{" "}
         <Link href="/sign-up" className="font-medium text-[var(--fg-brand)] underline">
-          הצטרפות עם קוד הזמנה
+          יצירת חשבון
         </Link>
       </p>
     </form>
