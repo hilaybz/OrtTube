@@ -47,3 +47,6 @@ next-env.d.ts
 chrome-error.txt
 chrome-out.txt
 .claude/worktrees/
+
+# brainstorming visual companion
+.superpowers/
