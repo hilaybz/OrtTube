@@ -17,7 +17,7 @@ export function StudentFeed({ classes }: { classes: FeedClass[] }) {
     return (
       <GlassCard>
         <p className="text-[var(--body)]">
-          עדיין אין מבחנים מוקצים. כשהמורה יקצה מבחן לכיתה שלך, הוא יופיע כאן.
+          עדיין אין חידונים מוקצים. כשהמורה יקצה חידון לכיתה שלך, הוא יופיע כאן.
         </p>
       </GlassCard>
     );
@@ -37,7 +37,7 @@ export function StudentFeed({ classes }: { classes: FeedClass[] }) {
       )}
       {current.quizzes.length === 0 ? (
         <GlassCard>
-          <p className="text-[var(--body)]">אין מבחנים מוקצים בכיתה זו עדיין.</p>
+          <p className="text-[var(--body)]">אין חידונים מוקצים בכיתה זו עדיין.</p>
         </GlassCard>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">

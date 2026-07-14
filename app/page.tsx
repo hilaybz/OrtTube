@@ -22,7 +22,7 @@ export default async function Home() {
 
       <div className="max-w-2xl">
         <h1 className="mb-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-          כל סרטון יוטיוב הופך למבחן אינטראקטיבי
+          כל סרטון יוטיוב הופך לחידון אינטראקטיבי
         </h1>
         <p className="text-lg leading-relaxed text-[var(--body)]">
           מורים בונים (או מייצרים ב-AI) שאלות המעוגנות לרגעים בסרטון; תלמידים צופים,

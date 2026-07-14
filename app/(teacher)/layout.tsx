@@ -6,7 +6,7 @@ import type { NavItem } from "@/components/shell/Sidebar";
 
 const NAV: ReadonlyArray<NavItem> = [
   { href: "/dashboard", label: "סקירה", icon: "grid" },
-  { href: "/dashboard/quizzes", label: "מאגר המבחנים", icon: "book" },
+  { href: "/dashboard/quizzes", label: "החידונים שלי", icon: "book" },
   { href: "/dashboard/classes", label: "כיתות", icon: "class" },
   { href: "/dashboard/analytics", label: "אנליטיקה", icon: "chart" },
   { href: "/dashboard/settings", label: "הגדרות", icon: "settings" },

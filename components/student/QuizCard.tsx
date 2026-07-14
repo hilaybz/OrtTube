@@ -68,7 +68,7 @@ export function QuizCard({
         </div>
         <div className="flex flex-1 flex-col gap-2 px-4 pb-4">
           <h3 className="font-semibold text-[var(--heading)]">
-            {quiz.title ?? quiz.video_title ?? "מבחן"}
+            {quiz.title ?? quiz.video_title ?? "חידון"}
           </h3>
           <p className="text-xs text-[var(--body-subtle)]">{attemptsNote}</p>
           <span className="mt-auto inline-flex items-center gap-1.5 pt-1 text-sm font-medium text-[var(--fg-brand)]">

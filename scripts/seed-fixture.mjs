@@ -67,7 +67,7 @@ async function main() {
 
   console.log("• creating quiz on video…");
   const created = await call("/api/quizzes", {
-    body: { youtubeUrl: YOUTUBE_URL, baseLanguage: "he", title: "מבחן בדיקה" },
+    body: { youtubeUrl: YOUTUBE_URL, baseLanguage: "he", title: "חידון בדיקה" },
   });
   const quizId = created.quiz.quiz_id;
 

@@ -35,7 +35,7 @@ export default async function StudentFeedPage() {
   return (
     <div className="mx-auto max-w-5xl py-2">
       <h1 className="mb-1 text-3xl font-bold tracking-tight">הפיד שלי</h1>
-      <p className="mb-6 text-[var(--body)]">המבחנים שהוקצו לכיתות שלך.</p>
+      <p className="mb-6 text-[var(--body)]">החידונים שהוקצו לכיתות שלך.</p>
       <StudentFeed classes={classes} />
     </div>
   );
