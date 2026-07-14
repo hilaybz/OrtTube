@@ -245,3 +245,54 @@ export async function getAttemptReview(
   );
   return data as unknown as AttemptReview;
 }
+
+// ── Student attempt-state read (feed status + player deep-load + review entry) ──
+
+/**
+ * Everything the student UI needs for one (class, quiz) that the other reads
+ * don't expose: the player's delivery context (video/tutor_mode/max_attempts),
+ * the feed's attempt state, the resume target, and — crucially — the newest
+ * completed attempt id so the reveal-gated review survives a revisit/refresh
+ * (`start_or_resume_attempt` can't supply it once attempts are exhausted).
+ * Never carries per-question correctness; reveal stays enforced by
+ * `getAttemptReview`.
+ */
+export interface StudentAttemptState {
+  class_id: string;
+  quiz_id: string;
+  youtube_video_id: string;
+  video_title: string | null;
+  duration_seconds: number | null;
+  base_language: Language;
+  tutor_mode: "off" | "hints" | "full";
+  /** null = unlimited. */
+  max_attempts: number | null;
+  attempt_count: number;
+  completed_count: number;
+  /** Remaining completed-attempt allowance; null = unlimited. */
+  attempts_left: number | null;
+  /** true → the newest attempt is incomplete (resumable). */
+  in_progress: boolean;
+  resume_attempt_id: string | null;
+  last_completed_attempt_id: string | null;
+  last_num_correct: number | null;
+  last_num_questions: number | null;
+}
+
+/**
+ * Fetch the signed-in student's attempt state for a (class, quiz). Verifies
+ * membership + assignment server-side; raises not_member / not_assigned.
+ */
+export async function listMyAttemptsForQuiz(
+  client: SupabaseClient,
+  classId: string,
+  quizId: string
+): Promise<StudentAttemptState> {
+  const data = unwrap(
+    await client.rpc("list_my_attempts_for_quiz", {
+      p_class_id: classId,
+      p_quiz_id: quizId,
+    })
+  );
+  return data as unknown as StudentAttemptState;
+}

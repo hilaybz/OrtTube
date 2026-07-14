@@ -841,6 +841,10 @@ export type Database = {
       list_assigned_for_student: { Args: never; Returns: Json }
       list_class_quizzes: { Args: { p_class_id: string }; Returns: Json }
       list_class_roster: { Args: { p_class_id: string }; Returns: Json }
+      list_my_attempts_for_quiz: {
+        Args: { p_class_id: string; p_quiz_id: string }
+        Returns: Json
+      }
       list_my_quizzes: {
         Args: never
         Returns: {
