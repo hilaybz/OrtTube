@@ -157,6 +157,20 @@ h4 {
   background: rgba(14, 166, 109, 0.25);
 }
 
+@keyframes quiz-pop {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.quiz-pop {
+  animation: quiz-pop 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -33,6 +33,22 @@ function mmss(total: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/**
+ * Pure gate decision (Edpuzzle-style): a student may watch/rewind freely up to
+ * the current unanswered checkpoint, but may not advance past it. Returns
+ * whether the checkpoint is reached (show the question) and, if the playhead ran
+ * past it, the position to snap back to. Exported for unit testing.
+ */
+export function gateDecision(
+  playhead: number,
+  gatePos: number | null
+): { atGate: boolean; clampTo: number | null } {
+  if (gatePos == null) return { atGate: false, clampTo: null };
+  const clampTo = playhead > gatePos + 0.4 ? gatePos : null;
+  const effective = clampTo != null ? gatePos : playhead;
+  return { atGate: effective >= gatePos - 0.05, clampTo };
+}
+
 type Phase = "intro" | "playing" | "done";
 
 export function QuizPlayer({
@@ -55,7 +71,6 @@ export function QuizPlayer({
   const [questions, setQuestions] = useState<StudentQuestion[]>([]);
   const [answered, setAnswered] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string[]>([]);
-  const [revealed, setRevealed] = useState(false);
   const [playhead, setPlayhead] = useState(0);
   const [summary, setSummary] = useState<AttemptSummary | null>(null);
 
@@ -63,28 +78,51 @@ export function QuizPlayer({
 
   const current = questions.find((q) => !answered.has(q.id)) ?? null;
   const allAnswered = questions.length > 0 && current === null;
+  const gatePos = current?.position_seconds ?? null;
+  const { atGate } = gateDecision(playhead, gatePos);
 
-  // Reset per-question UI when the active checkpoint changes.
+  // Reset the pending selection whenever the active checkpoint changes.
   useEffect(() => {
     setSelected([]);
-    setRevealed(false);
   }, [current?.id]);
 
-  // Poll the playhead; auto-pause + reveal when we reach the current checkpoint.
+  // Poll the playhead: clamp any skip past the current checkpoint, and pause on
+  // arrival so the question can gate progression.
   useEffect(() => {
     if (phase !== "playing") return;
     const id = setInterval(() => {
       const p = playerRef.current;
       if (!p) return;
-      const t = p.getCurrentTime?.() ?? 0;
-      setPlayhead(t);
-      if (current && !revealed && t >= current.position_seconds) {
-        p.pauseVideo();
-        setRevealed(true);
+      let t: number;
+      try {
+        t = p.getCurrentTime?.() ?? 0;
+      } catch {
+        return;
       }
-    }, 500);
+      if (typeof t !== "number" || Number.isNaN(t)) return;
+      const { atGate: reached, clampTo } = gateDecision(t, gatePos);
+      if (clampTo != null) {
+        try {
+          p.seekTo(clampTo, true);
+        } catch {
+          /* player mid-teardown */
+        }
+        t = clampTo;
+      }
+      if (reached) {
+        try {
+          p.pauseVideo();
+        } catch {
+          /* ignore */
+        }
+      }
+      // Ignore spurious 0 readings (player not yet reporting) so an optimistic
+      // jump/seek isn't yanked back to the start.
+      const next = t;
+      setPlayhead((prev) => (next === 0 && prev > 0 ? prev : next));
+    }, 400);
     return () => clearInterval(id);
-  }, [phase, current, revealed]);
+  }, [phase, gatePos]);
 
   const start = useCallback(async () => {
     setBusy(true);
@@ -98,11 +136,8 @@ export function QuizPlayer({
         `/api/attempts/quiz?classId=${classId}&quizId=${quizId}`,
         { method: "GET" }
       );
-      const sorted = [...quiz.questions].sort(
-        (a, b) => a.order_index - b.order_index
-      );
       setAttemptId(attempt.attempt_id);
-      setQuestions(sorted);
+      setQuestions([...quiz.questions].sort((a, b) => a.order_index - b.order_index));
       setAnswered(new Set(attempt.answered_question_ids));
       setPhase("playing");
     } catch (e) {
@@ -112,14 +147,27 @@ export function QuizPlayer({
     }
   }, [classId, quizId]);
 
+  /** Jump forward to the pending checkpoint (allowed — it's the gate, not past it). */
+  function jumpToGate() {
+    if (gatePos == null) return;
+    try {
+      playerRef.current?.seekTo(gatePos, true);
+      playerRef.current?.pauseVideo();
+    } catch {
+      /* ignore */
+    }
+    setPlayhead(gatePos); // optimistic — reveals the question immediately
+  }
+
   function toggleOption(optionId: string) {
     if (!current) return;
-    setSelected((prev) => {
-      if (current.kind === "single") return [optionId];
-      return prev.includes(optionId)
-        ? prev.filter((o) => o !== optionId)
-        : [...prev, optionId];
-    });
+    setSelected((prev) =>
+      current.kind === "single"
+        ? [optionId]
+        : prev.includes(optionId)
+          ? prev.filter((o) => o !== optionId)
+          : [...prev, optionId]
+    );
   }
 
   const submit = useCallback(async () => {
@@ -132,8 +180,12 @@ export function QuizPlayer({
         body: JSON.stringify({ questionId: current.id, optionIds: selected }),
       });
       setAnswered((prev) => new Set(prev).add(current.id));
-      // Resume playback toward the next checkpoint.
-      playerRef.current?.playVideo();
+      // The next gate is further ahead → the overlay hides; resume watching.
+      try {
+        playerRef.current?.playVideo();
+      } catch {
+        /* ignore */
+      }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "לא ניתן לשמור את התשובה.");
     } finally {
@@ -159,15 +211,13 @@ export function QuizPlayer({
     }
   }, [attemptId]);
 
-  // ── INTRO ───────────────────────────────────────────────────────────────
+  // ── INTRO ────────────────────────────────────────────────────────────────
   if (phase === "intro") {
     const noAttemptsLeft =
-      state.attempts_left != null &&
-      state.attempts_left <= 0 &&
-      !state.in_progress;
+      state.attempts_left != null && state.attempts_left <= 0 && !state.in_progress;
     return (
       <div className="mx-auto max-w-2xl py-6">
-        <GlassCard className="p-0 overflow-hidden">
+        <GlassCard className="overflow-hidden p-0">
           <div className="aspect-video bg-black">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -199,7 +249,7 @@ export function QuizPlayer({
     );
   }
 
-  // ── DONE ────────────────────────────────────────────────────────────────
+  // ── DONE ─────────────────────────────────────────────────────────────────
   if (phase === "done" && summary) {
     return (
       <div className="mx-auto max-w-lg py-10">
@@ -223,137 +273,125 @@ export function QuizPlayer({
     );
   }
 
-  // ── PLAYING ─────────────────────────────────────────────────────────────
+  // ── PLAYING ──────────────────────────────────────────────────────────────
   return (
-    <div className="mx-auto grid max-w-6xl gap-5 py-4 lg:grid-cols-[1.5fr_1fr]">
-      <div className="flex flex-col gap-3">
-        <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--glass-border)] bg-black">
-          <div className="aspect-video">
-            <YouTube
-              videoId={state.youtube_video_id}
-              className="h-full w-full"
-              iframeClassName="h-full w-full"
-              opts={{ width: "100%", height: "100%", playerVars: { rel: 0, modestbranding: 1 } }}
-              onReady={(e: { target: YTPlayer }) => {
-                playerRef.current = e.target;
-              }}
-            />
-          </div>
-        </div>
-        <CheckpointBar
-          duration={state.duration_seconds ?? 0}
-          questions={questions}
-          answered={answered}
-          playhead={playhead}
+    <div className="mx-auto flex max-w-4xl flex-col gap-3 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-[var(--body)]">
+          {answered.size} / {questions.length} שאלות
+        </span>
+        <AskAI
+          classId={classId}
+          quizId={quizId}
+          tutorMode={state.tutor_mode}
+          context={{
+            positionSeconds: playhead,
+            attemptId,
+            activeQuestionId: current?.id ?? null,
+          }}
         />
       </div>
 
-      <aside className="flex flex-col gap-3">
-        <div className="flex justify-end">
-          <AskAI
-            classId={classId}
-            quizId={quizId}
-            tutorMode={state.tutor_mode}
-            context={{
-              positionSeconds: playhead,
-              attemptId,
-              activeQuestionId: current?.id ?? null,
+      {error && <Alert variant="danger">{error}</Alert>}
+
+      {/* Video stage with the question overlaid on the paused frame. */}
+      <div className="relative overflow-hidden rounded-[var(--radius)] border border-[var(--glass-border)] bg-black">
+        <div className="aspect-video">
+          <YouTube
+            videoId={state.youtube_video_id}
+            className="h-full w-full"
+            iframeClassName="h-full w-full"
+            opts={{ width: "100%", height: "100%", playerVars: { rel: 0, modestbranding: 1 } }}
+            onReady={(e: { target: YTPlayer }) => {
+              playerRef.current = e.target;
             }}
           />
         </div>
-        {error && <Alert variant="danger" className="mb-3">{error}</Alert>}
-        {current ? (
-          <GlassCard className="flex flex-col gap-4">
-            <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--fg-brand)]">
-              נקודת עצירה · {mmss(current.position_seconds)}
-              {current.kind === "multi" && (
-                <Badge variant="gray" pill>
-                  בחירה מרובה
-                </Badge>
-              )}
-            </span>
 
-            {revealed ? (
-              <>
-                <h2 className="text-lg font-semibold leading-snug">{current.prompt}</h2>
-                <div className="flex flex-col gap-2.5">
-                  {current.options.map((o, i) => {
-                    const active = selected.includes(o.id);
-                    return (
-                      <button
-                        key={o.id}
-                        type="button"
-                        onClick={() => toggleOption(o.id)}
-                        aria-pressed={active}
+        {current && atGate && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]">
+            <div className="quiz-pop glass w-full max-w-lg p-5">
+              <span className="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--fg-brand)]">
+                נקודת עצירה · {mmss(current.position_seconds)}
+                {current.kind === "multi" && (
+                  <Badge variant="gray" pill>
+                    בחירה מרובה
+                  </Badge>
+                )}
+              </span>
+              <h2 className="mb-4 text-lg font-semibold leading-snug">{current.prompt}</h2>
+              <div className="mb-4 flex flex-col gap-2.5">
+                {current.options.map((o, i) => {
+                  const active = selected.includes(o.id);
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => toggleOption(o.id)}
+                      aria-pressed={active}
+                      className={cn(
+                        "flex items-center gap-3 rounded-[var(--radius-d)] border p-3.5 text-start text-sm transition-colors",
+                        active
+                          ? "border-[var(--brand)] bg-[var(--brand-softer)] text-[var(--fg-brand-strong)]"
+                          : "border-[var(--glass-border)] bg-white/50 hover:bg-white/70"
+                      )}
+                    >
+                      <span
                         className={cn(
-                          "flex items-center gap-3 rounded-[var(--radius-d)] border p-3.5 text-start text-sm transition-colors",
+                          "grid h-6 w-6 flex-none place-items-center rounded-md border text-xs font-bold",
                           active
-                            ? "border-[var(--brand)] bg-[var(--brand-softer)] text-[var(--fg-brand-strong)]"
-                            : "border-[var(--glass-border)] bg-white/40 hover:bg-white/60"
+                            ? "border-[var(--brand)] bg-[var(--brand)] text-white"
+                            : "border-[var(--glass-border)] text-[var(--body)]"
                         )}
                       >
-                        <span
-                          className={cn(
-                            "grid h-6 w-6 flex-none place-items-center rounded-md border text-xs font-bold",
-                            active
-                              ? "border-[var(--brand)] bg-[var(--brand)] text-white"
-                              : "border-[var(--glass-border)] text-[var(--body)]"
-                          )}
-                        >
-                          {active ? "✓" : "אבגדהוזחט"[i] ?? i + 1}
-                        </span>
-                        <span>{o.text}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <Button onClick={submit} disabled={busy || selected.length === 0}>
-                  {busy ? <Spinner size={18} /> : "שליחת תשובה"}
-                </Button>
-              </>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <h2 className="text-lg font-semibold leading-snug">
-                  צפו בסרטון עד לנקודת העצירה ({mmss(current.position_seconds)}) כדי לענות.
-                </h2>
-                <div className="flex gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      playerRef.current?.playVideo();
-                    }}
-                  >
-                    <Icon name="play" size={16} /> המשך צפייה
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      playerRef.current?.pauseVideo();
-                      setRevealed(true);
-                    }}
-                  >
-                    כבר צפיתי — הצגת השאלה
-                  </Button>
-                </div>
+                        {active ? "✓" : ("אבגדה"[i] ?? String(i + 1))}
+                      </span>
+                      <span>{o.text}</span>
+                    </button>
+                  );
+                })}
               </div>
-            )}
-          </GlassCard>
-        ) : (
-          <GlassCard className="flex flex-col items-center gap-4 text-center">
-            <h2 className="text-lg font-semibold">ענית על כל השאלות 🎉</h2>
-            <p className="text-sm text-[var(--body)]">
-              אפשר לסיים את החידון ולראות את הסיכום.
-            </p>
-            <Button size="lg" onClick={finish} disabled={busy}>
-              {busy ? <Spinner size={18} /> : "סיום החידון"}
-            </Button>
-          </GlassCard>
+              <Button onClick={submit} disabled={busy || selected.length === 0} className="w-full">
+                {busy ? <Spinner size={18} /> : "שליחת תשובה"}
+              </Button>
+            </div>
+          </div>
         )}
-        <p className="mt-3 text-center text-xs text-[var(--body-subtle)]">
-          {answered.size} מתוך {questions.length} שאלות נענו
-          {allAnswered ? "" : ` · ${mmss(playhead)}`}
-        </p>
-      </aside>
+      </div>
+
+      {/* Checkpoint scrubber */}
+      <CheckpointBar
+        duration={state.duration_seconds ?? 0}
+        questions={questions}
+        answered={answered}
+        playhead={playhead}
+      />
+
+      {/* Controls / gate hint */}
+      {current && !atGate && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-[var(--body)]">
+            נקודת העצירה הבאה בדקה {mmss(current.position_seconds)} — צפו עד לשם כדי לענות.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => playerRef.current?.playVideo()}>
+              <Icon name="play" size={16} /> המשך צפייה
+            </Button>
+            <Button variant="ghost" onClick={jumpToGate}>
+              מעבר לנקודת העצירה
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {allAnswered && (
+        <GlassCard className="flex flex-col items-center gap-3 text-center">
+          <h2 className="text-lg font-semibold">ענית על כל השאלות 🎉</h2>
+          <Button size="lg" onClick={finish} disabled={busy}>
+            {busy ? <Spinner size={18} /> : "סיום החידון"}
+          </Button>
+        </GlassCard>
+      )}
     </div>
   );
 }
@@ -370,6 +408,7 @@ function CheckpointBar({
   playhead: number;
 }) {
   const pct = duration > 0 ? Math.min(100, (playhead / duration) * 100) : 0;
+  const currentId = questions.find((q) => !answered.has(q.id))?.id;
   return (
     <div className="relative h-3 rounded-full bg-white/50">
       <div
@@ -380,13 +419,18 @@ function CheckpointBar({
         questions.map((q) => {
           const left = Math.min(100, (q.position_seconds / duration) * 100);
           const done = answered.has(q.id);
+          const isCurrent = q.id === currentId;
           return (
             <span
               key={q.id}
-              title={`${q.position_seconds}s`}
+              title={mmss(q.position_seconds)}
               className={cn(
                 "absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border-2 border-white",
-                done ? "bg-[var(--brand)]" : "bg-[var(--gray)]"
+                done
+                  ? "bg-[var(--brand)]"
+                  : isCurrent
+                    ? "bg-[var(--fg-brand)] ring-2 ring-[var(--brand-soft)]"
+                    : "bg-[var(--gray)]"
               )}
               style={{ insetInlineStart: `calc(${left}% - 7px)` }}
             />
