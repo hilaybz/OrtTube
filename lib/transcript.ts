@@ -1,20 +1,53 @@
 import { YoutubeTranscript } from "youtube-transcript";
-import Anthropic from "@anthropic-ai/sdk";
-import { QUIZ_CHECKPOINTS, type QuizCheckpoint, type QuizQuestion } from "./demoQuiz";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface TranscriptSegment {
   text: string;
-  offset: number;
-  duration: number;
+  offset: number; // milliseconds from the start of the video
+  duration: number; // milliseconds
 }
 
-interface CaptionTrack {
+export interface CaptionTrack {
   baseUrl: string;
   languageCode: string;
+  /** YouTube tags auto-generated (ASR) tracks with kind === "asr". */
   kind?: string;
 }
 
-function extractInlineJson(html: string, varName: string): unknown {
+/** Result of a fresh (non-cached) transcript fetch. */
+export type FetchOutcome =
+  | {
+      status: "ok";
+      segments: TranscriptSegment[];
+      language: string | null;
+      /** Provenance of the winning track. Manual (human) captions never equal "asr". */
+      kind: "manual" | "asr" | "package";
+    }
+  /** The watch page loaded and confirmed the video has no caption tracks. */
+  | { status: "unavailable" }
+  /** A transient/ambiguous failure (network, parse, empty) — must NOT downgrade status. */
+  | { status: "error" };
+
+// Caption-language preference within a track group. The app speaks he/ar/en;
+// "iw" is the legacy ISO code for Hebrew that older videos still use.
+const LANG_PREFERENCE = ["he", "iw", "ar", "en"];
+
+const YOUTUBE_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept-Language": "en-US,en;q=0.9",
+};
+
+// ─── Inline-JSON extraction (shared with lib/youtube.ts metadata scrape) ─────
+
+/**
+ * Extracts a top-level JSON object assigned to `varName` from a YouTube watch
+ * page (`var ytInitialPlayerResponse = {…}`), balancing braces while ignoring
+ * braces inside string literals. Exported so lib/youtube.ts can reuse it to read
+ * `videoDetails.lengthSeconds`.
+ */
+export function extractInlineJson(html: string, varName: string): unknown {
   const tokens = [`var ${varName} = `, `${varName} = `];
   for (const token of tokens) {
     const startIndex = html.indexOf(token);
@@ -54,25 +87,63 @@ function extractInlineJson(html: string, varName: string): unknown {
   return null;
 }
 
-async function fetchCaptionTracks(videoId: string): Promise<CaptionTrack[] | null> {
+// ─── Caption track discovery ─────────────────────────────────────────────────
+
+interface CaptionScrape {
+  /** Whether the watch page loaded and a player response was parsed. */
+  pageLoaded: boolean;
+  tracks: CaptionTrack[];
+}
+
+async function fetchCaptionTracks(videoId: string): Promise<CaptionScrape> {
   try {
     const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
+      headers: YOUTUBE_HEADERS,
     });
+    if (!res.ok) return { pageLoaded: false, tracks: [] };
     const html = await res.text();
     const data = extractInlineJson(html, "ytInitialPlayerResponse") as
       | { captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } } }
       | null;
-    const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-    return Array.isArray(tracks) && tracks.length > 0 ? tracks : null;
+    // Player response absent → the page shape changed or we were blocked: treat
+    // as "not loaded" so callers keep the result transient (no status downgrade).
+    if (!data) return { pageLoaded: false, tracks: [] };
+    const tracks = data.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    return { pageLoaded: true, tracks: Array.isArray(tracks) ? tracks : [] };
   } catch {
-    return null;
+    return { pageLoaded: false, tracks: [] };
   }
 }
+
+function langRank(code: string): number {
+  const base = code.toLowerCase().split("-")[0];
+  const i = LANG_PREFERENCE.indexOf(base);
+  return i === -1 ? LANG_PREFERENCE.length : i;
+}
+
+/** Normalize caption language codes to the app's supported set (iw → he). */
+export function normalizeLang(code: string | null | undefined): string | null {
+  if (!code) return null;
+  const base = code.toLowerCase().split("-")[0];
+  return base === "iw" ? "he" : base;
+}
+
+/**
+ * Selection order: prefer a **manual** (human) track in any language over any
+ * ASR track; within a group prefer the app's languages (he/ar/en). Returns null
+ * when the track list is empty.
+ */
+export function pickCaptionTrack(tracks: CaptionTrack[]): CaptionTrack | null {
+  const manual = tracks.filter((t) => t.kind !== "asr");
+  const asr = tracks.filter((t) => t.kind === "asr");
+  const byPreference = (a: CaptionTrack, b: CaptionTrack) =>
+    langRank(a.languageCode) - langRank(b.languageCode);
+  if (manual.length) return [...manual].sort(byPreference)[0];
+  if (asr.length) return [...asr].sort(byPreference)[0];
+  return null;
+}
+
+// ─── Transcript parsing ──────────────────────────────────────────────────────
 
 function decodeHtmlEntities(s: string): string {
   return s
@@ -126,7 +197,7 @@ function parseClassic(xml: string): TranscriptSegment[] {
 
 async function fetchAndParseTranscript(url: string): Promise<TranscriptSegment[] | null> {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: YOUTUBE_HEADERS });
     if (!res.ok) return null;
     const xml = await res.text();
 
@@ -142,341 +213,116 @@ async function fetchAndParseTranscript(url: string): Promise<TranscriptSegment[]
   }
 }
 
-async function tryPackage(
-  videoId: string,
-  lang?: string
-): Promise<TranscriptSegment[] | null> {
+async function tryPackage(videoId: string, lang?: string): Promise<TranscriptSegment[] | null> {
   try {
-    const raw = await YoutubeTranscript.fetchTranscript(
-      videoId,
-      lang ? { lang } : undefined
-    );
+    const raw = await YoutubeTranscript.fetchTranscript(videoId, lang ? { lang } : undefined);
     if (!raw || raw.length === 0) return null;
-    return raw.map((s) => ({
-      text: s.text,
-      offset: s.offset,
-      duration: s.duration,
-    }));
+    return raw.map((s) => ({ text: s.text, offset: s.offset, duration: s.duration }));
   } catch {
     return null;
   }
 }
 
-export async function getTranscript(videoId: string): Promise<TranscriptSegment[] | null> {
-  for (const lang of ["iw", "he"]) {
-    const result = await tryPackage(videoId, lang);
-    if (result) {
-      console.log(`[transcript] ${videoId}: native ${lang} (${result.length} segments)`);
-      return result;
+async function fetchViaPackage(
+  videoId: string
+): Promise<{ segments: TranscriptSegment[]; language: string | null } | null> {
+  for (const lang of LANG_PREFERENCE) {
+    const segments = await tryPackage(videoId, lang);
+    if (segments && segments.length) {
+      return { segments, language: normalizeLang(lang) };
     }
   }
-
-  const tracks = await fetchCaptionTracks(videoId);
-  const english = tracks?.find((t) => t.languageCode === "en");
-  if (english) {
-    const translated = await fetchAndParseTranscript(`${english.baseUrl}&tlang=he`);
-    if (translated) {
-      console.log(`[transcript] ${videoId}: translated en→he (${translated.length} segments)`);
-      return translated;
-    }
-  }
-
-  const englishOriginal = await tryPackage(videoId, "en");
-  if (englishOriginal) {
-    console.log(`[transcript] ${videoId}: english fallback (${englishOriginal.length} segments)`);
-    return englishOriginal;
-  }
-
   const any = await tryPackage(videoId);
-  if (any) {
-    console.log(`[transcript] ${videoId}: default fallback (${any.length} segments)`);
-    return any;
-  }
-
-  console.log(`[transcript] ${videoId}: no transcript available`);
+  if (any && any.length) return { segments: any, language: null };
   return null;
 }
 
-function sliceTranscript(
-  segments: TranscriptSegment[],
-  fromPercent: number,
-  toPercent: number
-): string {
-  if (segments.length === 0) return "";
-  const last = segments[segments.length - 1];
-  const totalMs = last.offset + last.duration;
-  const fromMs = totalMs * (fromPercent / 100);
-  const toMs = totalMs * (toPercent / 100);
+// ─── Fresh transcript fetch (manual-first, original language) ────────────────
 
-  return segments
-    .filter((s) => s.offset >= fromMs && s.offset < toMs)
-    .map((s) => s.text.replace(/\n/g, " ").trim())
-    .filter(Boolean)
-    .join(" ");
-}
+/**
+ * Fetches a fresh transcript for `videoId`, preferring manual captions.
+ *
+ * Order: scrape the caption track list → pick a manual track (any language) →
+ * else an ASR track → else the `youtube-transcript` package. The transcript is
+ * returned in its **original language**; it is never machine-translated here.
+ *
+ * Distinguishes a **confirmed** no-captions result (page loaded, zero tracks,
+ * package empty → `"unavailable"`) from a **transient** failure (network/parse
+ * problem, or tracks existed but couldn't be downloaded → `"error"`), so callers
+ * only downgrade `transcript_status` on a confirmed change.
+ */
+export async function fetchFreshTranscript(videoId: string): Promise<FetchOutcome> {
+  const scrape = await fetchCaptionTracks(videoId);
 
-async function generateQuestions(
-  client: Anthropic,
-  transcriptSection: string
-): Promise<QuizQuestion[]> {
-  const msg = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
-    system:
-      "You are an educational quiz generator. Respond with a JSON array only — no markdown, no explanation, just the raw JSON.",
-    messages: [
-      {
-        role: "user",
-        content: `Generate 2 multiple-choice comprehension questions based on this video transcript section:
-
-"""
-${transcriptSection.slice(0, 3000)}
-"""
-
-Rules:
-- Questions must be specific to the content, not generic
-- Exactly 4 answer options each
-- Always write the question, options, and explanation in Hebrew (עברית), regardless of what language the transcript is in
-- Return ONLY a JSON array, nothing else
-
-[
-  {
-    "question": "...",
-    "options": ["...", "...", "...", "..."],
-    "correct": 0,
-    "explanation": "..."
-  }
-]`,
-      },
-    ],
-  });
-
-  const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
-  const match = raw.match(/\[[\s\S]*\]/);
-  if (!match) throw new Error("No JSON array in Claude response");
-
-  const parsed = JSON.parse(match[0]) as Array<{
-    question: string;
-    options: string[];
-    correct: number;
-    explanation: string;
-  }>;
-
-  return parsed.slice(0, 2).map((q, i) => ({
-    id: Date.now() + i,
-    question: q.question,
-    options: q.options,
-    correct: Math.max(0, Math.min(3, q.correct)),
-    explanation: q.explanation,
-  }));
-}
-
-// ─── Video summary (timestamped, for cheap Ask-AI context) ─────────────────
-
-function fmtTimestamp(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-function buildTimestampedTranscript(
-  segments: TranscriptSegment[],
-  blockSeconds = 20,
-  maxChars = 24000
-): string {
-  const blocks = new Map<number, string[]>();
-  for (const seg of segments) {
-    const blockStart = Math.floor(seg.offset / 1000 / blockSeconds) * blockSeconds;
-    const text = seg.text.replace(/\n/g, " ").trim();
-    if (!text) continue;
-    if (!blocks.has(blockStart)) blocks.set(blockStart, []);
-    blocks.get(blockStart)!.push(text);
-  }
-
-  const lines = [...blocks.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([start, texts]) => `[${fmtTimestamp(start)}] ${texts.join(" ")}`);
-
-  let out = "";
-  for (const line of lines) {
-    if (out.length + line.length + 1 > maxChars) break;
-    out += line + "\n";
-  }
-  return out.trim();
-}
-
-export async function summarizeTranscript(
-  segments: TranscriptSegment[]
-): Promise<string> {
-  const timestamped = buildTimestampedTranscript(segments);
-  if (timestamped.trim().length < 50) return "";
-
-  const client = new Anthropic();
-  const msg = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1200,
-    system:
-      "You produce compact, chronological, timestamped outlines of educational video transcripts.",
-    messages: [
-      {
-        role: "user",
-        content: `Here is a timestamped transcript of an educational video (each line is "[MM:SS] spoken text"):
-
-"""
-${timestamped}
-"""
-
-Produce a chronological outline of the ENTIRE video as a list of lines in the format:
-[MM:SS] 1–2 sentence description of what is covered starting at this point
-
-Rules:
-- One line per topic or natural section change — cover the whole video from start to finish, don't skip sections
-- Timestamps must be in ascending order and roughly match where each topic actually starts
-- If the transcript is in Hebrew, write the descriptions in Hebrew
-- Return ONLY the list of timestamped lines, nothing else — no intro, no markdown headers`,
-      },
-    ],
-  });
-
-  const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
-  return raw;
-}
-
-// ─── Teacher quiz generation (saved to DB) ──────────────────────────────────
-
-function sliceTranscriptBySeconds(
-  segments: TranscriptSegment[],
-  fromSec: number,
-  toSec: number
-): string {
-  return segments
-    .filter((s) => s.offset / 1000 >= fromSec && s.offset / 1000 < toSec)
-    .map((s) => s.text.replace(/\n/g, " ").trim())
-    .filter(Boolean)
-    .join(" ");
-}
-
-export interface DBQuestion {
-  question: string;
-  options: string[];
-  correct_index: number;
-  explanation: string;
-}
-
-async function generateQuestionsForDB(
-  client: Anthropic,
-  section: string,
-  count: number
-): Promise<DBQuestion[]> {
-  const msg = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 512 + count * 256,
-    system:
-      "You are an educational quiz generator. Respond with a JSON array only — no markdown, no explanation, just the raw JSON.",
-    messages: [
-      {
-        role: "user",
-        content: `Generate ${count} multiple-choice comprehension questions based on this video transcript section:
-
-"""
-${section.slice(0, 3000)}
-"""
-
-Rules:
-- Questions must be specific to the content, not generic
-- Exactly 4 answer options each
-- Always write the question, options, and explanation in Hebrew (עברית), regardless of what language the transcript is in
-- Return ONLY a JSON array, nothing else
-
-[
-  {
-    "question": "...",
-    "options": ["...", "...", "...", "..."],
-    "correct_index": 0,
-    "explanation": "..."
-  }
-]`,
-      },
-    ],
-  });
-
-  const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
-  const match = raw.match(/\[[\s\S]*\]/);
-  if (!match) throw new Error("No JSON array in Claude response");
-
-  const parsed = JSON.parse(match[0]) as Array<{
-    question: string;
-    options: string[];
-    correct_index: number;
-    explanation: string;
-  }>;
-
-  return parsed.slice(0, count).map((q) => ({
-    question: q.question,
-    options: (q.options ?? []).slice(0, 4),
-    correct_index: Math.max(0, Math.min(3, q.correct_index ?? 0)),
-    explanation: q.explanation ?? "",
-  }));
-}
-
-export async function generateQuestionsAtPositions(
-  segments: TranscriptSegment[],
-  positionsSec: number[],
-  count: number
-): Promise<Array<{ position_seconds: number; questions: DBQuestion[] }>> {
-  const sorted = [...positionsSec].sort((a, b) => a - b);
-  const client = new Anthropic();
-
-  const results = await Promise.all(
-    sorted.map(async (pos, i) => {
-      const fromSec = i === 0 ? 0 : sorted[i - 1];
-      const section = sliceTranscriptBySeconds(segments, fromSec, pos + 60);
-      if (section.trim().length < 50) {
-        return { position_seconds: pos, questions: [] as DBQuestion[] };
-      }
-      try {
-        const questions = await generateQuestionsForDB(client, section, count);
-        return { position_seconds: pos, questions };
-      } catch {
-        return { position_seconds: pos, questions: [] as DBQuestion[] };
-      }
-    })
-  );
-
-  return results;
-}
-
-// ─── Legacy: in-memory checkpoints at fixed % positions ─────────────────────
-
-const CHECKPOINT_DEFS = [
-  { percent: 25 as const, label: "First Quarter Check", from: 0, to: 25 },
-  { percent: 50 as const, label: "Halfway Check", from: 25, to: 50 },
-  { percent: 75 as const, label: "Third Quarter Check", from: 50, to: 75 },
-];
-
-export async function buildCheckpoints(
-  segments: TranscriptSegment[]
-): Promise<QuizCheckpoint[]> {
-  const client = new Anthropic();
-
-  const results = await Promise.all(
-    CHECKPOINT_DEFS.map(async (def, i) => {
-      const section = sliceTranscript(segments, def.from, def.to);
-      if (section.trim().length < 50) return QUIZ_CHECKPOINTS[i];
-
-      try {
-        const questions = await generateQuestions(client, section);
+  if (scrape.pageLoaded && scrape.tracks.length > 0) {
+    const track = pickCaptionTrack(scrape.tracks);
+    if (track) {
+      const segments = await fetchAndParseTranscript(track.baseUrl);
+      if (segments && segments.length) {
         return {
-          percent: def.percent,
-          label: def.label,
-          questions,
-          transcriptContext: section.slice(0, 2000),
-        } satisfies QuizCheckpoint;
-      } catch {
-        return QUIZ_CHECKPOINTS[i];
+          status: "ok",
+          segments,
+          language: normalizeLang(track.languageCode),
+          kind: track.kind === "asr" ? "asr" : "manual",
+        };
       }
-    })
-  );
+    }
+  }
 
-  return results;
+  const pkg = await fetchViaPackage(videoId);
+  if (pkg) {
+    return { status: "ok", segments: pkg.segments, language: pkg.language, kind: "package" };
+  }
+
+  // Only a page that loaded and reported zero caption tracks is a CONFIRMED
+  // no-captions video. Anything else (page didn't load, or tracks existed but
+  // the download failed) is transient and must not flip a working status.
+  if (scrape.pageLoaded && scrape.tracks.length === 0) {
+    return { status: "unavailable" };
+  }
+  return { status: "error" };
+}
+
+// ─── Playhead slicing (AI-tutor spoiler bounding) ───────────────────────
+
+/**
+ * Returns transcript text up to `positionSeconds`, keeping the **most recent**
+ * portion verbatim under an approximate token cap (~4 chars per token). Used to
+ * bound the AI tutor's context so it can't reveal content past the student's
+ * current playhead.
+ *
+ * A segment is included ONLY if it has fully ELAPSED — it ends at or before the
+ * playhead (`offset + duration <= positionSeconds * 1000`). A segment that merely
+ * STARTED before the playhead but is still playing would otherwise leak its
+ * post-playhead text (a spoiler); the in-progress segment is dropped instead
+ * (acceptable — the student is mid-sentence, nothing past the playhead escapes).
+ */
+export function sliceTranscriptToPlayhead(
+  segments: TranscriptSegment[],
+  positionSeconds: number,
+  tokenCap = 2000
+): string {
+  const positionMs = positionSeconds * 1000;
+  const upTo = segments
+    .filter((s) => s.offset + s.duration <= positionMs)
+    .sort((a, b) => a.offset - b.offset)
+    .map((s) => s.text.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  if (upTo.length === 0) return "";
+
+  const charCap = Math.max(1, tokenCap) * 4;
+  const kept: string[] = [];
+  let total = 0;
+  for (let i = upTo.length - 1; i >= 0; i--) {
+    const len = upTo[i].length + 1;
+    if (total + len > charCap && kept.length > 0) break;
+    kept.push(upTo[i]);
+    total += len;
+    if (total >= charCap) break;
+  }
+  kept.reverse();
+  const text = kept.join(" ");
+  // A single trailing segment can exceed the cap; keep its most-recent tail.
+  return text.length > charCap ? text.slice(text.length - charCap) : text;
 }

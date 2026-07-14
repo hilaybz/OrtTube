@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Agent-managed git worktrees / scratch — not part of this repo's source.
+    ".claude/**",
   ]),
 ]);
 

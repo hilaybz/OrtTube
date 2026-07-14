@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OrtTube
 
-## Getting Started
+OrtTube is an educational platform that turns a YouTube video into an interactive,
+multilingual quiz that teachers assign to their classes. A teacher authors (or
+AI-generates) questions anchored to points in a video; students watch, answer at
+each checkpoint, and can ask an AI tutor follow-up questions grounded in the part
+of the video they've watched so far. Teachers see per-quiz and per-class
+analytics.
 
-First, run the development server:
+## How it works
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Schools, teachers, students, classes.** Every user belongs to a school.
+  Teachers own classes and quizzes; students are enrolled in classes (by email,
+  with pending invites that convert on signup). All access is tenant-isolated by
+  school.
+- **Videos are canonical and shared.** A YouTube video is stored once and reused
+  across quizzes and schools; its transcript is fetched once and cached.
+- **Quizzes are multilingual with a structural answer key.** Questions are
+  authored in a base language; correctness lives in the options (`is_correct`),
+  independent of language. Other languages are filled in by AI translation, and
+  each student reads the quiz in their resolved language
+  (`preferred → class → base`).
+- **Assignment controls delivery.** Assigning a quiz to a class sets the tutor
+  mode (`off`/`hints`/`full`) and the attempt cap.
+- **Results respect a reveal gate.** A student sees per-question correctness and
+  explanations only once no retake remains; while attempts are left, they see the
+  score only.
+
+## Architecture
+
+```
+Browser ──HTTP──▶ Next.js route handler (app/api/**)
+                      │  authenticate + validate
+                      ▼
+                  @/lib/* wrapper
+                      │  supabase-js .rpc()
+                      ▼
+                  SECURITY DEFINER Postgres RPC  ──▶  tables (+ RLS, triggers)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The route handlers are thin. The real logic — ownership checks, tenant isolation,
+grading, the reveal gate, correctness constraints — lives in Postgres
+(`SECURITY DEFINER` functions + Row-Level Security), so it holds no matter which
+caller reaches it. AI (Claude) powers quiz generation, translation, and the
+streaming tutor. Transcripts are cached in Supabase Storage.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Stack:** Next.js (App Router, TypeScript), Supabase (Postgres + Auth +
+  Storage), Anthropic Claude.
+- **Docs:** [`docs/data-model.md`](docs/data-model.md) (schema + ER diagram),
+  [`docs/api.md`](docs/api.md) (endpoints + RPC layer).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Getting started
 
-## Learn More
+Prerequisites: Node, the [Supabase CLI](https://supabase.com/docs/guides/cli),
+and Docker (for the local Supabase stack).
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# 1. Install deps
+npm install
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# 2. Start the local Supabase stack (Postgres + Auth + Storage)
+supabase start
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# 3. Configure environment
+cp .env.local.example .env.local
+#    Fill in ANTHROPIC_API_KEY and the Supabase URL/keys printed by `supabase start`.
 
-## Deploy on Vercel
+# 4. Generate typed DB bindings from the local schema
+npm run gen:types
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# 5. Run the app
+npm run dev            # http://localhost:3000
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the dev server. |
+| `npm run build` / `npm start` | Production build / serve. |
+| `npm run lint` | ESLint. |
+| `npm test` | Run the Vitest suite once. |
+| `npm run test:watch` | Vitest in watch mode. |
+| `npm run smoke` | End-to-end smoke test against a running app (real YouTube + Claude). |
+| `npm run gen:types` | Regenerate `lib/supabase/types.ts` from the local schema. |
+
+## Testing
+
+- **Unit tests** mock `@/lib` / route internals — no database.
+- **Integration tests** drive the real RPC + RLS layer through an actor DSL
+  (`test/helpers/testbed/`). Each test calls `freshTestbed()` in `beforeEach`,
+  which resets the local DB and returns an isolated world; actors
+  (`school.enrollTeacher(...)`, `teacher.authorQuiz(...)`,
+  `student.startAttempt(...)`) call the real service wrappers as authenticated,
+  RLS-subject clients. These target the **local** Supabase stack and self-skip
+  when it's unreachable, so unit tests still run offline.
+- **Smoke test** (`npm run smoke`) exercises the HTTP surface end to end against a
+  running dev server, including real transcript fetch, AI generation, and the
+  tutor stream.
+
+`lib/supabase/types.ts` is **generated** — after any migration, run
+`npm run gen:types` and commit the result alongside the migration.
+
+## Environment
+
+See [`.env.local.example`](.env.local.example) for the full list. Notable:
+`ANTHROPIC_API_KEY`, the Supabase URL/keys, `SUPABASE_DB_URL` (used by the test
+harness), and two separate bearer secrets — `CRON_SECRET` for scheduled jobs and
+`ADMIN_SECRET` for admin endpoints.
