@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "test:ui": "vitest run --project ui",
     "e2e": "playwright test",
-    "seed": "node scripts/seed-fixture.mjs",
+    "seed": "node --env-file=.env.local scripts/seed-fixture.mjs",
     "smoke": "node test/e2e/smoke.mjs",
     "gen:types": "supabase gen types typescript --local > lib/supabase/types.ts"
   },
