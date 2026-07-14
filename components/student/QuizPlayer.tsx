@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { Alert } from "@/components/ui/Alert";
 import { apiFetch, ApiError } from "@/lib/http";
+import { AskAI } from "./AskAI";
 import type {
   StudentAttemptState,
   StudentQuiz,
@@ -247,7 +248,19 @@ export function QuizPlayer({
         />
       </div>
 
-      <aside className="flex flex-col">
+      <aside className="flex flex-col gap-3">
+        <div className="flex justify-end">
+          <AskAI
+            classId={classId}
+            quizId={quizId}
+            tutorMode={state.tutor_mode}
+            context={{
+              positionSeconds: playhead,
+              attemptId,
+              activeQuestionId: current?.id ?? null,
+            }}
+          />
+        </div>
         {error && <Alert variant="danger" className="mb-3">{error}</Alert>}
         {current ? (
           <GlassCard className="flex flex-col gap-4">
