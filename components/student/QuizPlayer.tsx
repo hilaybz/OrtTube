@@ -81,11 +81,6 @@ export function QuizPlayer({
   const gatePos = current?.position_seconds ?? null;
   const { atGate } = gateDecision(playhead, gatePos);
 
-  // Reset the pending selection whenever the active checkpoint changes.
-  useEffect(() => {
-    setSelected([]);
-  }, [current?.id]);
-
   // Poll the playhead: clamp any skip past the current checkpoint, and pause on
   // arrival so the question can gate progression.
   useEffect(() => {
@@ -180,6 +175,7 @@ export function QuizPlayer({
         body: JSON.stringify({ questionId: current.id, optionIds: selected }),
       });
       setAnswered((prev) => new Set(prev).add(current.id));
+      setSelected([]); // ready the next checkpoint's selection
       // The next gate is further ahead → the overlay hides; resume watching.
       try {
         playerRef.current?.playVideo();
