@@ -803,6 +803,7 @@ export type Database = {
         Args: { p_language: string; p_quiz_id: string; p_ttl_seconds?: number }
         Returns: boolean
       }
+      class_roster_progress: { Args: { p_class_id: string }; Returns: Json }
       class_stats: { Args: { p_class_id: string }; Returns: Json }
       clone_quiz: { Args: { p_source_quiz_id: string }; Returns: string }
       complete_attempt: { Args: { p_attempt_id: string }; Returns: Json }
@@ -917,6 +918,10 @@ export type Database = {
         Args: { p_class_id: string; p_quiz_id: string }
         Returns: Json
       }
+      student_quiz_progress: {
+        Args: { p_class_id: string; p_student_id: string }
+        Returns: Json
+      }
       submit_answer: {
         Args: {
           p_attempt_id: string
@@ -926,6 +931,10 @@ export type Database = {
         Returns: Json
       }
       teacher_can_read_profile: { Args: { target: string }; Returns: boolean }
+      tutor_prompts_in_scope: {
+        Args: { p_class_id?: string; p_quiz_id?: string }
+        Returns: Json
+      }
       tutor_stats: {
         Args: { p_class_id?: string; p_quiz_id?: string }
         Returns: Json
