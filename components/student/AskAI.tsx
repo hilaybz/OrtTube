@@ -52,6 +52,7 @@ export function AskAI({
     e.preventDefault();
     const q = prompt.trim();
     if (!q || busy) return;
+    const prior = messages; // completed turns so far → sent as context
     setError(null);
     setBusy(true);
     setPrompt("");
@@ -67,6 +68,7 @@ export function AskAI({
           positionSeconds: Math.round(context.positionSeconds),
           attemptId: context.attemptId ?? undefined,
           activeQuestionId: context.activeQuestionId ?? undefined,
+          history: prior.map((m) => ({ role: m.role, content: m.text })),
         }),
       });
       if (!res.ok || !res.body) {

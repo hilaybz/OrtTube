@@ -51,6 +51,8 @@ export function QuizPlayer({
   const [summary, setSummary] = useState<AttemptSummary | null>(null);
 
   const stageRef = useRef<VideoStageHandle>(null);
+  // Stable so VideoStage's poll effect isn't torn down/recreated every render.
+  const onProgress = useCallback((c: number) => setPlayhead(c), []);
 
   const current = questions.find((q) => !answered.has(q.id)) ?? null;
   const allAnswered = questions.length > 0 && current === null;
@@ -292,7 +294,7 @@ export function QuizPlayer({
         videoId={state.youtube_video_id}
         maxSeek={gatePos}
         overlay={overlay}
-        onProgress={(c) => setPlayhead(c)}
+        onProgress={onProgress}
       />
 
       <CheckpointStepper

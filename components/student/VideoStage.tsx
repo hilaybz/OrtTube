@@ -46,6 +46,7 @@ export const VideoStage = forwardRef<
 >(function VideoStage({ videoId, maxSeek, overlay, onProgress }, ref) {
   const playerRef = useRef<YTPlayer | null>(null);
   const [ready, setReady] = useState(false);
+  const [errored, setErrored] = useState(false);
   const currentRef = useRef(0);
   const durRef = useRef(0);
   const pendingRef = useRef<number | null>(null); // optimistic seek target
@@ -147,7 +148,16 @@ export const VideoStage = forwardRef<
       }
     }
     prevMax.current = maxSeek;
-  }, [maxSeek, overlay]);
+    // `hasOverlay` (boolean) instead of the `overlay` node keeps this effect from
+    // re-running on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxSeek, !!overlay]);
+
+  // Safety net: never let the loading poster hang forever if onReady never fires.
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 10_000);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div className="relative overflow-hidden rounded-[var(--radius)] border border-[var(--glass-border)] bg-black shadow-[0_20px_50px_-24px_rgba(15,23,42,0.55)]">
@@ -165,6 +175,10 @@ export const VideoStage = forwardRef<
             playerRef.current = e.target;
             setReady(true);
           }}
+          onError={() => {
+            setErrored(true);
+            setReady(true);
+          }}
         />
       </div>
 
@@ -179,6 +193,20 @@ export const VideoStage = forwardRef<
             className="absolute inset-0 h-full w-full object-cover opacity-50"
           />
           <Spinner size={30} className="relative text-white" />
+        </div>
+      )}
+
+      {errored && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/85 p-6 text-center text-white">
+          <p className="text-sm">לא ניתן לטעון את הסרטון כרגע.</p>
+          <a
+            href={`https://www.youtube.com/watch?v=${videoId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-[var(--radius)] bg-[var(--brand)] px-4 py-2 text-sm font-medium text-[#06210f]"
+          >
+            צפייה ביוטיוב
+          </a>
         </div>
       )}
 

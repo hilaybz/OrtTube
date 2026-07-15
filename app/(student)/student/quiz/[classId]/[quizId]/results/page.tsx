@@ -7,6 +7,7 @@ import {
   getAttemptReview,
   getQuizForStudent,
   type StudentAttemptState,
+  type StudentQuestion,
 } from "@/lib/attempts";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Icon } from "@/components/ui/Icon";
@@ -98,8 +99,15 @@ export default async function ResultsPage({
 
   // Revealed: join the answer-free read for prompt/option labels. Questions in
   // the frozen snapshot that were soft-deleted since fall back to a label.
-  const quiz = await getQuizForStudent(client, classId, quizId);
-  const qmap = new Map(quiz.questions.map((q) => [q.id, q]));
+  // Labels come from the answer-free read. If the quiz was unassigned/soft-deleted
+  // since completion this can throw — degrade to fallback labels rather than 500.
+  let qmap = new Map<string, StudentQuestion>();
+  try {
+    const quiz = await getQuizForStudent(client, classId, quizId);
+    qmap = new Map(quiz.questions.map((q) => [q.id, q]));
+  } catch {
+    // fall through with an empty map
+  }
   const items: ReviewItem[] = (review.questions ?? []).map((rq) => {
     const q = qmap.get(rq.question_id);
     return {
