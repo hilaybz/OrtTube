@@ -54,8 +54,9 @@ export function Sidebar({
       )}
       <aside
         className={cn(
-          "z-40 flex w-64 flex-none flex-col gap-1 border-s border-white/60 bg-white/35 p-4 backdrop-blur-[24px]",
-          "max-md:fixed max-md:inset-y-0 max-md:end-0 max-md:transition-transform",
+          "z-40 flex w-64 flex-none flex-col gap-1 border-e border-white/60 bg-white/35 p-4 backdrop-blur-[24px]",
+          // Mobile: fixed drawer anchored to the right (inline-start in RTL).
+          "max-md:fixed max-md:inset-y-0 max-md:start-0 max-md:transition-transform",
           open ? "max-md:translate-x-0" : "max-md:translate-x-full",
           "md:translate-x-0"
         )}

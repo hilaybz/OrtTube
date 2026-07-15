@@ -142,6 +142,23 @@ export function QuizPlayer({
     }
   }, [classId, quizId]);
 
+  /** Rewatch: seek back to the start of the current segment (previous checkpoint
+   *  or the beginning) and resume — the overlay hides while the playhead is
+   *  before the gate, and returns when the checkpoint is reached again. */
+  function rewatch() {
+    if (!current) return;
+    const prev = questions
+      .filter((q) => q.position_seconds < current.position_seconds)
+      .reduce((m, q) => Math.max(m, q.position_seconds), 0);
+    try {
+      playerRef.current?.seekTo(prev, true);
+      playerRef.current?.playVideo();
+    } catch {
+      /* ignore */
+    }
+    setPlayhead(prev);
+  }
+
   /** Jump forward to the pending checkpoint (allowed — it's the gate, not past it). */
   function jumpToGate() {
     if (gatePos == null) return;
@@ -307,14 +324,23 @@ export function QuizPlayer({
         {current && atGate && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]">
             <div className="quiz-pop glass w-full max-w-lg p-5">
-              <span className="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--fg-brand)]">
-                נקודת עצירה · {mmss(current.position_seconds)}
-                {current.kind === "multi" && (
-                  <Badge variant="gray" pill>
-                    בחירה מרובה
-                  </Badge>
-                )}
-              </span>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--fg-brand)]">
+                  נקודת עצירה · {mmss(current.position_seconds)}
+                  {current.kind === "multi" && (
+                    <Badge variant="gray" pill>
+                      בחירה מרובה
+                    </Badge>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={rewatch}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-[var(--body)] hover:text-[var(--heading)]"
+                >
+                  <Icon name="arrow" size={14} /> צפייה חוזרת בקטע
+                </button>
+              </div>
               <h2 className="mb-4 text-lg font-semibold leading-snug">{current.prompt}</h2>
               <div className="mb-4 flex flex-col gap-2.5">
                 {current.options.map((o, i) => {
@@ -406,9 +432,10 @@ function CheckpointBar({
   const pct = duration > 0 ? Math.min(100, (playhead / duration) * 100) : 0;
   const currentId = questions.find((q) => !answered.has(q.id))?.id;
   return (
-    <div className="relative h-3 rounded-full bg-white/50">
+    // Video timelines read left→right even in an RTL app — match YouTube's bar.
+    <div dir="ltr" className="relative h-3 rounded-full bg-white/50">
       <div
-        className="absolute inset-y-0 start-0 rounded-full bg-[var(--brand)]"
+        className="absolute inset-y-0 left-0 rounded-full bg-[var(--brand)]"
         style={{ width: `${pct}%` }}
       />
       {duration > 0 &&

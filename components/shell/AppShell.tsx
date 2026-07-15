@@ -23,18 +23,19 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   return (
     <div className="flex min-h-screen">
-      <main className="flex min-w-0 flex-1 flex-col">
-        <Topbar onMenu={() => setMobileOpen(true)} right={<SignOutButton />}>
-          {topbar}
-        </Topbar>
-        <div className="flex-1 overflow-y-auto px-6 pb-8">{children}</div>
-      </main>
+      {/* Sidebar first → inline-start → the RIGHT in this RTL app. */}
       <Sidebar
         items={nav}
         brand={brand}
         open={mobileOpen}
         onClose={() => setMobileOpen(false)}
       />
+      <main className="flex min-w-0 flex-1 flex-col">
+        <Topbar onMenu={() => setMobileOpen(true)} right={<SignOutButton />}>
+          {topbar}
+        </Topbar>
+        <div className="flex-1 overflow-y-auto px-6 pb-8">{children}</div>
+      </main>
     </div>
   );
 }
