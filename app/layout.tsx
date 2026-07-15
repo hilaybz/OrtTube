@@ -23,6 +23,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="he" dir="rtl" className={rubik.variable}>
+      <head>
+        {/* Warm up YouTube's hosts so the embedded player boots faster. */}
+        <link rel="preconnect" href="https://www.youtube.com" />
+        <link rel="preconnect" href="https://www.google.com" />
+        <link rel="preconnect" href="https://i.ytimg.com" />
+        <link rel="preconnect" href="https://s.ytimg.com" />
+      </head>
       <body>{children}</body>
     </html>
   );

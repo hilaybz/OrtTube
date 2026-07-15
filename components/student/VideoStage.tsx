@@ -5,8 +5,10 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
 } from "react";
 import dynamic from "next/dynamic";
+import { Spinner } from "@/components/ui/Spinner";
 import { gateDecision } from "./gate";
 
 const YouTube = dynamic(() => import("react-youtube"), { ssr: false });
@@ -43,6 +45,7 @@ export const VideoStage = forwardRef<
   }
 >(function VideoStage({ videoId, maxSeek, overlay, onProgress }, ref) {
   const playerRef = useRef<YTPlayer | null>(null);
+  const [ready, setReady] = useState(false);
   const currentRef = useRef(0);
   const durRef = useRef(0);
   const pendingRef = useRef<number | null>(null); // optimistic seek target
@@ -160,9 +163,25 @@ export const VideoStage = forwardRef<
           }}
           onReady={(e: { target: YTPlayer }) => {
             playerRef.current = e.target;
+            setReady(true);
           }}
         />
       </div>
+
+      {/* Poster + spinner while the YouTube iframe boots (~1–2s), so it doesn't
+          flash an empty black frame. */}
+      {!ready && (
+        <div className="absolute inset-0 z-10 grid place-items-center bg-black">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover opacity-50"
+          />
+          <Spinner size={30} className="relative text-white" />
+        </div>
+      )}
+
       {overlay}
     </div>
   );

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/components/ui/cn";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -48,7 +48,6 @@ export function QuizPlayer({
   const [answered, setAnswered] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string[]>([]);
   const [playhead, setPlayhead] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [summary, setSummary] = useState<AttemptSummary | null>(null);
 
   const stageRef = useRef<VideoStageHandle>(null);
@@ -293,18 +292,11 @@ export function QuizPlayer({
         videoId={state.youtube_video_id}
         maxSeek={gatePos}
         overlay={overlay}
-        onProgress={(c, d) => {
-          setPlayhead(c);
-          if (d > 0) setDuration(d);
-        }}
+        onProgress={(c) => setPlayhead(c)}
       />
 
-      <CheckpointRail
+      <CheckpointStepper
         markers={markers}
-        duration={duration}
-        playhead={playhead}
-        answeredCount={answered.size}
-        total={questions.length}
         onSeek={(s) => stageRef.current?.seekTo(s)}
       />
 
@@ -328,77 +320,65 @@ interface RailMarker {
 }
 
 /**
- * The quiz-checkpoint rail below the player. A slim timeline of the whole video
- * with the playhead position and a numbered marker at each checkpoint — done ✓,
- * the current one ringed and clickable ("jump to it"), upcoming ones locked.
- * Kept separate from YouTube's own progress bar so it stays clean and on-brand.
+ * The quiz-checkpoint stepper below the player. Numbered nodes in QUESTION order
+ * (not time position, so they never cluster on a long video), connected by a
+ * progress line — done ✓, the current one ringed + clickable ("jump to it"),
+ * upcoming ones locked. A caption shows when the next checkpoint is.
  */
-function CheckpointRail({
+function CheckpointStepper({
   markers,
-  duration,
-  playhead,
-  answeredCount,
-  total,
   onSeek,
 }: {
   markers: RailMarker[];
-  duration: number;
-  playhead: number;
-  answeredCount: number;
-  total: number;
   onSeek: (seconds: number) => void;
 }) {
-  const pct = duration > 0 ? Math.min(100, (playhead / duration) * 100) : 0;
+  if (markers.length === 0) return null;
+  const currentSeconds = markers.find((m) => m.current)?.seconds ?? null;
   return (
-    <div className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-white/50 px-4 pb-4 pt-3">
-      <div className="mb-3 flex items-center justify-between text-xs font-medium text-[var(--body-subtle)]">
-        <span className="font-mono tabular-nums" dir="ltr">
-          {mmss(playhead)} / {mmss(duration)}
-        </span>
-        <span>
-          {answeredCount}/{total} נקודות עצירה
-        </span>
-      </div>
-      <div dir="ltr" className="relative mx-2 h-8">
-        <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-[var(--neutral-quaternary)]" />
-        <div
-          className="absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-[var(--brand)]"
-          style={{ width: `${pct}%` }}
-        />
-        {duration > 0 && (
-          <div
-            className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--brand-strong)] shadow"
-            style={{ left: `${pct}%` }}
-          />
-        )}
-        {markers.map((m) => {
-          const left = duration > 0 ? Math.min(100, (m.seconds / duration) * 100) : 0;
+    <div className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-white/50 px-5 py-4">
+      <div className="flex items-center">
+        {markers.map((m, i) => {
           const locked = !m.done && !m.current;
           return (
-            <button
-              key={m.seconds}
-              type="button"
-              disabled={locked}
-              title={mmss(m.seconds)}
-              aria-label={m.current ? "מעבר לנקודת העצירה" : `נקודת עצירה ${m.index + 1}`}
-              onClick={() => {
-                if (!locked) onSeek(m.seconds);
-              }}
-              className={cn(
-                "absolute top-1/2 grid h-6 w-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 text-[11px] font-bold transition",
-                m.done
-                  ? "cursor-pointer border-white bg-[var(--brand)] text-white shadow"
-                  : m.current
-                    ? "cursor-pointer border-[var(--brand)] bg-white text-[var(--fg-brand)] shadow ring-4 ring-[var(--brand-softer)]"
-                    : "cursor-not-allowed border-white bg-[var(--gray)] text-white"
+            <Fragment key={m.seconds}>
+              {i > 0 && (
+                <div
+                  className={cn(
+                    "h-0.5 flex-1",
+                    markers[i - 1].done
+                      ? "bg-[var(--brand)]"
+                      : "bg-[var(--neutral-quaternary)]"
+                  )}
+                />
               )}
-              style={{ left: `${left}%` }}
-            >
-              {m.done ? "✓" : m.index + 1}
-            </button>
+              <button
+                type="button"
+                disabled={locked}
+                title={mmss(m.seconds)}
+                aria-label={m.current ? "מעבר לנקודת העצירה" : `שאלה ${m.index + 1}`}
+                onClick={() => {
+                  if (!locked) onSeek(m.seconds);
+                }}
+                className={cn(
+                  "grid h-7 w-7 flex-none place-items-center rounded-full border-2 text-xs font-bold transition",
+                  m.done
+                    ? "cursor-pointer border-[var(--brand)] bg-[var(--brand)] text-white"
+                    : m.current
+                      ? "cursor-pointer border-[var(--brand)] bg-white text-[var(--fg-brand)] ring-4 ring-[var(--brand-softer)]"
+                      : "cursor-not-allowed border-[var(--neutral-quaternary)] bg-white text-[var(--body-subtle)]"
+                )}
+              >
+                {m.done ? "✓" : m.index + 1}
+              </button>
+            </Fragment>
           );
         })}
       </div>
+      <p className="mt-3 text-center text-xs font-medium text-[var(--fg-brand-strong)]">
+        {currentSeconds != null
+          ? `השאלה הבאה · ${mmss(currentSeconds)}`
+          : "כל השאלות נענו 🎉"}
+      </p>
     </div>
   );
 }
