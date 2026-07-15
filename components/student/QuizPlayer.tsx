@@ -11,7 +11,7 @@ import { Alert } from "@/components/ui/Alert";
 import { apiFetch, ApiError } from "@/lib/http";
 import { gateDecision } from "./gate";
 import { AskAI } from "./AskAI";
-import { VideoStage, type VideoStageHandle, type Marker } from "./VideoStage";
+import { VideoStage, type VideoStageHandle } from "./VideoStage";
 import type {
   StudentAttemptState,
   StudentQuiz,
@@ -48,6 +48,7 @@ export function QuizPlayer({
   const [answered, setAnswered] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string[]>([]);
   const [playhead, setPlayhead] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [summary, setSummary] = useState<AttemptSummary | null>(null);
 
   const stageRef = useRef<VideoStageHandle>(null);
@@ -200,11 +201,11 @@ export function QuizPlayer({
   }
 
   // ── PLAYING ──────────────────────────────────────────────────────────────
-  const markers: Marker[] = questions.map((q, i) => ({
+  const markers = questions.map((q, i) => ({
     seconds: q.position_seconds,
     done: answered.has(q.id),
     current: q.id === current?.id,
-    label: `שאלה ${i + 1}`,
+    index: i,
   }));
 
   const overlay =
@@ -290,13 +291,22 @@ export function QuizPlayer({
       <VideoStage
         ref={stageRef}
         videoId={state.youtube_video_id}
-        markers={markers}
         maxSeek={gatePos}
         overlay={overlay}
-        onTime={setPlayhead}
+        onProgress={(c, d) => {
+          setPlayhead(c);
+          if (d > 0) setDuration(d);
+        }}
       />
 
-      <CheckpointPills questions={questions} answered={answered} currentId={current?.id ?? null} />
+      <CheckpointRail
+        markers={markers}
+        duration={duration}
+        playhead={playhead}
+        answeredCount={answered.size}
+        total={questions.length}
+        onSeek={(s) => stageRef.current?.seekTo(s)}
+      />
 
       {allAnswered && (
         <GlassCard className="flex flex-col items-center gap-3 text-center">
@@ -310,45 +320,86 @@ export function QuizPlayer({
   );
 }
 
+interface RailMarker {
+  seconds: number;
+  done: boolean;
+  current: boolean;
+  index: number;
+}
+
 /**
- * Checkpoint status strip — one pill per checkpoint with its timestamp and state
- * (done ✓ / current ● / upcoming •). The player's own scrubber handles seeking.
+ * The quiz-checkpoint rail below the player. A slim timeline of the whole video
+ * with the playhead position and a numbered marker at each checkpoint — done ✓,
+ * the current one ringed and clickable ("jump to it"), upcoming ones locked.
+ * Kept separate from YouTube's own progress bar so it stays clean and on-brand.
  */
-function CheckpointPills({
-  questions,
-  answered,
-  currentId,
+function CheckpointRail({
+  markers,
+  duration,
+  playhead,
+  answeredCount,
+  total,
+  onSeek,
 }: {
-  questions: StudentQuestion[];
-  answered: Set<string>;
-  currentId: string | null;
+  markers: RailMarker[];
+  duration: number;
+  playhead: number;
+  answeredCount: number;
+  total: number;
+  onSeek: (seconds: number) => void;
 }) {
-  if (questions.length === 0) return null;
+  const pct = duration > 0 ? Math.min(100, (playhead / duration) * 100) : 0;
   return (
-    <div className="flex flex-wrap gap-2">
-      {questions.map((q, i) => {
-        const done = answered.has(q.id);
-        const isCurrent = q.id === currentId;
-        return (
-          <span
-            key={q.id}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium",
-              done
-                ? "border-[var(--brand-soft)] bg-[var(--brand-softer)] text-[var(--fg-brand-strong)]"
-                : isCurrent
-                  ? "border-[var(--brand)] bg-white/70 text-[var(--fg-brand)]"
-                  : "border-[var(--glass-border)] bg-white/50 text-[var(--body-subtle)]"
-            )}
-          >
-            <span className="font-mono" dir="ltr">
-              {mmss(q.position_seconds)}
-            </span>
-            <span aria-hidden="true">{done ? "✓" : isCurrent ? "●" : "•"}</span>
-            <span>שאלה {i + 1}</span>
-          </span>
-        );
-      })}
+    <div className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-white/50 px-4 pb-4 pt-3">
+      <div className="mb-3 flex items-center justify-between text-xs font-medium text-[var(--body-subtle)]">
+        <span className="font-mono tabular-nums" dir="ltr">
+          {mmss(playhead)} / {mmss(duration)}
+        </span>
+        <span>
+          {answeredCount}/{total} נקודות עצירה
+        </span>
+      </div>
+      <div dir="ltr" className="relative mx-2 h-8">
+        <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-[var(--neutral-quaternary)]" />
+        <div
+          className="absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-[var(--brand)]"
+          style={{ width: `${pct}%` }}
+        />
+        {duration > 0 && (
+          <div
+            className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--brand-strong)] shadow"
+            style={{ left: `${pct}%` }}
+          />
+        )}
+        {markers.map((m) => {
+          const left = duration > 0 ? Math.min(100, (m.seconds / duration) * 100) : 0;
+          const locked = !m.done && !m.current;
+          return (
+            <button
+              key={m.seconds}
+              type="button"
+              disabled={locked}
+              title={mmss(m.seconds)}
+              aria-label={m.current ? "מעבר לנקודת העצירה" : `נקודת עצירה ${m.index + 1}`}
+              onClick={() => {
+                if (!locked) onSeek(m.seconds);
+              }}
+              className={cn(
+                "absolute top-1/2 grid h-6 w-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 text-[11px] font-bold transition",
+                m.done
+                  ? "cursor-pointer border-white bg-[var(--brand)] text-white shadow"
+                  : m.current
+                    ? "cursor-pointer border-[var(--brand)] bg-white text-[var(--fg-brand)] shadow ring-4 ring-[var(--brand-softer)]"
+                    : "cursor-not-allowed border-white bg-[var(--gray)] text-white"
+              )}
+              style={{ left: `${left}%` }}
+            >
+              {m.done ? "✓" : m.index + 1}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
+
