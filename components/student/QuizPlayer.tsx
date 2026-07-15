@@ -308,7 +308,7 @@ export function QuizPlayer({
       {error && <Alert variant="danger">{error}</Alert>}
 
       {/* Video stage with the question overlaid on the paused frame. */}
-      <div className="relative overflow-hidden rounded-[var(--radius)] border border-[var(--glass-border)] bg-black">
+      <div className="relative overflow-hidden rounded-[var(--radius)] border border-[var(--glass-border)] bg-black shadow-[0_20px_50px_-24px_rgba(15,23,42,0.55)]">
         <div className="aspect-video">
           <YouTube
             videoId={state.youtube_video_id}
@@ -381,12 +381,12 @@ export function QuizPlayer({
         )}
       </div>
 
-      {/* Checkpoint scrubber */}
-      <CheckpointBar
-        duration={state.duration_seconds ?? 0}
+      {/* Checkpoint pills — status per checkpoint (the native YouTube bar handles
+          the timeline). */}
+      <CheckpointPills
         questions={questions}
         answered={answered}
-        playhead={playhead}
+        currentId={current?.id ?? null}
       />
 
       {/* Controls / gate hint */}
@@ -418,47 +418,46 @@ export function QuizPlayer({
   );
 }
 
-function CheckpointBar({
-  duration,
+/**
+ * Checkpoint status strip (like the previous version): one pill per checkpoint
+ * with its timestamp and state — done ✓ / current ● / upcoming •. The video's
+ * own (LTR) progress bar handles scrubbing.
+ */
+function CheckpointPills({
   questions,
   answered,
-  playhead,
+  currentId,
 }: {
-  duration: number;
   questions: StudentQuestion[];
   answered: Set<string>;
-  playhead: number;
+  currentId: string | null;
 }) {
-  const pct = duration > 0 ? Math.min(100, (playhead / duration) * 100) : 0;
-  const currentId = questions.find((q) => !answered.has(q.id))?.id;
+  if (questions.length === 0) return null;
   return (
-    // Video timelines read left→right even in an RTL app — match YouTube's bar.
-    <div dir="ltr" className="relative h-3 rounded-full bg-white/50">
-      <div
-        className="absolute inset-y-0 left-0 rounded-full bg-[var(--brand)]"
-        style={{ width: `${pct}%` }}
-      />
-      {duration > 0 &&
-        questions.map((q) => {
-          const left = Math.min(100, (q.position_seconds / duration) * 100);
-          const done = answered.has(q.id);
-          const isCurrent = q.id === currentId;
-          return (
-            <span
-              key={q.id}
-              title={mmss(q.position_seconds)}
-              className={cn(
-                "absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border-2 border-white",
-                done
-                  ? "bg-[var(--brand)]"
-                  : isCurrent
-                    ? "bg-[var(--fg-brand)] ring-2 ring-[var(--brand-soft)]"
-                    : "bg-[var(--gray)]"
-              )}
-              style={{ insetInlineStart: `calc(${left}% - 7px)` }}
-            />
-          );
-        })}
+    <div className="flex flex-wrap gap-2">
+      {questions.map((q, i) => {
+        const done = answered.has(q.id);
+        const isCurrent = q.id === currentId;
+        return (
+          <span
+            key={q.id}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium",
+              done
+                ? "border-[var(--brand-soft)] bg-[var(--brand-softer)] text-[var(--fg-brand-strong)]"
+                : isCurrent
+                  ? "border-[var(--brand)] bg-white/70 text-[var(--fg-brand)]"
+                  : "border-[var(--glass-border)] bg-white/50 text-[var(--body-subtle)]"
+            )}
+          >
+            <span className="font-mono" dir="ltr">
+              {mmss(q.position_seconds)}
+            </span>
+            <span aria-hidden="true">{done ? "✓" : isCurrent ? "●" : "•"}</span>
+            <span>שאלה {i + 1}</span>
+          </span>
+        );
+      })}
     </div>
   );
 }
