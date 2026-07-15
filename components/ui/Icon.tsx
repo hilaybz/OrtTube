@@ -24,6 +24,25 @@ const PATHS = {
   ),
   check: <path d="M20 6L9 17l-5-5" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
+  pause: (
+    <>
+      <rect x="6" y="5" width="4" height="14" rx="1" />
+      <rect x="14" y="5" width="4" height="14" rx="1" />
+    </>
+  ),
+  volume: (
+    <>
+      <path d="M4 9v6h4l5 4V5L8 9z" />
+      <path d="M16 8a5 5 0 0 1 0 8M18.5 5.5a9 9 0 0 1 0 13" />
+    </>
+  ),
+  volumeOff: (
+    <>
+      <path d="M4 9v6h4l5 4V5L8 9z" />
+      <path d="M17 9l5 6M22 9l-5 6" />
+    </>
+  ),
+  fullscreen: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
   arrow: <path d="M19 12H5M11 6l-6 6 6 6" />,
   clock: (
     <>
@@ -80,7 +99,7 @@ export function Icon({
   size?: number;
   className?: string;
 }) {
-  const filled = name === "play" || name === "sparkle";
+  const filled = name === "play" || name === "sparkle" || name === "pause";
   return (
     <svg
       width={size}
