@@ -80,7 +80,7 @@ export async function fetchTutorPrompts(
 
   const rpc = client.rpc.bind(client) as unknown as RpcInvoker;
   const { data, error } = await rpc("tutor_prompts_in_scope", args);
-  if (error) throw new AnalyticsError(error.message, error.code);
+  if (error) throw new AnalyticsError(error.message);
   return data as TutorPromptsResult;
 }
 

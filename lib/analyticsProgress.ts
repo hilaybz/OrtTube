@@ -13,8 +13,8 @@
  *   `lib/supabase/server.ts`) — NOT the service-role client, which has no
  *   `auth.uid()` and would always be rejected as `not_owner`.
  * - Errors are raised as `AnalyticsError` (reusing the class from
- *   `lib/analytics.ts`) so the shared `/api/analytics/*` error mapper maps a
- *   non-owner (`not_owner` / SQLSTATE 42501) to HTTP 403 without special-casing.
+ *   `lib/analytics.ts`) carrying the RPC's stable code (e.g. `not_owner`), so the
+ *   shared `/api/analytics/*` error mapper maps a non-owner to HTTP 403.
  *
  * The RPC names are cast at the call site rather than typed against the generated
  * `Database` type, so these wrappers do not depend on the new functions appearing
@@ -139,7 +139,7 @@ async function callRpc<T>(
   const rpc = client.rpc.bind(client) as unknown as RpcInvoker;
   const { data, error } = await rpc(fn, args);
   if (error) {
-    throw new AnalyticsError(error.message, error.code);
+    throw new AnalyticsError(error.message);
   }
   return data as T;
 }

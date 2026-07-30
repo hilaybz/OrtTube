@@ -35,11 +35,15 @@ export type QuestionKind = "single" | "multi";
 /** Per-class tutor delivery mode. */
 export type TutorMode = "off" | "hints" | "full";
 
-/** Error raised when an analytics RPC fails (e.g. `not_owner`, `invalid_args`). */
+/**
+ * Error raised when an analytics RPC fails. `code` is the stable code the RPC
+ * raised as its exception message (e.g. `not_owner`, `invalid_args`), matching
+ * the `ClassError` convention so consumers switch on `code` alone.
+ */
 export class AnalyticsError extends Error {
-  readonly code?: string;
-  constructor(message: string, code?: string) {
-    super(message);
+  code: string;
+  constructor(code: string) {
+    super(code);
     this.name = "AnalyticsError";
     this.code = code;
   }
@@ -207,7 +211,7 @@ async function callRpc<T>(
   const rpc = client.rpc.bind(client) as unknown as RpcInvoker;
   const { data, error } = await rpc(fn, args);
   if (error) {
-    throw new AnalyticsError(error.message, error.code);
+    throw new AnalyticsError(error.message);
   }
   return data as T;
 }

@@ -176,7 +176,7 @@ describe.skipIf(!online)("roster analytics (per-student progress)", () => {
         AnalyticsError
       );
       await expect(peerTeacher.rosterProgress(classroom)).rejects.toMatchObject({
-        code: "42501",
+        code: "not_owner",
       });
     });
   });
@@ -213,7 +213,7 @@ describe.skipIf(!online)("roster analytics (per-student progress)", () => {
       ).rejects.toBeInstanceOf(AnalyticsError);
       await expect(
         peerTeacher.studentProgress(classroom, bob)
-      ).rejects.toMatchObject({ code: "42501" });
+      ).rejects.toMatchObject({ code: "not_owner" });
     });
   });
 });

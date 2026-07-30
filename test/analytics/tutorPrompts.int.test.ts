@@ -135,7 +135,7 @@ describe.skipIf(!online)("tutor prompts in scope (topic-cluster feed)", () => {
     ).rejects.toBeInstanceOf(AnalyticsError);
     await expect(
       fetchTutorPrompts(peerTeacher.client, { quizId: quizWithPrompts.id })
-    ).rejects.toMatchObject({ code: "42501" });
+    ).rejects.toMatchObject({ code: "not_owner" });
   });
 
   it("rejects both scopes or neither with invalid_args", async () => {

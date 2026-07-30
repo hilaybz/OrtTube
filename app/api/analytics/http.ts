@@ -6,29 +6,32 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /**
  * Shared HTTP plumbing for the `/api/analytics/*` route handlers.
  *
- * Uniform error envelope `{ error: { code, message } }`. The analytics
- * RPCs are owner-checked; they raise `not_owner` (SQLSTATE 42501) for a
- * non-owner or unknown target, and `invalid_args` (SQLSTATE 22023) for the
- * scope rule of `tutor_stats`. `AnalyticsError.code` carries the SQLSTATE, so
- * map on that (with a fallback on the message text).
+ * Uniform error envelope `{ error: { code, message } }`. The analytics RPCs are
+ * owner-checked; they raise `not_owner` for a non-owner or unknown target, and
+ * `invalid_args` for the scope rule of `tutor_stats`. `AnalyticsError.code`
+ * carries that stable code, so map on it directly.
  */
 
 export function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });
 }
 
+/** Map a stable AnalyticsError code to an HTTP status. */
+export function statusForCode(code: string): number {
+  switch (code) {
+    case "not_owner":
+      return 403;
+    case "invalid_args":
+      return 400;
+    default:
+      return 400;
+  }
+}
+
 /** Translate a thrown AnalyticsError into the uniform JSON response. */
 export function handleError(e: unknown) {
   if (e instanceof AnalyticsError) {
-    const sqlstate = e.code ?? "";
-    const msg = e.message ?? "";
-    if (sqlstate === "42501" || msg.startsWith("not_owner")) {
-      return err("not_owner", "Not the owner of this resource", 403);
-    }
-    if (sqlstate === "22023" || msg.startsWith("invalid_args")) {
-      return err("invalid_args", msg || "Invalid arguments", 400);
-    }
-    return err("analytics_error", msg || "Analytics error", 400);
+    return err(e.code, e.message, statusForCode(e.code));
   }
   return err("internal_error", "Unexpected error", 500);
 }
