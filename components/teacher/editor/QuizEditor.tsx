@@ -20,6 +20,53 @@ const TRANSCRIPT_LABEL: Record<AuthorQuiz["transcript_status"], string> = {
   unavailable: "אין כתוביות לסרטון",
 };
 
+const GEN_COUNT_OPTIONS = [3, 5, 10];
+
+/**
+ * Count picker + "generate with AI" trigger. Rendered as the primary hero action
+ * on an empty quiz (`hero`) and as a quieter "add more" secondary once the quiz
+ * already has questions.
+ */
+function GenerateControls({
+  count,
+  onCount,
+  onGenerate,
+  busy,
+  disabled,
+  hero,
+}: {
+  count: number;
+  onCount: (n: number) => void;
+  onGenerate: () => void;
+  busy: boolean;
+  disabled: boolean;
+  hero: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <label className="flex items-center gap-2 text-sm text-[var(--body)]">
+        מספר שאלות
+        <select
+          value={count}
+          onChange={(e) => onCount(Number(e.target.value))}
+          disabled={busy}
+          className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm text-[var(--heading)] outline-none backdrop-blur-[20px] focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+        >
+          {GEN_COUNT_OPTIONS.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <Button variant={hero ? "brand" : "secondary"} onClick={onGenerate} disabled={disabled}>
+        {busy ? <Spinner size={16} /> : <Icon name="sparkle" size={16} />}
+        {hero ? "יצירת שאלות עם AI" : "עוד שאלות עם AI"}
+      </Button>
+    </div>
+  );
+}
+
 /**
  * The teacher quiz-authoring editor. Reads its initial tree from
  * `get_quiz_for_author` (passed by the server page) and drives every edit through
@@ -43,6 +90,7 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
     null
   );
   const [genBusy, setGenBusy] = useState(false);
+  const [genCount, setGenCount] = useState(GEN_COUNT_OPTIONS[0]);
   const [metaBusy, setMetaBusy] = useState(false);
 
   const questions = initial.questions;
@@ -99,7 +147,7 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
     try {
       const { questions: created } = await apiFetch<{ questions: unknown[] }>(
         `/api/quizzes/${quizId}/generate`,
-        { method: "POST", body: JSON.stringify({ count: 3 }) }
+        { method: "POST", body: JSON.stringify({ count: genCount }) }
       );
       setBanner({
         kind: "success",
@@ -201,13 +249,18 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
         </Alert>
       )}
 
-      {/* AI actions */}
-      <GlassCard className="mb-6 flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={generate} disabled={genBusy || transcriptUnavailable}>
-            {genBusy ? <Spinner size={16} /> : <Icon name="sparkle" size={16} />}
-            יצירת שאלות עם AI
-          </Button>
+      {/* AI actions — the hero action on an empty quiz; once the quiz has
+          questions it moves into the questions header as a quiet "add more". */}
+      {questions.length === 0 && (
+        <GlassCard className="mb-6 flex flex-col gap-4">
+          <GenerateControls
+            count={genCount}
+            onCount={setGenCount}
+            onGenerate={generate}
+            busy={genBusy}
+            disabled={genBusy || transcriptUnavailable}
+            hero
+          />
           {transcriptUnavailable ? (
             <span className="text-sm text-[var(--body)]">
               אין כתוביות לסרטון — הוסיפו שאלות ידנית.
@@ -219,16 +272,27 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
               </span>
             )
           )}
-        </div>
-
-      </GlassCard>
+        </GlassCard>
+      )}
 
       {/* Questions */}
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold text-[var(--heading)]">
           שאלות ({questions.length})
         </h2>
-        <Button onClick={openNew}>הוספת שאלה</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {questions.length > 0 && !transcriptUnavailable && (
+            <GenerateControls
+              count={genCount}
+              onCount={setGenCount}
+              onGenerate={generate}
+              busy={genBusy}
+              disabled={genBusy}
+              hero={false}
+            />
+          )}
+          <Button onClick={openNew}>הוספת שאלה</Button>
+        </div>
       </div>
 
       {questions.length === 0 ? (
