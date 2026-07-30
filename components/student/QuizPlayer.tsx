@@ -338,7 +338,8 @@ function CheckpointStepper({
   const currentSeconds = markers.find((m) => m.current)?.seconds ?? null;
   return (
     <div className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-white/50 px-5 py-4">
-      <div className="flex items-center">
+      {/* LTR: question 1 on the left, progressing right (like a video timeline). */}
+      <div dir="ltr" className="flex items-center">
         {markers.map((m, i) => {
           const locked = !m.done && !m.current;
           return (

@@ -169,7 +169,15 @@ export const VideoStage = forwardRef<
           opts={{
             width: "100%",
             height: "100%",
-            playerVars: { rel: 0, modestbranding: 1, playsinline: 1, iv_load_policy: 3 },
+            // disablekb: keyboard arrows must not seek the video (we own seeking
+            // via the block-skip gate) — especially while a question is up.
+            playerVars: {
+              rel: 0,
+              modestbranding: 1,
+              playsinline: 1,
+              iv_load_policy: 3,
+              disablekb: 1,
+            },
           }}
           onReady={(e: { target: YTPlayer }) => {
             playerRef.current = e.target;
