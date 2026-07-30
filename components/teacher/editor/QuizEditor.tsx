@@ -9,7 +9,6 @@ import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
-import { SegmentedToggle } from "@/components/ui/SegmentedToggle";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import { QuestionModal } from "./QuestionModal";
@@ -22,7 +21,10 @@ const TRANSCRIPT_LABEL: Record<AuthorQuiz["transcript_status"], string> = {
   unavailable: "אין כתוביות לסרטון",
 };
 
-const GEN_COUNT_OPTIONS = [3, 5, 10];
+// The generate RPC accepts 1–20; keep the UI bounds in lockstep with it.
+const GEN_COUNT_MIN = 1;
+const GEN_COUNT_MAX = 20;
+const GEN_COUNT_DEFAULT = 5;
 
 /**
  * The "generate with AI" button — primary hero on an empty quiz, quiet "add
@@ -70,15 +72,27 @@ function GenerateModal({
     <Modal open={open} title="יצירת שאלות עם AI" onClose={busy ? () => {} : onClose}>
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2">
-          <span className="text-sm text-[var(--body)]">
+          <label htmlFor="gen-count" className="text-sm text-[var(--body)]">
             {hasQuestions ? "כמה שאלות חדשות להוסיף לחידון?" : "כמה שאלות ליצור?"}
-          </span>
-          <SegmentedToggle
-            ariaLabel="מספר שאלות"
-            segments={GEN_COUNT_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
-            value={String(count)}
-            onChange={(v) => onCount(Number(v))}
+          </label>
+          <input
+            id="gen-count"
+            type="number"
+            inputMode="numeric"
+            min={GEN_COUNT_MIN}
+            max={GEN_COUNT_MAX}
+            value={count}
+            onChange={(e) => {
+              const n = Math.floor(Number(e.target.value));
+              if (Number.isFinite(n)) {
+                onCount(Math.max(GEN_COUNT_MIN, Math.min(GEN_COUNT_MAX, n)));
+              }
+            }}
+            className="w-28 rounded-[var(--radius)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--heading)] outline-none backdrop-blur-[20px] focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
           />
+          <span className="text-xs text-[var(--body-subtle)]">
+            בין {GEN_COUNT_MIN} ל-{GEN_COUNT_MAX} שאלות
+          </span>
         </div>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose} disabled={busy}>
@@ -118,7 +132,7 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
   );
   const [genBusy, setGenBusy] = useState(false);
   const [genModalOpen, setGenModalOpen] = useState(false);
-  const [genCount, setGenCount] = useState(GEN_COUNT_OPTIONS[0]);
+  const [genCount, setGenCount] = useState(GEN_COUNT_DEFAULT);
   const [metaBusy, setMetaBusy] = useState(false);
 
   const questions = initial.questions;
