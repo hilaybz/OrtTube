@@ -9,7 +9,6 @@ import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import { Icon } from "@/components/ui/Icon";
 import { apiFetch, ApiError } from "@/lib/http";
-import { SUPPORTED_LANGUAGES, type Language } from "@/lib/lang";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import { QuestionModal } from "./QuestionModal";
 import { updateQuizMeta, deleteQuestion, MutationError } from "./mutations";
@@ -17,14 +16,14 @@ import { formatTime, LANGUAGE_LABELS } from "./format";
 
 const TRANSCRIPT_LABEL: Record<AuthorQuiz["transcript_status"], string> = {
   ready: "תמליל מוכן",
-  pending: "התמליל בהכנה",
+  pending: "תמליל טרם נטען",
   unavailable: "אין כתוביות לסרטון",
 };
 
 /**
  * The teacher quiz-authoring editor. Reads its initial tree from
  * `get_quiz_for_author` (passed by the server page) and drives every edit through
- * the documented surfaces: question upsert / AI generate / translate go through
+ * the documented surfaces: question upsert / AI generate go through
  * `/api/quizzes/[id]/*`; quiz-meta edits and soft-deletes call the owner-checked
  * RPCs directly. After each mutation it `router.refresh()`es so the server re-reads
  * the canonical tree.
@@ -44,10 +43,6 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
     null
   );
   const [genBusy, setGenBusy] = useState(false);
-  const [transBusy, setTransBusy] = useState(false);
-  const [transLang, setTransLang] = useState<Language>(
-    SUPPORTED_LANGUAGES.find((l) => l !== initial.base_language) ?? initial.base_language
-  );
   const [metaBusy, setMetaBusy] = useState(false);
 
   const questions = initial.questions;
@@ -59,7 +54,6 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
   // fetches, caches, and promotes the status), so the button must stay live —
   // it is the only teacher action that resolves `pending`.
   const transcriptUnavailable = initial.transcript_status === "unavailable";
-  const otherLanguages = SUPPORTED_LANGUAGES.filter((l) => l !== initial.base_language);
 
   function refresh() {
     router.refresh();
@@ -119,29 +113,6 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
       });
     } finally {
       setGenBusy(false);
-    }
-  }
-
-  async function translate() {
-    setBanner(null);
-    setTransBusy(true);
-    try {
-      await apiFetch(`/api/quizzes/${quizId}/translate`, {
-        method: "POST",
-        body: JSON.stringify({ language: transLang }),
-      });
-      setBanner({
-        kind: "success",
-        msg: `התוכן תורגם ל${LANGUAGE_LABELS[transLang]}.`,
-      });
-      refresh();
-    } catch (e) {
-      setBanner({
-        kind: "danger",
-        msg: e instanceof ApiError ? e.message : "התרגום נכשל.",
-      });
-    } finally {
-      setTransBusy(false);
     }
   }
 
@@ -244,47 +215,12 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
           ) : (
             !transcriptReady && (
               <span className="text-sm text-[var(--body)]">
-                התמליל בהכנה — היצירה הראשונה עשויה להימשך רגע בזמן שליפת התמליל.
+                בלחיצה על ״יצירת שאלות עם AI״ נטען את תמליל הסרטון וניצור שאלות — עשוי להימשך מספר שניות.
               </span>
             )
           )}
         </div>
 
-        <div className="flex flex-wrap items-end gap-3 border-t border-[var(--glass-border-subtle)] pt-4">
-          <div className="flex flex-col gap-2">
-            <label
-              htmlFor="translate-lang"
-              className="text-sm font-medium text-[var(--heading)]"
-            >
-              תרגום התוכן לשפה
-            </label>
-            <select
-              id="translate-lang"
-              value={transLang}
-              onChange={(e) => setTransLang(e.target.value as Language)}
-              className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--heading)] outline-none backdrop-blur-[20px] focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
-            >
-              {otherLanguages.map((l) => (
-                <option key={l} value={l}>
-                  {LANGUAGE_LABELS[l]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Button variant="secondary" onClick={translate} disabled={transBusy}>
-            {transBusy ? <Spinner size={16} /> : "תרגום"}
-          </Button>
-          {initial.translated_languages.length > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-[var(--body)]">קיימים תרגומים:</span>
-              {initial.translated_languages.map((l) => (
-                <Badge key={l} variant="brand">
-                  {LANGUAGE_LABELS[l]}
-                </Badge>
-              ))}
-            </div>
-          )}
-        </div>
       </GlassCard>
 
       {/* Questions */}
