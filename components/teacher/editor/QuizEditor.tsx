@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
+import { SegmentedToggle } from "@/components/ui/SegmentedToggle";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import { QuestionModal } from "./QuestionModal";
@@ -23,47 +25,72 @@ const TRANSCRIPT_LABEL: Record<AuthorQuiz["transcript_status"], string> = {
 const GEN_COUNT_OPTIONS = [3, 5, 10];
 
 /**
- * Count picker + "generate with AI" trigger. Rendered as the primary hero action
- * on an empty quiz (`hero`) and as a quieter "add more" secondary once the quiz
- * already has questions.
+ * The "generate with AI" button — primary hero on an empty quiz, quiet "add
+ * more" secondary once the quiz has questions. Opens the count chooser.
  */
-function GenerateControls({
+function GenerateTrigger({
+  hero,
+  disabled,
+  onOpen,
+}: {
+  hero: boolean;
+  disabled: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <Button variant={hero ? "brand" : "secondary"} onClick={onOpen} disabled={disabled}>
+      <Icon name="sparkle" size={16} />
+      {hero ? "יצירת שאלות עם AI" : "עוד שאלות עם AI"}
+    </Button>
+  );
+}
+
+/**
+ * Chooser dialog: pick how many questions to generate. The copy states the
+ * questions are ADDED, so the number is never read as a running total.
+ */
+function GenerateModal({
+  open,
+  hasQuestions,
   count,
   onCount,
   onGenerate,
+  onClose,
   busy,
-  disabled,
-  hero,
 }: {
+  open: boolean;
+  hasQuestions: boolean;
   count: number;
   onCount: (n: number) => void;
   onGenerate: () => void;
+  onClose: () => void;
   busy: boolean;
-  disabled: boolean;
-  hero: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <label className="flex items-center gap-2 text-sm text-[var(--body)]">
-        מספר שאלות
-        <select
-          value={count}
-          onChange={(e) => onCount(Number(e.target.value))}
-          disabled={busy}
-          className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm text-[var(--heading)] outline-none backdrop-blur-[20px] focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
-        >
-          {GEN_COUNT_OPTIONS.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-      </label>
-      <Button variant={hero ? "brand" : "secondary"} onClick={onGenerate} disabled={disabled}>
-        {busy ? <Spinner size={16} /> : <Icon name="sparkle" size={16} />}
-        {hero ? "יצירת שאלות עם AI" : "עוד שאלות עם AI"}
-      </Button>
-    </div>
+    <Modal open={open} title="יצירת שאלות עם AI" onClose={busy ? () => {} : onClose}>
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2">
+          <span className="text-sm text-[var(--body)]">
+            {hasQuestions ? "כמה שאלות חדשות להוסיף לחידון?" : "כמה שאלות ליצור?"}
+          </span>
+          <SegmentedToggle
+            ariaLabel="מספר שאלות"
+            segments={GEN_COUNT_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
+            value={String(count)}
+            onChange={(v) => onCount(Number(v))}
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            ביטול
+          </Button>
+          <Button onClick={onGenerate} disabled={busy}>
+            {busy ? <Spinner size={16} /> : <Icon name="sparkle" size={16} />}
+            {hasQuestions ? "הוספת שאלות" : "יצירה"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -90,6 +117,7 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
     null
   );
   const [genBusy, setGenBusy] = useState(false);
+  const [genModalOpen, setGenModalOpen] = useState(false);
   const [genCount, setGenCount] = useState(GEN_COUNT_OPTIONS[0]);
   const [metaBusy, setMetaBusy] = useState(false);
 
@@ -161,6 +189,7 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
       });
     } finally {
       setGenBusy(false);
+      setGenModalOpen(false);
     }
   }
 
@@ -253,13 +282,10 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
           questions it moves into the questions header as a quiet "add more". */}
       {questions.length === 0 && (
         <GlassCard className="mb-6 flex flex-col gap-4">
-          <GenerateControls
-            count={genCount}
-            onCount={setGenCount}
-            onGenerate={generate}
-            busy={genBusy}
-            disabled={genBusy || transcriptUnavailable}
+          <GenerateTrigger
             hero
+            disabled={genBusy || transcriptUnavailable}
+            onOpen={() => setGenModalOpen(true)}
           />
           {transcriptUnavailable ? (
             <span className="text-sm text-[var(--body)]">
@@ -282,13 +308,10 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           {questions.length > 0 && !transcriptUnavailable && (
-            <GenerateControls
-              count={genCount}
-              onCount={setGenCount}
-              onGenerate={generate}
-              busy={genBusy}
-              disabled={genBusy}
+            <GenerateTrigger
               hero={false}
+              disabled={genBusy}
+              onOpen={() => setGenModalOpen(true)}
             />
           )}
           <Button onClick={openNew}>הוספת שאלה</Button>
@@ -361,6 +384,16 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
           })}
         </ul>
       )}
+
+      <GenerateModal
+        open={genModalOpen}
+        hasQuestions={questions.length > 0}
+        count={genCount}
+        onCount={setGenCount}
+        onGenerate={generate}
+        onClose={() => setGenModalOpen(false)}
+        busy={genBusy}
+      />
 
       <QuestionModal
         open={modalOpen}
