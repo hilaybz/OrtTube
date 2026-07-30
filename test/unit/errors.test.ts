@@ -6,6 +6,10 @@ describe("messageForCode", () => {
     expect(messageForCode("no_attempts_left")).toContain("ניסיונות");
     expect(messageForCode("invalid_credentials")).toContain("שגוי");
   });
+  it("maps the AI-generate failure codes (not the generic fallback)", () => {
+    expect(messageForCode("transcript_unavailable")).toContain("כתוביות");
+    expect(messageForCode("generation_failed")).toContain("AI");
+  });
   it("falls back for unknown codes", () => {
     expect(messageForCode("weird_code")).toBe("אירעה שגיאה. נסו שוב.");
   });

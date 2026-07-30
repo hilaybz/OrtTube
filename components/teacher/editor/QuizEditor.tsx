@@ -181,7 +181,6 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
         kind: "success",
         msg: `נוצרו ${created.length} שאלות חדשות בעזרת AI.`,
       });
-      refresh();
     } catch (e) {
       setBanner({
         kind: "danger",
@@ -190,6 +189,10 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
     } finally {
       setGenBusy(false);
       setGenModalOpen(false);
+      // Re-read so the transcript badge and generate availability reflect the
+      // outcome — e.g. a no-captions video promotes to `unavailable`, which
+      // disables the button and shows the "add manually" hint.
+      refresh();
     }
   }
 

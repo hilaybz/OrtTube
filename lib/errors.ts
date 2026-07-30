@@ -25,6 +25,11 @@ const MESSAGES: Record<string, string> = {
   invalid_max_attempts: "מספר הניסיונות אינו תקין.",
   invalid_tutor_mode: "מצב המורה־AI אינו תקין.",
   lookup_failed: "אירעה תקלה זמנית. נסו שוב בעוד רגע.",
+  transcript_unavailable:
+    "לסרטון זה אין כתוביות, ולכן לא ניתן ליצור שאלות עם AI. הוסיפו שאלות ידנית.",
+  generation_failed: "יצירת השאלות עם AI נכשלה. נסו שוב או הוסיפו שאלות ידנית.",
+  forbidden: "אין לך הרשאה לפעולה זו.",
+  not_found: "הפריט המבוקש לא נמצא.",
 };
 
 export function messageForCode(code: string | undefined): string {
