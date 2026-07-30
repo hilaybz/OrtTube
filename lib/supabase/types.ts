@@ -827,6 +827,7 @@ export type Database = {
         }[]
       }
       get_attempt_review: { Args: { p_attempt_id: string }; Returns: Json }
+      get_quiz_for_author: { Args: { p_quiz_id: string }; Returns: Json }
       get_quiz_for_student: {
         Args: { p_class_id: string; p_quiz_id: string }
         Returns: Json
