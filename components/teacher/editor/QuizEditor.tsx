@@ -54,6 +54,11 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
   const nextOrderIndex =
     questions.reduce((max, q) => Math.max(max, q.order_index), -1) + 1;
   const transcriptReady = initial.transcript_status === "ready";
+  // Only a CONFIRMED no-captions video blocks AI generation. A `pending`
+  // transcript is warmed on demand by the generate route (it single-flight
+  // fetches, caches, and promotes the status), so the button must stay live —
+  // it is the only teacher action that resolves `pending`.
+  const transcriptUnavailable = initial.transcript_status === "unavailable";
   const otherLanguages = SUPPORTED_LANGUAGES.filter((l) => l !== initial.base_language);
 
   function refresh() {
@@ -228,16 +233,20 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
       {/* AI actions */}
       <GlassCard className="mb-6 flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={generate} disabled={genBusy || !transcriptReady}>
+          <Button onClick={generate} disabled={genBusy || transcriptUnavailable}>
             {genBusy ? <Spinner size={16} /> : <Icon name="sparkle" size={16} />}
             יצירת שאלות עם AI
           </Button>
-          {!transcriptReady && (
+          {transcriptUnavailable ? (
             <span className="text-sm text-[var(--body)]">
-              {initial.transcript_status === "pending"
-                ? "התמליל עדיין בהכנה — נסו שוב בעוד רגע, או הוסיפו שאלות ידנית."
-                : "אין כתוביות לסרטון — הוסיפו שאלות ידנית."}
+              אין כתוביות לסרטון — הוסיפו שאלות ידנית.
             </span>
+          ) : (
+            !transcriptReady && (
+              <span className="text-sm text-[var(--body)]">
+                התמליל בהכנה — היצירה הראשונה עשויה להימשך רגע בזמן שליפת התמליל.
+              </span>
+            )
           )}
         </div>
 
