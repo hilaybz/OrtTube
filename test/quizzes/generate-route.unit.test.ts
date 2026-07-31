@@ -26,8 +26,15 @@ vi.mock("@/lib/transcriptCache", () => ({
 }));
 
 const generateMock = vi.fn();
+// vi.mock replaces the WHOLE module, so the validation helpers the route imports
+// from it must be re-exported here — otherwise they are undefined at call time.
+// The factory is hoisted above module scope, so the enum is inlined rather than
+// referenced from a `const` (which would be in its temporal dead zone).
 vi.mock("@/lib/ai/generate", () => ({
   generateQuizQuestions: (...args: unknown[]) => generateMock(...args),
+  GENERATION_DIFFICULTIES: ["easy", "medium", "hard"],
+  isGenerationDifficulty: (v: unknown) =>
+    typeof v === "string" && ["easy", "medium", "hard"].includes(v),
 }));
 
 const persistMock = vi.fn();
@@ -165,6 +172,62 @@ describe("generate route transcript warming (C1)", () => {
     expect(generateMock).toHaveBeenCalledWith(expect.anything(), 2, "he", {
       baseOrderIndex: 3,
       avoidPrompts: ["existing A", "existing B"],
+      difficulty: "medium",
     });
+  });
+});
+
+describe("generate route difficulty", () => {
+  beforeEach(() => {
+    stubQuizAndVideo(authoredQuiz, {
+      youtube_video_id: "yt-ready",
+      transcript_status: "ready",
+    });
+  });
+
+  it("passes a valid difficulty through to the generator", async () => {
+    await POST(generateRequest({ count: 1, difficulty: "hard" }), {
+      params: routeParams,
+    });
+
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      "he",
+      expect.objectContaining({ difficulty: "hard" })
+    );
+  });
+
+  it("defaults to medium when difficulty is omitted", async () => {
+    await POST(generateRequest({ count: 1 }), { params: routeParams });
+
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      "he",
+      expect.objectContaining({ difficulty: "medium" })
+    );
+  });
+
+  it("rejects an unknown difficulty with 400 instead of coercing it", async () => {
+    const response = await POST(
+      generateRequest({ count: 1, difficulty: "impossible" }),
+      { params: routeParams }
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe("invalid_request");
+    // The request must not have reached the model at all.
+    expect(generateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string difficulty", async () => {
+    const response = await POST(generateRequest({ count: 1, difficulty: 3 }), {
+      params: routeParams,
+    });
+
+    expect(response.status).toBe(400);
+    expect(generateMock).not.toHaveBeenCalled();
   });
 });
