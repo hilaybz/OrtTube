@@ -21,6 +21,43 @@ import { LANGUAGE_NAMES } from "./translate";
 const MODEL = "claude-haiku-4-5-20251001";
 const OPTIONS_PER_QUESTION = 4;
 
+/**
+ * How demanding the generated questions should be. `medium` is the default and
+ * deliberately contributes NO prompt instruction, so an unchanged generate call
+ * produces the same prompt — and therefore the same class of output — as before
+ * difficulty existed. Only `easy` / `hard` steer the model.
+ */
+export type GenerationDifficulty = "easy" | "medium" | "hard";
+
+export const GENERATION_DIFFICULTIES: readonly GenerationDifficulty[] = [
+  "easy",
+  "medium",
+  "hard",
+];
+
+export function isGenerationDifficulty(v: unknown): v is GenerationDifficulty {
+  return (
+    typeof v === "string" &&
+    (GENERATION_DIFFICULTIES as readonly string[]).includes(v)
+  );
+}
+
+/**
+ * The instruction appended for a given difficulty, or "" for `medium`.
+ * Phrased in terms of the cognitive demand and the distractors, since those are
+ * what actually make a multiple-choice item easy or hard — not prompt wording.
+ */
+function difficultyInstruction(difficulty: GenerationDifficulty): string {
+  switch (difficulty) {
+    case "easy":
+      return "- Difficulty: EASY. Ask about facts stated explicitly and memorably in the transcript. Distractors should be clearly wrong to anyone who watched attentively.\n";
+    case "hard":
+      return "- Difficulty: HARD. Require inference, or connecting ideas introduced at different points in the video, rather than recall of a single stated fact. Distractors must be genuinely plausible — each should reflect a realistic misunderstanding — while remaining unambiguously wrong.\n";
+    case "medium":
+      return "";
+  }
+}
+
 export interface GeneratedOption {
   base_text: string;
   is_correct: boolean;
@@ -190,15 +227,23 @@ export function buildTimestampedTranscript(
  *     continue past the existing ones instead of colliding at 0..n-1;
  *   • `opts.avoidPrompts` — the existing base-language prompts, so the model is
  *     told not to repeat or paraphrase them.
+ *
+ * `opts.difficulty` steers cognitive demand; it defaults to `medium`, which adds
+ * no instruction and so leaves the prompt identical to a call without it.
  */
 export async function generateQuizQuestions(
   segments: TranscriptSegment[],
   count: number,
   baseLanguage: Language,
-  opts: { baseOrderIndex?: number; avoidPrompts?: string[] } = {}
+  opts: {
+    baseOrderIndex?: number;
+    avoidPrompts?: string[];
+    difficulty?: GenerationDifficulty;
+  } = {}
 ): Promise<GeneratedQuestion[]> {
   const n = Math.max(1, Math.min(20, Math.floor(count)));
   const baseOrderIndex = Math.max(0, Math.floor(opts.baseOrderIndex ?? 0));
+  const difficultyBlock = difficultyInstruction(opts.difficulty ?? "medium");
   const avoidPrompts = (opts.avoidPrompts ?? [])
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
@@ -234,7 +279,7 @@ Rules:
 - "kind": "single" (exactly one correct) for most; "multi" (two or more correct) only when the content genuinely supports it.
 - Exactly ${OPTIONS_PER_QUESTION} options each; mark each option's "is_correct" boolean. A "single" question must have exactly one correct; a "multi" at least one.
 - Questions must be specific to the content, not generic.
-${avoidBlock}
+${difficultyBlock}${avoidBlock}
 Return ONLY a JSON array:
 [
   {

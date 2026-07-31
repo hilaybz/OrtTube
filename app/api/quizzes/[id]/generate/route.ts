@@ -2,7 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getTranscript } from "@/lib/transcriptCache";
-import { generateQuizQuestions } from "@/lib/ai/generate";
+import {
+  generateQuizQuestions,
+  isGenerationDifficulty,
+  GENERATION_DIFFICULTIES,
+  type GenerationDifficulty,
+} from "@/lib/ai/generate";
 import { persistGeneratedQuestions, QuizError } from "@/lib/quiz";
 import { getQuizForAuthor } from "@/lib/quizAuthor";
 import type { Language } from "@/lib/lang";
@@ -14,6 +19,9 @@ import type { Language } from "@/lib/lang";
  * segment-aligned positions from the READY transcript, then persists them via
  * `upsert_question(source='generated')`. Manual authoring stays available when
  * the transcript is unavailable — this endpoint just refuses to auto-generate.
+ *
+ * Body (all optional): `{ count?: 1-20, difficulty?: "easy"|"medium"|"hard" }`.
+ * A bare `{}` keeps working; omitted fields take today's defaults.
  *
  * Errors: `{ error: { code, message } }` with codes:
  *   unauthorized(401), invalid_request(400), not_found(404), forbidden(403),
@@ -34,15 +42,33 @@ export async function POST(
   } = await supabase.auth.getUser();
   if (!user) return err("unauthorized", "Sign in required", 401);
 
-  let count = 3;
+  // Scope the catch to the PARSE only. Validation below must be able to reject
+  // loudly — inside the try, a thrown validation error would be swallowed and
+  // silently downgraded to the defaults.
+  let body: { count?: unknown; difficulty?: unknown } = {};
   try {
-    const body = (await req.json()) as { count?: number };
-    if (body && typeof body.count === "number") count = body.count;
+    body = (await req.json()) as typeof body;
   } catch {
-    // empty body → default count
+    // absent or malformed body → defaults
   }
+
+  const count = typeof body.count === "number" ? body.count : 3;
   if (!Number.isFinite(count) || count < 1 || count > 20) {
     return err("invalid_request", "count must be between 1 and 20", 400);
+  }
+
+  // Reject an unknown difficulty rather than coercing it, so a typo surfaces
+  // instead of silently generating at the default.
+  let difficulty: GenerationDifficulty = "medium";
+  if (body.difficulty !== undefined) {
+    if (!isGenerationDifficulty(body.difficulty)) {
+      return err(
+        "invalid_request",
+        `difficulty must be one of: ${GENERATION_DIFFICULTIES.join(", ")}`,
+        400
+      );
+    }
+    difficulty = body.difficulty;
   }
 
   // Owner check via the authenticated client (owner-RLS lets a teacher read own).
@@ -120,6 +146,7 @@ export async function POST(
   const generated = await generateQuizQuestions(segments, count, q.base_language, {
     baseOrderIndex,
     avoidPrompts,
+    difficulty,
   });
   if (generated.length === 0) {
     return err("generation_failed", "The model returned no usable questions", 422);

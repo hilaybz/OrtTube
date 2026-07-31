@@ -9,6 +9,8 @@ import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
+import { SegmentedToggle, type Segment } from "@/components/ui/SegmentedToggle";
+import type { GenerationDifficulty } from "@/lib/ai/generate";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import { QuestionModal } from "./QuestionModal";
@@ -25,6 +27,15 @@ const TRANSCRIPT_LABEL: Record<AuthorQuiz["transcript_status"], string> = {
 const GEN_COUNT_MIN = 1;
 const GEN_COUNT_MAX = 20;
 const GEN_COUNT_DEFAULT = 5;
+
+// Mirrors the server's difficulty enum exactly — the UI must neither narrow what
+// the backend accepts nor offer a value it would reject.
+const DIFFICULTY_SEGMENTS: ReadonlyArray<Segment<GenerationDifficulty>> = [
+  { value: "easy", label: "קל" },
+  { value: "medium", label: "בינוני" },
+  { value: "hard", label: "מאתגר" },
+];
+const GEN_DIFFICULTY_DEFAULT: GenerationDifficulty = "medium";
 
 /**
  * The "generate with AI" button — primary hero on an empty quiz, quiet "add
@@ -56,6 +67,8 @@ function GenerateModal({
   hasQuestions,
   count,
   onCount,
+  difficulty,
+  onDifficulty,
   onGenerate,
   onClose,
   busy,
@@ -64,6 +77,8 @@ function GenerateModal({
   hasQuestions: boolean;
   count: number;
   onCount: (n: number) => void;
+  difficulty: GenerationDifficulty;
+  onDifficulty: (d: GenerationDifficulty) => void;
   onGenerate: () => void;
   onClose: () => void;
   busy: boolean;
@@ -93,6 +108,16 @@ function GenerateModal({
           <span className="text-xs text-[var(--body-subtle)]">
             בין {GEN_COUNT_MIN} ל-{GEN_COUNT_MAX} שאלות
           </span>
+        </div>
+        <div className="flex flex-col gap-2">
+          <span className="text-sm text-[var(--body)]">רמת קושי</span>
+          <SegmentedToggle
+            segments={DIFFICULTY_SEGMENTS}
+            value={difficulty}
+            onChange={onDifficulty}
+            ariaLabel="רמת קושי"
+            className="self-start"
+          />
         </div>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose} disabled={busy}>
@@ -133,6 +158,9 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
   const [genBusy, setGenBusy] = useState(false);
   const [genModalOpen, setGenModalOpen] = useState(false);
   const [genCount, setGenCount] = useState(GEN_COUNT_DEFAULT);
+  const [genDifficulty, setGenDifficulty] = useState<GenerationDifficulty>(
+    GEN_DIFFICULTY_DEFAULT
+  );
   const [metaBusy, setMetaBusy] = useState(false);
 
   const questions = initial.questions;
@@ -189,7 +217,10 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
     try {
       const { questions: created } = await apiFetch<{ questions: unknown[] }>(
         `/api/quizzes/${quizId}/generate`,
-        { method: "POST", body: JSON.stringify({ count: genCount }) }
+        {
+          method: "POST",
+          body: JSON.stringify({ count: genCount, difficulty: genDifficulty }),
+        }
       );
       setBanner({
         kind: "success",
@@ -407,6 +438,8 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
         hasQuestions={questions.length > 0}
         count={genCount}
         onCount={setGenCount}
+        difficulty={genDifficulty}
+        onDifficulty={setGenDifficulty}
         onGenerate={generate}
         onClose={() => setGenModalOpen(false)}
         busy={genBusy}
