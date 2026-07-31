@@ -19,7 +19,23 @@ import { LANGUAGE_NAMES } from "./translate";
  */
 
 const MODEL = "claude-haiku-4-5-20251001";
-const OPTIONS_PER_QUESTION = 4;
+
+/**
+ * How many answer options each generated question carries. The default of 4 is
+ * what every quiz generated before this was a choice, so it stays the fallback
+ * for callers that don't ask.
+ */
+export type OptionsPerQuestion = 3 | 4 | 5;
+
+export const OPTIONS_PER_QUESTION_VALUES: readonly OptionsPerQuestion[] = [3, 4, 5];
+export const DEFAULT_OPTIONS_PER_QUESTION: OptionsPerQuestion = 4;
+
+export function isOptionsPerQuestion(v: unknown): v is OptionsPerQuestion {
+  return (
+    typeof v === "number" &&
+    (OPTIONS_PER_QUESTION_VALUES as readonly number[]).includes(v)
+  );
+}
 
 /**
  * How demanding the generated questions should be. `medium` is the default and
@@ -113,20 +129,23 @@ export function snapToSegmentBoundary(
  * or NO correct option at all — we never fabricate an answer key).
  *
  * CRITICAL ordering: correctness is computed on the FULL cleaned option set
- * BEFORE trimming to four. Trimming first (the old behaviour) could drop a
- * correct option that the model placed at index ≥4, after which the question was
+ * BEFORE trimming to `optionsCap`. Trimming first (the old behaviour) could drop
+ * a correct option the model placed beyond the cap, after which the question was
  * silently keyed to option 0 — a wrong answer key. Instead we keep the correct
  * option(s), fill the remaining slots with distractors, then recompute is_correct
- * on the final four:
- *   • single → exactly one correct (the first correct) + up to 3 distractors,
- *   • multi  → all correct (capped at 4) + distractors up to 4.
+ * on the final set:
+ *   • single → exactly one correct (the first correct) + distractors up to the cap,
+ *   • multi  → all correct (capped) + distractors up to the cap.
+ * This ordering is what makes a *variable* cap safe: lowering it to 3 trims
+ * distractors, never the answer key.
  * If the model returned zero correct options, the question is unsalvageable and
  * is skipped (rather than defaulting option 0 to correct).
  */
 export function normalizeGeneratedQuestion(
   raw: RawQuestion,
   segments: TranscriptSegment[],
-  orderIndex: number
+  orderIndex: number,
+  optionsCap: OptionsPerQuestion = DEFAULT_OPTIONS_PER_QUESTION
 ): GeneratedQuestion | null {
   const prompt = (raw.prompt ?? "").trim();
   if (!prompt) return null;
@@ -139,24 +158,24 @@ export function normalizeGeneratedQuestion(
 
   const kind: "single" | "multi" = raw.kind === "multi" ? "multi" : "single";
 
-  // Split BEFORE trimming so a correct option is never dropped by the 4-cap.
+  // Split BEFORE trimming so a correct option is never dropped by the cap.
   const correct = cleaned.filter((o) => o.is_correct);
   const distractors = cleaned.filter((o) => !o.is_correct);
   if (correct.length === 0) return null; // no answer key → skip, never fabricate.
 
-  // Assemble the final ≤4-option set, keeping the required correct option(s).
+  // Assemble the final ≤cap option set, keeping the required correct option(s).
   let picked: { text: string; is_correct: boolean }[];
   if (kind === "single") {
     const correctOne = correct[0];
     // Leftover "correct" options become distractors (single needs exactly one).
     const fillers = [...distractors, ...correct.slice(1)];
     picked = [correctOne, ...fillers]
-      .slice(0, OPTIONS_PER_QUESTION)
+      .slice(0, optionsCap)
       .map((o) => ({ text: o.text, is_correct: o === correctOne }));
   } else {
-    const keptCorrect = correct.slice(0, OPTIONS_PER_QUESTION);
+    const keptCorrect = correct.slice(0, optionsCap);
     picked = [...keptCorrect, ...distractors]
-      .slice(0, OPTIONS_PER_QUESTION)
+      .slice(0, optionsCap)
       .map((o) => ({ text: o.text, is_correct: keptCorrect.includes(o) }));
   }
   if (picked.length < 2) return null;
@@ -230,6 +249,8 @@ export function buildTimestampedTranscript(
  *
  * `opts.difficulty` steers cognitive demand; it defaults to `medium`, which adds
  * no instruction and so leaves the prompt identical to a call without it.
+ * `opts.optionsPerQuestion` sets how many answers each question carries (3/4/5,
+ * default 4) — it drives both the instruction and the normalizer's cap.
  */
 export async function generateQuizQuestions(
   segments: TranscriptSegment[],
@@ -239,11 +260,18 @@ export async function generateQuizQuestions(
     baseOrderIndex?: number;
     avoidPrompts?: string[];
     difficulty?: GenerationDifficulty;
+    optionsPerQuestion?: OptionsPerQuestion;
   } = {}
 ): Promise<GeneratedQuestion[]> {
   const n = Math.max(1, Math.min(20, Math.floor(count)));
   const baseOrderIndex = Math.max(0, Math.floor(opts.baseOrderIndex ?? 0));
   const difficultyBlock = difficultyInstruction(opts.difficulty ?? "medium");
+  const optionsCap = opts.optionsPerQuestion ?? DEFAULT_OPTIONS_PER_QUESTION;
+  // The example block must show exactly `optionsCap` options, or the model gets a
+  // shape that contradicts the "Exactly N options" rule above it.
+  const exampleOptions = Array.from({ length: optionsCap }, (_, i) =>
+    `      { "text": "...", "is_correct": ${i === 0} }`
+  ).join(",\n");
   const avoidPrompts = (opts.avoidPrompts ?? [])
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
@@ -277,7 +305,7 @@ Rules:
 - Write every prompt, option and explanation in ${LANGUAGE_NAMES[baseLanguage]}, regardless of the transcript's language.
 - "position_seconds": an integer number of seconds where the question should pop up (the moment AFTER the relevant content was covered). Use the <seconds> markers.
 - "kind": "single" (exactly one correct) for most; "multi" (two or more correct) only when the content genuinely supports it.
-- Exactly ${OPTIONS_PER_QUESTION} options each; mark each option's "is_correct" boolean. A "single" question must have exactly one correct; a "multi" at least one.
+- Exactly ${optionsCap} options each; mark each option's "is_correct" boolean. A "single" question must have exactly one correct; a "multi" at least one.
 - Questions must be specific to the content, not generic.
 ${difficultyBlock}${avoidBlock}
 Return ONLY a JSON array:
@@ -288,10 +316,7 @@ Return ONLY a JSON array:
     "prompt": "...",
     "explanation": "...",
     "options": [
-      { "text": "...", "is_correct": true },
-      { "text": "...", "is_correct": false },
-      { "text": "...", "is_correct": false },
-      { "text": "...", "is_correct": false }
+${exampleOptions}
     ]
   }
 ]`,
@@ -312,7 +337,12 @@ Return ONLY a JSON array:
 
   const result: GeneratedQuestion[] = [];
   for (const raw of parsed.slice(0, n)) {
-    const q = normalizeGeneratedQuestion(raw, segments, result.length + baseOrderIndex);
+    const q = normalizeGeneratedQuestion(
+      raw,
+      segments,
+      result.length + baseOrderIndex,
+      optionsCap
+    );
     if (q) result.push(q);
   }
   return result;
