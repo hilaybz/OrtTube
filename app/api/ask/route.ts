@@ -64,6 +64,38 @@ interface AskBody {
   prompt?: unknown;
   attemptId?: unknown;
   activeQuestionId?: unknown;
+  history?: unknown;
+}
+
+type Turn = { role: "user" | "assistant"; content: string };
+
+/**
+ * Sanitize client-supplied conversation history into a valid Anthropic message
+ * list: keep only user/assistant turns with non-empty string content (capped),
+ * take the most recent few, force it to start with `user` and strictly
+ * alternate, and drop any trailing `user` turn (the new question is appended
+ * after). Untrusted input — never fed to any privileged write.
+ */
+function sanitizeHistory(raw: unknown): Turn[] {
+  if (!Array.isArray(raw)) return [];
+  const cleaned = raw
+    .filter(
+      (m): m is Turn =>
+        !!m &&
+        (m.role === "user" || m.role === "assistant") &&
+        typeof m.content === "string" &&
+        m.content.trim().length > 0
+    )
+    .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_PROMPT_CHARS) }))
+    .slice(-6);
+  while (cleaned.length && cleaned[0].role !== "user") cleaned.shift();
+  const out: Turn[] = [];
+  for (const m of cleaned) {
+    if (out.length && out[out.length - 1].role === m.role) continue; // enforce alternation
+    out.push(m);
+  }
+  if (out.length && out[out.length - 1].role === "user") out.pop();
+  return out;
 }
 
 /** Shape returned by the `get_tutor_mode` SD RPC. */
@@ -127,6 +159,7 @@ export async function POST(req: NextRequest) {
   const prompt = typeof body.prompt === "string" ? body.prompt : "";
   const attemptId = asOptionalString(body.attemptId);
   const activeQuestionId = asOptionalString(body.activeQuestionId);
+  const history = sanitizeHistory(body.history);
   const positionSeconds =
     typeof body.positionSeconds === "number" &&
     Number.isFinite(body.positionSeconds) &&
@@ -272,7 +305,10 @@ export async function POST(req: NextRequest) {
     model: TUTOR_MODEL,
     max_tokens: TUTOR_MAX_TOKENS,
     system: buildTutorSystemPrompt({ language, mode, hasActiveQuestion }),
+    // Prior turns give follow-ups context; the transcript slice rides only on the
+    // latest user message (it reflects the current playhead).
     messages: [
+      ...history,
       {
         role: "user",
         content: buildTutorUserMessage({

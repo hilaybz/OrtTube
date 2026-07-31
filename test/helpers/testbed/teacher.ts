@@ -34,11 +34,18 @@ import {
   type ClassStats,
   type TutorStats,
 } from "@/lib/analytics";
+import {
+  getClassRosterProgress,
+  getStudentQuizProgress,
+  type ClassRosterProgress,
+  type StudentQuizProgress,
+} from "@/lib/analyticsProgress";
 import { getPool } from "../db";
 import type { Actor } from "./internal";
 import type { QuestionFixture } from "./builders";
 import { Classroom, type AssignOptions } from "./classroom";
 import { Quiz, AuthoredQuestion, QuizOption, type SharedQuizRow } from "./quiz";
+import type { Student } from "./student";
 
 export class Teacher implements Actor {
   constructor(
@@ -208,6 +215,19 @@ export class Teacher implements Actor {
     return "quiz" in scope
       ? getTutorStats(this.client, { quizId: scope.quiz.id })
       : getTutorStats(this.client, { classId: scope.class.id });
+  }
+
+  /** Per-current-member roster progress for a class (must own the class). */
+  rosterProgress(classroom: Classroom): Promise<ClassRosterProgress> {
+    return getClassRosterProgress(this.client, classroom.id);
+  }
+
+  /** Single-student drill-down within a class (must own the class). */
+  studentProgress(
+    classroom: Classroom,
+    student: Student
+  ): Promise<StudentQuizProgress> {
+    return getStudentQuizProgress(this.client, classroom.id, student.id);
   }
 
   /**

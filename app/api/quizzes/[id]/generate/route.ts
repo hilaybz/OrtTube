@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { getTranscript } from "@/lib/transcriptCache";
 import { generateQuizQuestions } from "@/lib/ai/generate";
 import { persistGeneratedQuestions, QuizError } from "@/lib/quiz";
+import { getQuizForAuthor } from "@/lib/quizAuthor";
 import type { Language } from "@/lib/lang";
 
 /**
@@ -98,7 +99,28 @@ export async function POST(
     );
   }
 
-  const generated = await generateQuizQuestions(segments, count, q.base_language);
+  // Append cleanly onto any existing questions: continue order_index past the
+  // current max, and tell the model what's already covered so it doesn't repeat.
+  // Non-fatal — a failed read just falls back to a fresh (offset-0) batch.
+  let baseOrderIndex = 0;
+  let avoidPrompts: string[] = [];
+  try {
+    const authored = await getQuizForAuthor(supabase, quizId);
+    if (authored.questions.length > 0) {
+      baseOrderIndex =
+        Math.max(...authored.questions.map((existing) => existing.order_index)) + 1;
+      avoidPrompts = authored.questions
+        .map((existing) => existing.prompt)
+        .filter((p): p is string => typeof p === "string" && p.trim().length > 0);
+    }
+  } catch {
+    // ignore — append without an offset / dedup hints
+  }
+
+  const generated = await generateQuizQuestions(segments, count, q.base_language, {
+    baseOrderIndex,
+    avoidPrompts,
+  });
   if (generated.length === 0) {
     return err("generation_failed", "The model returned no usable questions", 422);
   }

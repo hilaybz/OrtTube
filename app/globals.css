@@ -1,21 +1,100 @@
 @import "tailwindcss";
 
+/*
+ * typeui Glassmorphism — LIGHT theme token layer.
+ * Values are copied from the design skill (.claude/skills/typeui-design-system):
+ * colors.md (light column), radius.md, shadows.md, buttons.md (glint).
+ * Tokens are agnostic CSS custom properties; components consume them via the
+ * `.glass` component classes below or Tailwind arbitrary values (var(--token)).
+ */
 :root {
-  --background: #0f1117;
-  --surface: #161920;
-  --surface-raised: #1b212c;
-  --border: #1f2733;
-  --foreground: #e8ecf2;
-  --muted: #98a2b3;
-  --accent: #3b82f6;
+  /* neutral / surface */
+  --neutral-primary-soft: #ffffff;
+  --neutral-secondary-soft: #f8fafb;
+  --neutral-tertiary: #f0f3f5;
+  --neutral-quaternary: #e2e7ec;
+  --gray: #cad1d8;
+
+  /* brand (emerald) */
+  --brand-softer: #e6fff3;
+  --brand-soft: #b8ffd9;
+  --brand: #0ea66d;
+  --brand-strong: #087a4e;
+
+  /* status */
+  --success-soft: #ecfdf5;
+  --fg-success: #047857;
+  --danger-soft: #fef0f2;
+  --fg-danger: #be123c;
+  --warning-soft: #fff7ed;
+  --fg-warning: #7c2d12;
+
+  /* text */
+  --heading: #0f172a;
+  --body: #475569;
+  --body-subtle: #64748b;
+  --white: #ffffff;
+  --fg-brand: #0ea66d;
+  --fg-brand-strong: #087a4e;
+
+  /* borders */
+  --border-default: #e2e7ec;
+  --border-default-medium: #e2e7ec;
+  --border-brand: #0ea66d;
+
+  /* glass surfaces (light) */
+  --glass-bg: rgba(255, 255, 255, 0.45);
+  --glass-bg-hover: rgba(255, 255, 255, 0.55);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-border-subtle: rgba(0, 0, 0, 0.05);
+  --glass-shadow: 0 8px 32px rgba(76, 29, 110, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+  --glass-edge-top: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.9),
+    transparent
+  );
+  --glass-edge-left: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.9),
+    transparent,
+    rgba(255, 255, 255, 0.4)
+  );
+
+  /* button glint */
+  --color-1-400: rgba(255, 255, 255, 0.3);
+  --color-1-700: rgba(0, 0, 0, 0.08);
+  --shadow-xs: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+  /* radius scale */
+  --radius: 20px;
+  --radius-d: 12px;
+  --radius-sm: 8px;
+  --radius-full: 9999px;
+
+  /* ambient app gradient (lilac → mint) */
+  --app-gradient: radial-gradient(
+      48% 55% at 90% 16%,
+      rgba(216, 180, 254, 0.55),
+      transparent 62%
+    ),
+    radial-gradient(42% 50% at 96% 92%, rgba(251, 207, 232, 0.5), transparent 60%),
+    radial-gradient(62% 80% at 6% 40%, rgba(167, 243, 208, 0.6), transparent 66%),
+    radial-gradient(45% 55% at 26% 100%, rgba(187, 247, 208, 0.45), transparent 62%),
+    #f4f2fa;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, sans-serif;
   min-height: 100vh;
+  color: var(--heading);
+  background: var(--app-gradient);
+  background-attachment: fixed;
+  font-family: var(--font-body), "Rubik", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -23,61 +102,80 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: var(--font-display), var(--font-body), sans-serif;
+  font-family: var(--font-body), "Rubik", sans-serif;
   text-wrap: balance;
 }
 
-* {
-  box-sizing: border-box;
+@layer components {
+  /* Frosted glass surface. The element gets edge-highlight pseudo-elements
+     (top + left light refraction), so its own children are lifted above them. */
+  .glass {
+    position: relative;
+    overflow: hidden;
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(20px) !important;
+    backdrop-filter: blur(20px) !important;
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    border-radius: var(--radius);
+  }
+  .glass::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--glass-edge-top);
+    z-index: 1;
+    pointer-events: none;
+  }
+  .glass::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 100%;
+    background: var(--glass-edge-left);
+    z-index: 1;
+    pointer-events: none;
+  }
+  .glass > * {
+    position: relative;
+    z-index: 2;
+  }
 }
 
-::selection {
-  background: rgba(59, 130, 246, 0.35);
-  color: #fff;
-}
-
-/* Visible keyboard focus without fighting Tailwind's focus: utilities */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* Dark scrollbars to match the ground */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #2a3342 transparent;
-}
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-*::-webkit-scrollbar-thumb {
-  background: #2a3342;
-  border-radius: 5px;
-  border: 2px solid var(--background);
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
+::selection {
+  background: rgba(14, 166, 109, 0.25);
 }
 
-@keyframes modal-in {
+@keyframes quiz-pop {
   from {
     opacity: 0;
-    transform: scale(0.96) translateY(8px);
+    transform: translateY(12px) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
-
-.animate-modal-in {
-  animation: modal-in 0.18s ease-out;
+.quiz-pop {
+  animation: quiz-pop 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-modal-in {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
   }
 }

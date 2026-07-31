@@ -1,6 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+/**
+ * Next 16 proxy (formerly "middleware"). Refreshes the Supabase session on every
+ * request and applies a COARSE auth gate: unauthenticated users hitting a
+ * protected area are bounced to sign-in. The authoritative ROLE gate lives in
+ * the route-group layouts (`app/(teacher)`, `app/(student)`), which read the
+ * immutable `profiles.role` — not `user_metadata` — so it can't be spoofed and
+ * can't desync from the source of truth.
+ */
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -30,28 +38,15 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
+  const protectedArea =
+    path.startsWith("/dashboard") || path.startsWith("/student");
 
-  // Role comes from auth metadata; accounts created before roles existed
-  // are teachers.
-  const isSignedIn = Boolean(user?.email);
-  const isStudent = isSignedIn && user?.user_metadata?.role === "student";
-
-  function redirectTo(target: string) {
-    const redirectResponse = NextResponse.redirect(new URL(target, request.url));
+  if (!user && protectedArea) {
+    const redirect = NextResponse.redirect(new URL("/sign-in", request.url));
     supabaseResponse.cookies.getAll().forEach((c) => {
-      redirectResponse.cookies.set(c.name, c.value, c);
+      redirect.cookies.set(c.name, c.value, c);
     });
-    return redirectResponse;
-  }
-
-  if (path.startsWith("/dashboard")) {
-    if (!isSignedIn) return redirectTo("/auth/sign-in");
-    if (isStudent) return redirectTo("/student");
-  }
-
-  if (path.startsWith("/student")) {
-    if (!isSignedIn) return redirectTo("/auth/sign-in");
-    if (!isStudent) return redirectTo("/dashboard");
+    return redirect;
   }
 
   return supabaseResponse;

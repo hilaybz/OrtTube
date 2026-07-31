@@ -42,6 +42,11 @@ vi.mock("@/lib/quiz", () => ({
   },
 }));
 
+const getQuizForAuthorMock = vi.fn();
+vi.mock("@/lib/quizAuthor", () => ({
+  getQuizForAuthor: (...args: unknown[]) => getQuizForAuthorMock(...args),
+}));
+
 import { POST } from "@/app/api/quizzes/[id]/generate/route";
 
 const TEACHER_ID = "teacher-uuid";
@@ -95,6 +100,7 @@ beforeEach(() => {
     segments: [{ text: "hello world", offset: 0, duration: 4000 }],
     language: "he",
   });
+  getQuizForAuthorMock.mockResolvedValue({ questions: [] });
 });
 
 describe("generate route transcript warming (C1)", () => {
@@ -139,5 +145,26 @@ describe("generate route transcript warming (C1)", () => {
 
     expect(getTranscriptMock).toHaveBeenCalled();
     expect(response.status).toBe(409);
+  });
+
+  it("appends: offsets order_index past existing questions and passes their prompts to avoid repeats", async () => {
+    stubQuizAndVideo(authoredQuiz, {
+      youtube_video_id: "yt-ready",
+      transcript_status: "ready",
+    });
+    getQuizForAuthorMock.mockResolvedValue({
+      questions: [
+        { order_index: 0, prompt: "existing A" },
+        { order_index: 1, prompt: "existing B" },
+        { order_index: 2, prompt: null }, // untranslated base prompt → skipped
+      ],
+    });
+
+    await POST(generateRequest({ count: 2 }), { params: routeParams });
+
+    expect(generateMock).toHaveBeenCalledWith(expect.anything(), 2, "he", {
+      baseOrderIndex: 3,
+      avoidPrompts: ["existing A", "existing B"],
+    });
   });
 });

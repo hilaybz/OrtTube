@@ -184,15 +184,32 @@ export function buildTimestampedTranscript(
  * are coerced to the correctness invariant. Returns fewer than `count` only if
  * the model under-delivers or some questions are unsalvageable. Node/server only
  * (needs `ANTHROPIC_API_KEY`).
+ *
+ * When APPENDING to a quiz that already has questions, pass:
+ *   • `opts.baseOrderIndex` — the next free `order_index`, so the new questions
+ *     continue past the existing ones instead of colliding at 0..n-1;
+ *   • `opts.avoidPrompts` — the existing base-language prompts, so the model is
+ *     told not to repeat or paraphrase them.
  */
 export async function generateQuizQuestions(
   segments: TranscriptSegment[],
   count: number,
-  baseLanguage: Language
+  baseLanguage: Language,
+  opts: { baseOrderIndex?: number; avoidPrompts?: string[] } = {}
 ): Promise<GeneratedQuestion[]> {
   const n = Math.max(1, Math.min(20, Math.floor(count)));
+  const baseOrderIndex = Math.max(0, Math.floor(opts.baseOrderIndex ?? 0));
+  const avoidPrompts = (opts.avoidPrompts ?? [])
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
   const transcript = buildTimestampedTranscript(segments);
   if (transcript.length < 40) return [];
+
+  const avoidBlock = avoidPrompts.length
+    ? `\nThe quiz already has these questions — do NOT repeat or paraphrase them; cover different content and moments:\n${avoidPrompts
+        .map((p) => `- ${p}`)
+        .join("\n")}\n`
+    : "";
 
   const client = new Anthropic();
   const msg = await client.messages.create({
@@ -217,7 +234,7 @@ Rules:
 - "kind": "single" (exactly one correct) for most; "multi" (two or more correct) only when the content genuinely supports it.
 - Exactly ${OPTIONS_PER_QUESTION} options each; mark each option's "is_correct" boolean. A "single" question must have exactly one correct; a "multi" at least one.
 - Questions must be specific to the content, not generic.
-
+${avoidBlock}
 Return ONLY a JSON array:
 [
   {
@@ -250,7 +267,7 @@ Return ONLY a JSON array:
 
   const result: GeneratedQuestion[] = [];
   for (const raw of parsed.slice(0, n)) {
-    const q = normalizeGeneratedQuestion(raw, segments, result.length);
+    const q = normalizeGeneratedQuestion(raw, segments, result.length + baseOrderIndex);
     if (q) result.push(q);
   }
   return result;
