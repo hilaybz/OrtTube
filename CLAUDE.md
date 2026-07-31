@@ -32,11 +32,17 @@ npm run lint       # ESLint
 npm test           # Vitest suite once
 npm run test:watch # Vitest watch mode
 npm run smoke      # E2E smoke against a running app (real YouTube + Claude)
-npm run gen:types  # Regenerate lib/supabase/types.ts from the local schema
+npm run gen:types  # Regenerate lib/supabase/types.ts from the linked (remote) schema
+npm run seed       # Seed a teacher, student, class and playable quiz
 ```
 
-Local development needs the Supabase CLI stack running (`supabase start`, requires
-Docker) with `.env.local` filled from `.env.local.example`.
+Development targets a **hosted** Supabase project — there is no local Docker stack.
+Link the CLI once (`supabase link --project-ref <ref>`), apply migrations with
+`supabase db push`, and fill `.env.local` from `.env.local.example`.
+
+Leave `SUPABASE_DB_URL` unset: the integration harness truncates every table and
+clears `auth.users`, so it must only ever point at a local throwaway Postgres. The
+integration suite consequently does not run against the hosted project.
 
 ## Architecture
 
@@ -75,6 +81,9 @@ Full detail in [`docs/data-model.md`](docs/data-model.md). Load-bearing invarian
 - Schema and RPCs live in `supabase/migrations/*.sql` (the source of truth).
 - `lib/supabase/types.ts` is **generated, not hand-edited**. After any migration,
   run `npm run gen:types` and commit the regenerated file alongside the migration.
+- `gen:types` reads the **linked remote** schema, so the order matters: `supabase db
+  push` first, *then* `gen:types`. Generating before pushing silently produces types
+  for the pre-migration schema.
 
 ## Testing
 

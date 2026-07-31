@@ -51,26 +51,37 @@ streaming tutor. Transcripts are cached in Supabase Storage.
 
 ## Getting started
 
-Prerequisites: Node, the [Supabase CLI](https://supabase.com/docs/guides/cli),
-and Docker (for the local Supabase stack).
+Prerequisites: Node and the [Supabase CLI](https://supabase.com/docs/guides/cli).
+
+The project targets a **hosted** Supabase instance — there is no local Docker
+stack. The tooling therefore works against the *linked* remote project.
 
 ```bash
 # 1. Install deps
 npm install
 
-# 2. Start the local Supabase stack (Postgres + Auth + Storage)
-supabase start
+# 2. Link the CLI to the hosted project
+supabase link --project-ref <your-project-ref>
 
-# 3. Configure environment
+# 3. Apply the schema (all migrations, in order)
+supabase db push
+
+# 4. Configure environment
 cp .env.local.example .env.local
-#    Fill in ANTHROPIC_API_KEY and the Supabase URL/keys printed by `supabase start`.
+#    Fill in ANTHROPIC_API_KEY, the Supabase URL/keys from the project's API
+#    settings, and ADMIN_SECRET / CRON_SECRET (any two distinct random strings).
 
-# 4. Generate typed DB bindings from the local schema
+# 5. Generate typed DB bindings from the linked schema
 npm run gen:types
 
-# 5. Run the app
+# 6. Provision the first teacher — there is no teacher self-signup
 npm run dev            # http://localhost:3000
+npm run seed           # seeds a teacher, student, class and playable quiz
 ```
+
+Leave `SUPABASE_DB_URL` unset. The test harness truncates every table and clears
+`auth.users` on each `beforeEach`, so pointing it at the hosted project would wipe
+it; only ever set it to a local throwaway Postgres.
 
 ### Scripts
 
@@ -82,7 +93,8 @@ npm run dev            # http://localhost:3000
 | `npm test` | Run the Vitest suite once. |
 | `npm run test:watch` | Vitest in watch mode. |
 | `npm run smoke` | End-to-end smoke test against a running app (real YouTube + Claude). |
-| `npm run gen:types` | Regenerate `lib/supabase/types.ts` from the local schema. |
+| `npm run seed` | Seed a teacher, student, class and playable quiz via the HTTP API. |
+| `npm run gen:types` | Regenerate `lib/supabase/types.ts` from the linked (remote) schema. |
 
 ## Testing
 

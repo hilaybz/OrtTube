@@ -13,7 +13,7 @@
     "e2e": "playwright test",
     "seed": "node --env-file=.env.local scripts/seed-fixture.mjs",
     "smoke": "node test/e2e/smoke.mjs",
-    "gen:types": "supabase gen types typescript --local > lib/supabase/types.ts"
+    "gen:types": "supabase gen types typescript --linked > lib/supabase/types.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",
