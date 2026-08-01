@@ -24,10 +24,17 @@ export type FetchOutcome =
       /** Provenance of the winning track. Manual (human) captions never equal "asr". */
       kind: "manual" | "asr" | "package";
     }
-  /** The watch page loaded and confirmed the video has no caption tracks. */
+  /**
+   * The watch page loaded INTACT (playable) and listed no caption tracks — the
+   * only evidence that actually confirms a video has none.
+   */
   | { status: "unavailable" }
-  /** A transient/ambiguous failure (network, parse, empty) — must NOT downgrade status. */
-  | { status: "error" };
+  /**
+   * A transient/ambiguous failure (network, rate limit, bot check, parse) — must
+   * NOT downgrade status. `reason` records which, so a failure on an IP we can't
+   * reproduce locally is still diagnosable from logs.
+   */
+  | { status: "error"; reason: string };
 
 // Caption-language preference within a track group. The app speaks he/ar/en;
 // "iw" is the legacy ISO code for Hebrew that older videos still use.
@@ -92,6 +99,15 @@ export function extractInlineJson(html: string, varName: string): unknown {
 interface CaptionScrape {
   /** Whether the watch page loaded and a player response was parsed. */
   pageLoaded: boolean;
+  /**
+   * `playabilityStatus.status` from the player response ("OK", "LOGIN_REQUIRED",
+   * "UNPLAYABLE", …), or null when absent. This is the discriminator between a
+   * page served INTACT that genuinely lists no captions, and a degraded response
+   * where the caption data was withheld — the two are otherwise identical from
+   * the outside, and conflating them is what let a blocked fetch be recorded as
+   * "this video has no captions".
+   */
+  playability: string | null;
   tracks: CaptionTrack[];
 }
 
@@ -100,18 +116,27 @@ async function fetchCaptionTracks(videoId: string): Promise<CaptionScrape> {
     const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
       headers: YOUTUBE_HEADERS,
     });
-    if (!res.ok) return { pageLoaded: false, tracks: [] };
+    // Covers rate limiting (429) as well as outright errors — both mean we
+    // learned nothing about this video's captions.
+    if (!res.ok) return { pageLoaded: false, playability: null, tracks: [] };
     const html = await res.text();
     const data = extractInlineJson(html, "ytInitialPlayerResponse") as
-      | { captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } } }
+      | {
+          playabilityStatus?: { status?: string };
+          captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
+        }
       | null;
     // Player response absent → the page shape changed or we were blocked: treat
     // as "not loaded" so callers keep the result transient (no status downgrade).
-    if (!data) return { pageLoaded: false, tracks: [] };
+    if (!data) return { pageLoaded: false, playability: null, tracks: [] };
     const tracks = data.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-    return { pageLoaded: true, tracks: Array.isArray(tracks) ? tracks : [] };
+    return {
+      pageLoaded: true,
+      playability: data.playabilityStatus?.status ?? null,
+      tracks: Array.isArray(tracks) ? tracks : [],
+    };
   } catch {
-    return { pageLoaded: false, tracks: [] };
+    return { pageLoaded: false, playability: null, tracks: [] };
   }
 }
 
@@ -274,13 +299,25 @@ export async function fetchFreshTranscript(videoId: string): Promise<FetchOutcom
     return { status: "ok", segments: pkg.segments, language: pkg.language, kind: "package" };
   }
 
-  // Only a page that loaded and reported zero caption tracks is a CONFIRMED
-  // no-captions video. Anything else (page didn't load, or tracks existed but
-  // the download failed) is transient and must not flip a working status.
-  if (scrape.pageLoaded && scrape.tracks.length === 0) {
+  // A CONFIRMED no-captions video requires evidence the page was served INTACT:
+  // it loaded, YouTube reported the video as playable, and it still listed zero
+  // caption tracks. A degraded response (bot check, login wall, age gate, region
+  // block) also parses and also lists zero tracks — treating that as confirmation
+  // is what let a blocked fetch permanently mark a captioned video as having
+  // none. Anything short of intact-and-playable is transient.
+  if (scrape.pageLoaded && scrape.playability === "OK" && scrape.tracks.length === 0) {
     return { status: "unavailable" };
   }
-  return { status: "error" };
+
+  // Reason codes exist so a production failure is diagnosable: the interesting
+  // failures happen on IPs we cannot reproduce locally, and "it returned error"
+  // does not distinguish "rate-limited" from "video is age-gated".
+  const reason = !scrape.pageLoaded
+    ? "page_not_loaded"
+    : scrape.playability && scrape.playability !== "OK"
+      ? `not_playable:${scrape.playability}`
+      : "tracks_undownloadable";
+  return { status: "error", reason };
 }
 
 // ─── Playhead slicing (AI-tutor spoiler bounding) ───────────────────────

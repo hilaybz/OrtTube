@@ -13,6 +13,25 @@ const CONTENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  */
 const CLAIM_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * NEGATIVE cache TTL: how long a "no usable captions" verdict is trusted before
+ * we look again. A verdict is a judgement made at a point in time, not a
+ * permanent property of the video — creators do add captions later, and a fetch
+ * that was blocked rather than genuinely empty must not strand the video
+ * forever. Long enough that re-checking costs almost nothing; short enough that
+ * captions added to a video in active use are picked up within days.
+ */
+const NEGATIVE_TTL_MS = 2 * 24 * 60 * 60 * 1000;
+
+/**
+ * Claim window for an EXPLICIT retry (a teacher pressing "generate"). A failed
+ * attempt deliberately leaves its claim marker in place, which throttles the
+ * automatic callers — but a human who just watched it fail should get a real
+ * attempt rather than a silent no-op, so their claim only has to beat a short
+ * floor. Two rapid clicks still collapse into one upstream fetch.
+ */
+const FORCE_CLAIM_TTL_MS = 30 * 1000;
+
 /** Storage bucket holding one JSON transcript object per youtube_video_id. */
 export const TRANSCRIPT_BUCKET = process.env.TRANSCRIPT_BUCKET || "transcripts";
 
@@ -45,6 +64,23 @@ function isFresh(video: VideoFreshnessRow | null): boolean {
   if (!video || video.transcript_status !== "ready" || !video.fetched_at) return false;
   const age = Date.now() - new Date(video.fetched_at).getTime();
   return age >= 0 && age < CONTENT_TTL_MS;
+}
+
+/**
+ * Whether a recent "no usable captions" verdict should be trusted instead of
+ * asking YouTube again.
+ *
+ * This is what stops a caption-less video costing one upstream request per
+ * caller: the AI tutor calls `getTranscript` on EVERY student question, so
+ * without a negative cache a single such video in a class turns into a request
+ * per question — wasteful, and the surest way to deepen an IP block.
+ */
+function isNegativeFresh(video: VideoFreshnessRow | null): boolean {
+  if (!video || video.transcript_status !== "unavailable" || !video.fetched_at) {
+    return false;
+  }
+  const age = Date.now() - new Date(video.fetched_at).getTime();
+  return age >= 0 && age < NEGATIVE_TTL_MS;
 }
 
 async function readVideo(
@@ -109,9 +145,13 @@ async function writeCached(
  *
  * Returns true for the winner, false for losers.
  */
-async function claimFetch(client: SupabaseClient, youtubeId: string): Promise<boolean> {
+async function claimFetch(
+  client: SupabaseClient,
+  youtubeId: string,
+  claimTtlMs: number = CLAIM_TTL_MS
+): Promise<boolean> {
   const nowIso = new Date().toISOString();
-  const claimCutoff = new Date(Date.now() - CLAIM_TTL_MS).toISOString();
+  const claimCutoff = new Date(Date.now() - claimTtlMs).toISOString();
   const { data, error } = await client
     .from("videos")
     .update({ transcript_fetch_started_at: nowIso })
@@ -145,17 +185,10 @@ async function markUnavailable(client: SupabaseClient, youtubeId: string): Promi
     .eq("youtube_video_id", youtubeId);
 }
 
-/**
- * Clears only the claim marker WITHOUT touching status/fetched_at. Used after a
- * transient failure so a working `ready` status is never downgraded
- * while still releasing the single-flight slot for a later retry.
- */
-async function clearMarker(client: SupabaseClient, youtubeId: string): Promise<void> {
-  await client
-    .from("videos")
-    .update({ transcript_fetch_started_at: null })
-    .eq("youtube_video_id", youtubeId);
-}
+// (A `clearMarker` helper lived here. A transient failure now intentionally
+// leaves the claim marker set so it throttles automatic retries until the claim
+// TTL expires, so nothing clears it early any more. `markReady` /
+// `markUnavailable` clear it as part of recording their verdict.)
 
 /**
  * Returns the cached transcript for a canonical video, re-fetching from YouTube
@@ -172,12 +205,21 @@ async function clearMarker(client: SupabaseClient, youtubeId: string): Promise<v
  * create); if it does not, this returns whatever is cached or null and does not
  * fetch (there is nothing to claim against).
  *
+ * A recent `unavailable` verdict is trusted for `NEGATIVE_TTL_MS` and short-
+ * circuits without an upstream call — see `isNegativeFresh`. Pass
+ * `{ force: true }` for an EXPLICIT human retry (a teacher pressing "generate"),
+ * which ignores that verdict and only has to beat a 30s floor. Automatic callers
+ * — notably the AI tutor, which runs per student question — must leave it
+ * `false` so they stay throttled.
+ *
  * Requires a **service-role** client (writes the shared `videos` row + Storage).
  */
 export async function getTranscript(
   client: SupabaseClient,
-  youtubeId: string
+  youtubeId: string,
+  opts: { force?: boolean } = {}
 ): Promise<TranscriptResult | null> {
+  const force = opts.force === true;
   const video = await readVideo(client, youtubeId);
   const cached = await readCached(client, youtubeId);
 
@@ -190,7 +232,17 @@ export async function getTranscript(
     return cached ? { segments: cached.segments, language: cached.language } : null;
   }
 
-  const won = await claimFetch(client, youtubeId);
+  // A recent "no usable captions" verdict stands, unless a human explicitly
+  // asked again. Without this the tutor re-fetches on every student question.
+  if (!force && isNegativeFresh(video)) {
+    return cached ? { segments: cached.segments, language: cached.language } : null;
+  }
+
+  const won = await claimFetch(
+    client,
+    youtubeId,
+    force ? FORCE_CLAIM_TTL_MS : CLAIM_TTL_MS
+  );
   if (!won) {
     // Loser: serve the stale object (or fall back) instead of double-fetching.
     return cached ? { segments: cached.segments, language: cached.language } : null;
@@ -214,11 +266,15 @@ export async function getTranscript(
       return null;
     }
 
-    // Transient failure: release the slot, keep status/fetched_at untouched.
-    await clearMarker(client, youtubeId);
+    // Transient failure. Status/fetched_at stay untouched so a working `ready` is
+    // never downgraded — but the claim marker is deliberately LEFT IN PLACE. It
+    // doubles as the negative cache for this case: `unavailable` has fetched_at
+    // to age against, a transient failure has nothing, and the marker already
+    // carries a timestamp with a TTL. Automatic callers are therefore throttled
+    // for CLAIM_TTL_MS, while an explicit retry only has to beat the 30s force
+    // floor. A crashed fetch self-heals on the same expiry, exactly as before.
     return cached ? { segments: cached.segments, language: cached.language } : null;
   } catch {
-    await clearMarker(client, youtubeId);
     return cached ? { segments: cached.segments, language: cached.language } : null;
   }
 }

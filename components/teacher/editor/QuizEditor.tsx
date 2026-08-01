@@ -21,10 +21,14 @@ import { QuestionModal } from "./QuestionModal";
 import { updateQuizMeta, deleteQuestion, MutationError } from "./mutations";
 import { formatTime, LANGUAGE_LABELS } from "./format";
 
+// `unavailable` records that the last attempt found no usable captions — which
+// may mean the video has none, or that the fetch was blocked. The label must not
+// assert either, because we frequently cannot tell them apart, and the verdict
+// expires so a retry is worth offering.
 const TRANSCRIPT_LABEL: Record<AuthorQuiz["transcript_status"], string> = {
   ready: "תמליל מוכן",
   pending: "תמליל טרם נטען",
-  unavailable: "אין כתוביות לסרטון",
+  unavailable: "לא נמצאו כתוביות בניסיון האחרון",
 };
 
 // The generate RPC accepts 1–20; keep the UI bounds in lockstep with it.
@@ -390,14 +394,18 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
           questions it moves into the questions header as a quiet "add more". */}
       {questions.length === 0 && (
         <GlassCard className="mb-6 flex flex-col gap-4">
+          {/* Never disabled on `unavailable`. That verdict can come from a
+              blocked fetch, and disabling the button removed the only way for a
+              teacher to retry — making one bad fetch permanent. Pressing it now
+              forces a real re-check. */}
           <GenerateTrigger
             hero
-            disabled={genBusy || transcriptUnavailable}
+            disabled={genBusy}
             onOpen={() => setGenModalOpen(true)}
           />
           {transcriptUnavailable ? (
             <span className="text-sm text-[var(--body)]">
-              אין כתוביות לסרטון — הוסיפו שאלות ידנית.
+              בניסיון האחרון לא נמצאו כתוביות. אפשר לנסות שוב או להוסיף שאלות ידנית.
             </span>
           ) : (
             !transcriptReady && (

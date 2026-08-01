@@ -148,29 +148,27 @@ export async function POST(
   } | null;
   if (!v) return err("not_found", "Quiz video not found", 404);
 
-  // Only a CONFIRMED no-captions video refuses up front. A 'pending' (or
-  // otherwise not-yet-'ready') video is warmed via getTranscript first — it
-  // single-flight fetches, caches, and promotes the status — so generation is
-  // reachable for a fresh video instead of being blocked before any fetch.
-  if (v.transcript_status === "unavailable") {
-    return err(
-      "transcript_unavailable",
-      "This video has no captions; add questions manually instead",
-      409
-    );
-  }
-
-  // Transcript read needs the service client (shared videos + storage).
+  // No up-front refusal on `unavailable`. That verdict is a judgement made at a
+  // point in time — it may have come from a blocked fetch rather than a genuinely
+  // caption-less video, and captions get added to videos later — so refusing here
+  // made one bad fetch permanent for every user, with no way back. getTranscript
+  // owns the throttling now (negative cache + claim marker), so this just asks.
+  //
+  // `force` because a teacher pressing generate is an explicit human retry: it
+  // ignores a recent negative verdict and only has to beat a 30s floor. The AI
+  // tutor deliberately does NOT force, so it stays throttled per student question.
   const service = createServiceClient();
-  const transcript = await getTranscript(service, v.youtube_video_id);
+  const transcript = await getTranscript(service, v.youtube_video_id, {
+    force: true,
+  });
   const segments = transcript?.segments ?? [];
   if (segments.length === 0) {
-    // After the fetch attempt there is still nothing usable (confirmed
-    // unavailable, or a transient failure) — refuse and let the teacher author
-    // manually.
+    // Nothing usable after the attempt. We often cannot tell "no captions" from
+    // "couldn't read them", so the message must not assert either — see the
+    // Hebrew copy in lib/errors.ts. Manual authoring remains available.
     return err(
       "transcript_unavailable",
-      "This video has no ready transcript; add questions manually instead",
+      "No captions could be read for this video; add questions manually instead",
       409
     );
   }

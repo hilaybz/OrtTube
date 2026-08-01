@@ -146,14 +146,71 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
     const fetchedLongAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(); // 40d old
     await clearCachedTranscript(youtubeId);
     await givenVideo(youtubeId, { status: "ready", fetchedAt: fetchedLongAgo });
-    youtubeReturns({ status: "error" });
+    youtubeReturns({ status: "error", reason: "page_not_loaded" });
 
     const result = await getTranscript(getServiceClient(), youtubeId);
 
     expect(result).toBeNull(); // no cached object to serve
     const state = await videoState(youtubeId);
     expect(state.transcript_status).toBe("ready"); // preserved
-    expect(state.transcript_fetch_started_at).toBeNull(); // claim released for retry
+    // The claim marker is deliberately RETAINED after a transient failure: it is
+    // the only timestamp such a failure has (status/fetched_at must not move), so
+    // it doubles as the negative cache that keeps automatic callers — above all
+    // the tutor, which runs per student question — from re-fetching immediately.
+    // It expires on the claim TTL, and an explicit retry beats a 30s floor.
+    expect(state.transcript_fetch_started_at).not.toBeNull();
+  });
+
+  it("does not re-fetch an 'unavailable' video while the negative verdict is fresh", async () => {
+    // The regression that matters most: the tutor calls getTranscript on EVERY
+    // student question, so a caption-less video used to cost one YouTube request
+    // per question.
+    const youtubeId = "negcache001";
+    await clearCachedTranscript(youtubeId);
+    await givenVideo(youtubeId, {
+      status: "unavailable",
+      fetchedAt: new Date().toISOString(),
+    });
+    youtubeReturns({ status: "unavailable" });
+
+    await getTranscript(getServiceClient(), youtubeId);
+    await getTranscript(getServiceClient(), youtubeId);
+    await getTranscript(getServiceClient(), youtubeId);
+
+    expect(scraper).not.toHaveBeenCalled();
+  });
+
+  it("re-checks an 'unavailable' video once the verdict has expired", async () => {
+    // A verdict is a judgement at a point in time, not a permanent property:
+    // captions get added, and the fetch may have been blocked rather than empty.
+    const youtubeId = "negstale001";
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    await clearCachedTranscript(youtubeId);
+    await givenVideo(youtubeId, { status: "unavailable", fetchedAt: threeDaysAgo });
+    youtubeReturns(manualHebrewTrack());
+
+    const result = await getTranscript(getServiceClient(), youtubeId);
+
+    expect(scraper).toHaveBeenCalledTimes(1);
+    expect(result?.segments).toHaveLength(2);
+    expect((await videoState(youtubeId)).transcript_status).toBe("ready");
+  });
+
+  it("force re-checks an 'unavailable' video even while the verdict is fresh", async () => {
+    // A teacher pressing "generate" is an explicit human retry — it must do
+    // something, or the button looks broken exactly as it did before this fix.
+    const youtubeId = "negforce001";
+    await clearCachedTranscript(youtubeId);
+    await givenVideo(youtubeId, {
+      status: "unavailable",
+      fetchedAt: new Date().toISOString(),
+    });
+    youtubeReturns(manualHebrewTrack());
+
+    const result = await getTranscript(getServiceClient(), youtubeId, { force: true });
+
+    expect(scraper).toHaveBeenCalledTimes(1);
+    expect(result?.segments).toHaveLength(2);
   });
 
   it("single-flights concurrent readers of a stale video (fetch runs once)", async () => {
