@@ -59,6 +59,50 @@ export function isGenerationDifficulty(v: unknown): v is GenerationDifficulty {
 }
 
 /**
+ * Whether questions may have more than one correct answer. `allow-multi` is the
+ * default and leaves the model's own per-question judgement intact, exactly as
+ * before this was a choice.
+ *
+ * The two directions are NOT equally enforceable, and that asymmetry is
+ * deliberate rather than an oversight:
+ *   • `single-only` is enforced losslessly — the single path already keeps the
+ *     first correct option and demotes the rest to distractors.
+ *   • `multi-only` can only be REQUESTED. A genuine multi needs ≥2 correct
+ *     answers, and inventing one would fabricate an answer key — which this
+ *     module refuses to do anywhere. So the prompt asks for ≥2, and a question
+ *     that still comes back with one correct answer is labelled `multi` anyway
+ *     (the DB allows multi with ≥1) rather than dropped.
+ */
+export type QuestionType = "single-only" | "allow-multi" | "multi-only";
+
+export const QUESTION_TYPES: readonly QuestionType[] = [
+  "single-only",
+  "allow-multi",
+  "multi-only",
+];
+export const DEFAULT_QUESTION_TYPE: QuestionType = "allow-multi";
+
+export function isQuestionType(v: unknown): v is QuestionType {
+  return typeof v === "string" && (QUESTION_TYPES as readonly string[]).includes(v);
+}
+
+/**
+ * The per-mode "kind" rule handed to the model. `allow-multi` returns the
+ * original sentence verbatim, so a default generate sends a byte-identical
+ * prompt to one that predates this option.
+ */
+function questionTypeInstruction(questionType: QuestionType): string {
+  switch (questionType) {
+    case "single-only":
+      return `- "kind": ALWAYS "single" — every question must have exactly one correct answer. Never produce a multi-answer question.`;
+    case "multi-only":
+      return `- "kind": ALWAYS "multi" — every question must have TWO OR MORE correct answers. Choose moments in the video that genuinely support several correct answers, and mark every one of them "is_correct": true.`;
+    case "allow-multi":
+      return `- "kind": "single" (exactly one correct) for most; "multi" (two or more correct) only when the content genuinely supports it.`;
+  }
+}
+
+/**
  * The instruction appended for a given difficulty, or "" for `medium`.
  * Phrased in terms of the cognitive demand and the distractors, since those are
  * what actually make a multiple-choice item easy or hard — not prompt wording.
@@ -140,12 +184,16 @@ export function snapToSegmentBoundary(
  * distractors, never the answer key.
  * If the model returned zero correct options, the question is unsalvageable and
  * is skipped (rather than defaulting option 0 to correct).
+ *
+ * `questionType` overrides the model's own `kind` where it is enforceable —
+ * see the type's docs for why `multi-only` is a request rather than a guarantee.
  */
 export function normalizeGeneratedQuestion(
   raw: RawQuestion,
   segments: TranscriptSegment[],
   orderIndex: number,
-  optionsCap: OptionsPerQuestion = DEFAULT_OPTIONS_PER_QUESTION
+  optionsCap: OptionsPerQuestion = DEFAULT_OPTIONS_PER_QUESTION,
+  questionType: QuestionType = DEFAULT_QUESTION_TYPE
 ): GeneratedQuestion | null {
   const prompt = (raw.prompt ?? "").trim();
   if (!prompt) return null;
@@ -156,7 +204,17 @@ export function normalizeGeneratedQuestion(
     .filter((o) => o.text.length > 0);
   if (cleaned.length < 2) return null;
 
-  const kind: "single" | "multi" = raw.kind === "multi" ? "multi" : "single";
+  // Decided BEFORE the correct/distractor split below, so the requested kind is
+  // what drives which trimming branch runs — and the "split correct before
+  // trimming" ordering keeps protecting the answer key either way.
+  const kind: "single" | "multi" =
+    questionType === "single-only"
+      ? "single"
+      : questionType === "multi-only"
+        ? "multi"
+        : raw.kind === "multi"
+          ? "multi"
+          : "single";
 
   // Split BEFORE trimming so a correct option is never dropped by the cap.
   const correct = cleaned.filter((o) => o.is_correct);
@@ -261,12 +319,14 @@ export async function generateQuizQuestions(
     avoidPrompts?: string[];
     difficulty?: GenerationDifficulty;
     optionsPerQuestion?: OptionsPerQuestion;
+    questionType?: QuestionType;
   } = {}
 ): Promise<GeneratedQuestion[]> {
   const n = Math.max(1, Math.min(20, Math.floor(count)));
   const baseOrderIndex = Math.max(0, Math.floor(opts.baseOrderIndex ?? 0));
   const difficultyBlock = difficultyInstruction(opts.difficulty ?? "medium");
   const optionsCap = opts.optionsPerQuestion ?? DEFAULT_OPTIONS_PER_QUESTION;
+  const questionType = opts.questionType ?? DEFAULT_QUESTION_TYPE;
   // The example block must show exactly `optionsCap` options, or the model gets a
   // shape that contradicts the "Exactly N options" rule above it.
   const exampleOptions = Array.from({ length: optionsCap }, (_, i) =>
@@ -304,7 +364,7 @@ Design exactly ${n} multiple-choice comprehension questions spread across the WH
 Rules:
 - Write every prompt, option and explanation in ${LANGUAGE_NAMES[baseLanguage]}, regardless of the transcript's language.
 - "position_seconds": an integer number of seconds where the question should pop up (the moment AFTER the relevant content was covered). Use the <seconds> markers.
-- "kind": "single" (exactly one correct) for most; "multi" (two or more correct) only when the content genuinely supports it.
+${questionTypeInstruction(questionType)}
 - Exactly ${optionsCap} options each; mark each option's "is_correct" boolean. A "single" question must have exactly one correct; a "multi" at least one.
 - Questions must be specific to the content, not generic.
 ${difficultyBlock}${avoidBlock}
@@ -341,7 +401,8 @@ ${exampleOptions}
       raw,
       segments,
       result.length + baseOrderIndex,
-      optionsCap
+      optionsCap,
+      questionType
     );
     if (q) result.push(q);
   }

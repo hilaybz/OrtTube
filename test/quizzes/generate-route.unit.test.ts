@@ -39,6 +39,11 @@ vi.mock("@/lib/ai/generate", () => ({
   DEFAULT_OPTIONS_PER_QUESTION: 4,
   isOptionsPerQuestion: (v: unknown) =>
     typeof v === "number" && [3, 4, 5].includes(v),
+  QUESTION_TYPES: ["single-only", "allow-multi", "multi-only"],
+  DEFAULT_QUESTION_TYPE: "allow-multi",
+  isQuestionType: (v: unknown) =>
+    typeof v === "string" &&
+    ["single-only", "allow-multi", "multi-only"].includes(v),
 }));
 
 const persistMock = vi.fn();
@@ -178,7 +183,62 @@ describe("generate route transcript warming (C1)", () => {
       avoidPrompts: ["existing A", "existing B"],
       difficulty: "medium",
       optionsPerQuestion: 4,
+      questionType: "allow-multi",
     });
+  });
+});
+
+describe("generate route questionType", () => {
+  beforeEach(() => {
+    stubQuizAndVideo(authoredQuiz, {
+      youtube_video_id: "yt-ready",
+      transcript_status: "ready",
+    });
+  });
+
+  it("passes a valid questionType through to the generator", async () => {
+    await POST(generateRequest({ count: 1, questionType: "single-only" }), {
+      params: routeParams,
+    });
+
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      "he",
+      expect.objectContaining({ questionType: "single-only" })
+    );
+  });
+
+  it("defaults to allow-multi when omitted", async () => {
+    await POST(generateRequest({ count: 1 }), { params: routeParams });
+
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      "he",
+      expect.objectContaining({ questionType: "allow-multi" })
+    );
+  });
+
+  it("rejects an unknown questionType with 400 instead of coercing", async () => {
+    const response = await POST(
+      generateRequest({ count: 1, questionType: "single" }),
+      { params: routeParams }
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe("invalid_request");
+    expect(generateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string questionType", async () => {
+    const response = await POST(generateRequest({ count: 1, questionType: 1 }), {
+      params: routeParams,
+    });
+
+    expect(response.status).toBe(400);
+    expect(generateMock).not.toHaveBeenCalled();
   });
 });
 
