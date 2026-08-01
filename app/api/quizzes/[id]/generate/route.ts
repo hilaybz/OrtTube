@@ -9,8 +9,12 @@ import {
   isOptionsPerQuestion,
   OPTIONS_PER_QUESTION_VALUES,
   DEFAULT_OPTIONS_PER_QUESTION,
+  isQuestionType,
+  QUESTION_TYPES,
+  DEFAULT_QUESTION_TYPE,
   type GenerationDifficulty,
   type OptionsPerQuestion,
+  type QuestionType,
 } from "@/lib/ai/generate";
 import { persistGeneratedQuestions, QuizError } from "@/lib/quiz";
 import { getQuizForAuthor } from "@/lib/quizAuthor";
@@ -25,8 +29,9 @@ import type { Language } from "@/lib/lang";
  * the transcript is unavailable — this endpoint just refuses to auto-generate.
  *
  * Body (all optional): `{ count?: 1-20, difficulty?: "easy"|"medium"|"hard",
- * optionsPerQuestion?: 3|4|5 }`. A bare `{}` keeps working; omitted fields take
- * today's defaults.
+ * optionsPerQuestion?: 3|4|5, questionType?: "single-only"|"allow-multi"|
+ * "multi-only" }`. A bare `{}` keeps working; omitted fields take today's
+ * defaults.
  *
  * Errors: `{ error: { code, message } }` with codes:
  *   unauthorized(401), invalid_request(400), not_found(404), forbidden(403),
@@ -54,9 +59,13 @@ export async function POST(
     count?: unknown;
     difficulty?: unknown;
     optionsPerQuestion?: unknown;
+    questionType?: unknown;
   } = {};
   try {
-    body = (await req.json()) as typeof body;
+    // `req.json()` RETURNS null for the body `null` rather than throwing, so the
+    // catch below would not fire and the property reads underneath would throw a
+    // TypeError — surfacing as a bare 500 instead of the error envelope.
+    body = ((await req.json()) ?? {}) as typeof body;
   } catch {
     // absent or malformed body → defaults
   }
@@ -90,6 +99,18 @@ export async function POST(
       );
     }
     optionsPerQuestion = body.optionsPerQuestion;
+  }
+
+  let questionType: QuestionType = DEFAULT_QUESTION_TYPE;
+  if (body.questionType !== undefined) {
+    if (!isQuestionType(body.questionType)) {
+      return err(
+        "invalid_request",
+        `questionType must be one of: ${QUESTION_TYPES.join(", ")}`,
+        400
+      );
+    }
+    questionType = body.questionType;
   }
 
   // Owner check via the authenticated client (owner-RLS lets a teacher read own).
@@ -169,6 +190,7 @@ export async function POST(
     avoidPrompts,
     difficulty,
     optionsPerQuestion,
+    questionType,
   });
   if (generated.length === 0) {
     return err("generation_failed", "The model returned no usable questions", 422);

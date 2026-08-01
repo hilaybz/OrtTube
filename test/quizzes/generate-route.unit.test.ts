@@ -26,19 +26,14 @@ vi.mock("@/lib/transcriptCache", () => ({
 }));
 
 const generateMock = vi.fn();
-// vi.mock replaces the WHOLE module, so the validation helpers the route imports
-// from it must be re-exported here — otherwise they are undefined at call time.
-// The factory is hoisted above module scope, so the enum is inlined rather than
-// referenced from a `const` (which would be in its temporal dead zone).
-vi.mock("@/lib/ai/generate", () => ({
+// Stub ONLY the network-calling export and keep everything else real. Hand-copying
+// the validators here instead would mean a change to a real guard or default could
+// never fail these tests, while production silently diverged. Importing the real
+// module is safe: the Anthropic client is constructed inside generateQuizQuestions,
+// not at module scope, so nothing reaches out on import.
+vi.mock("@/lib/ai/generate", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai/generate")>()),
   generateQuizQuestions: (...args: unknown[]) => generateMock(...args),
-  GENERATION_DIFFICULTIES: ["easy", "medium", "hard"],
-  isGenerationDifficulty: (v: unknown) =>
-    typeof v === "string" && ["easy", "medium", "hard"].includes(v),
-  OPTIONS_PER_QUESTION_VALUES: [3, 4, 5],
-  DEFAULT_OPTIONS_PER_QUESTION: 4,
-  isOptionsPerQuestion: (v: unknown) =>
-    typeof v === "number" && [3, 4, 5].includes(v),
 }));
 
 const persistMock = vi.fn();
@@ -178,7 +173,116 @@ describe("generate route transcript warming (C1)", () => {
       avoidPrompts: ["existing A", "existing B"],
       difficulty: "medium",
       optionsPerQuestion: 4,
+      questionType: "allow-multi",
     });
+  });
+});
+
+describe("generate route questionType", () => {
+  beforeEach(() => {
+    stubQuizAndVideo(authoredQuiz, {
+      youtube_video_id: "yt-ready",
+      transcript_status: "ready",
+    });
+  });
+
+  it("passes a valid questionType through to the generator", async () => {
+    await POST(generateRequest({ count: 1, questionType: "single-only" }), {
+      params: routeParams,
+    });
+
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      "he",
+      expect.objectContaining({ questionType: "single-only" })
+    );
+  });
+
+  it("defaults to allow-multi when omitted", async () => {
+    await POST(generateRequest({ count: 1 }), { params: routeParams });
+
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      "he",
+      expect.objectContaining({ questionType: "allow-multi" })
+    );
+  });
+
+  it("rejects an unknown questionType with 400 instead of coercing", async () => {
+    const response = await POST(
+      generateRequest({ count: 1, questionType: "single" }),
+      { params: routeParams }
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe("invalid_request");
+    expect(generateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string questionType", async () => {
+    const response = await POST(generateRequest({ count: 1, questionType: 1 }), {
+      params: routeParams,
+    });
+
+    expect(response.status).toBe(400);
+    expect(generateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("generate route malformed bodies", () => {
+  beforeEach(() => {
+    stubQuizAndVideo(authoredQuiz, {
+      youtube_video_id: "yt-ready",
+      transcript_status: "ready",
+    });
+  });
+
+  /** A raw body string, bypassing the JSON.stringify helper. */
+  function rawBodyRequest(body: string): NextRequest {
+    return new NextRequest("http://localhost/api/quizzes/quiz-1/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+  }
+
+  it("treats a literal null body as empty rather than throwing a 500", async () => {
+    // Regression: req.json() RETURNS null here instead of throwing, so the parse
+    // catch never fired and the property reads below it blew up as a bare 500.
+    const response = await POST(rawBodyRequest("null"), { params: routeParams });
+
+    expect(response.status).not.toBe(500);
+    expect(response.status).toBe(201);
+  });
+
+  it("falls back to defaults for a non-object body", async () => {
+    const response = await POST(rawBodyRequest('"nonsense"'), {
+      params: routeParams,
+    });
+
+    expect(response.status).not.toBe(500);
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      3, // the documented default count
+      "he",
+      expect.objectContaining({
+        difficulty: "medium",
+        optionsPerQuestion: 4,
+        questionType: "allow-multi",
+      })
+    );
+  });
+
+  it("falls back to defaults for an unparseable body", async () => {
+    const response = await POST(rawBodyRequest("{not json"), {
+      params: routeParams,
+    });
+
+    expect(response.status).not.toBe(500);
+    expect(response.status).toBe(201);
   });
 });
 
