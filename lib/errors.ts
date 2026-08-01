@@ -25,8 +25,12 @@ const MESSAGES: Record<string, string> = {
   invalid_max_attempts: "מספר הניסיונות אינו תקין.",
   invalid_tutor_mode: "מצב המורה־AI אינו תקין.",
   lookup_failed: "אירעה תקלה זמנית. נסו שוב בעוד רגע.",
+  // Deliberately covers BOTH causes in one sentence. A fetch that YouTube blocks
+  // is often indistinguishable from a video that genuinely has no captions, so
+  // asserting either one would frequently be wrong. Retrying is worthwhile, and
+  // manual authoring always works.
   transcript_unavailable:
-    "לסרטון זה אין כתוביות, ולכן לא ניתן ליצור שאלות עם AI. הוסיפו שאלות ידנית.",
+    "לסרטון זה אין כתוביות או שלא הצלחנו לקרוא אותם כרגע. נסו שוב או הוסיפו שאלות ידנית.",
   generation_failed: "יצירת השאלות עם AI נכשלה. נסו שוב או הוסיפו שאלות ידנית.",
   forbidden: "אין לך הרשאה לפעולה זו.",
   not_found: "הפריט המבוקש לא נמצא.",

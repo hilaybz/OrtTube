@@ -119,14 +119,21 @@ describe("generate route transcript warming (C1)", () => {
     const response = await POST(generateRequest({ count: 1 }), { params: routeParams });
 
     // Must have attempted to warm the cache, and NOT refused up front.
+    // `force` because a teacher pressing generate is an explicit human retry.
     expect(getTranscriptMock).toHaveBeenCalledWith(
       { __service: true },
-      "yt-pending"
+      "yt-pending",
+      { force: true }
     );
     expect(response.status).toBe(201);
   });
 
-  it("refuses a CONFIRMED unavailable video with 409 without fetching", async () => {
+  it("RE-CHECKS an 'unavailable' video instead of refusing up front", async () => {
+    // Inverted deliberately. The old behaviour — refuse without fetching — made a
+    // single blocked fetch permanent for every user, and the editor disabled the
+    // only button that could have retried. `unavailable` is a verdict with an
+    // expiry, not a property of the video, so a teacher's explicit generate must
+    // reach getTranscript, which owns throttling.
     stubQuizAndVideo(authoredQuiz, {
       youtube_video_id: "yt-none",
       transcript_status: "unavailable",
@@ -134,10 +141,26 @@ describe("generate route transcript warming (C1)", () => {
 
     const response = await POST(generateRequest({ count: 1 }), { params: routeParams });
 
+    expect(getTranscriptMock).toHaveBeenCalledWith(
+      { __service: true },
+      "yt-none",
+      { force: true }
+    );
+    expect(response.status).toBe(201);
+  });
+
+  it("409s when a re-check still yields no transcript", async () => {
+    stubQuizAndVideo(authoredQuiz, {
+      youtube_video_id: "yt-none",
+      transcript_status: "unavailable",
+    });
+    getTranscriptMock.mockResolvedValue(null); // still nothing after the retry
+
+    const response = await POST(generateRequest({ count: 1 }), { params: routeParams });
+
     expect(response.status).toBe(409);
     const body = await response.json();
     expect(body.error.code).toBe("transcript_unavailable");
-    expect(getTranscriptMock).not.toHaveBeenCalled();
   });
 
   it("409s a 'pending' video when warming yields no usable segments", async () => {
