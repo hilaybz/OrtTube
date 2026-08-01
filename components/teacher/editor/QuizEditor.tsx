@@ -10,7 +10,11 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
 import { SegmentedToggle, type Segment } from "@/components/ui/SegmentedToggle";
-import type { GenerationDifficulty, OptionsPerQuestion } from "@/lib/ai/generate";
+import type {
+  GenerationDifficulty,
+  OptionsPerQuestion,
+  QuestionType,
+} from "@/lib/ai/generate";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import { QuestionModal } from "./QuestionModal";
@@ -46,6 +50,14 @@ const OPTIONS_SEGMENTS: ReadonlyArray<Segment<string>> = [
 ];
 const GEN_OPTIONS_DEFAULT: OptionsPerQuestion = 4;
 
+// Mirrors the server's questionType enum exactly.
+const QUESTION_TYPE_SEGMENTS: ReadonlyArray<Segment<QuestionType>> = [
+  { value: "single-only", label: "תשובה אחת" },
+  { value: "allow-multi", label: "מעורב" },
+  { value: "multi-only", label: "כמה תשובות" },
+];
+const GEN_QUESTION_TYPE_DEFAULT: QuestionType = "allow-multi";
+
 /**
  * The "generate with AI" button — primary hero on an empty quiz, quiet "add
  * more" secondary once the quiz has questions. Opens the count chooser.
@@ -80,6 +92,8 @@ function GenerateModal({
   onDifficulty,
   optionsPerQuestion,
   onOptionsPerQuestion,
+  questionType,
+  onQuestionType,
   onGenerate,
   onClose,
   busy,
@@ -92,6 +106,8 @@ function GenerateModal({
   onDifficulty: (d: GenerationDifficulty) => void;
   optionsPerQuestion: OptionsPerQuestion;
   onOptionsPerQuestion: (n: OptionsPerQuestion) => void;
+  questionType: QuestionType;
+  onQuestionType: (t: QuestionType) => void;
   onGenerate: () => void;
   onClose: () => void;
   busy: boolean;
@@ -142,6 +158,16 @@ function GenerateModal({
             className="self-start"
           />
         </div>
+        <div className="flex flex-col gap-2">
+          <span className="text-sm text-[var(--body)]">סוג השאלות</span>
+          <SegmentedToggle
+            segments={QUESTION_TYPE_SEGMENTS}
+            value={questionType}
+            onChange={onQuestionType}
+            ariaLabel="סוג השאלות"
+            className="self-start"
+          />
+        </div>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             ביטול
@@ -186,6 +212,9 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
   );
   const [genOptions, setGenOptions] = useState<OptionsPerQuestion>(
     GEN_OPTIONS_DEFAULT
+  );
+  const [genQuestionType, setGenQuestionType] = useState<QuestionType>(
+    GEN_QUESTION_TYPE_DEFAULT
   );
   const [metaBusy, setMetaBusy] = useState(false);
 
@@ -249,6 +278,7 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
             count: genCount,
             difficulty: genDifficulty,
             optionsPerQuestion: genOptions,
+            questionType: genQuestionType,
           }),
         }
       );
@@ -472,6 +502,8 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
         onDifficulty={setGenDifficulty}
         optionsPerQuestion={genOptions}
         onOptionsPerQuestion={setGenOptions}
+        questionType={genQuestionType}
+        onQuestionType={setGenQuestionType}
         onGenerate={generate}
         onClose={() => setGenModalOpen(false)}
         busy={genBusy}
