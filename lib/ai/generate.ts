@@ -65,8 +65,10 @@ export function isGenerationDifficulty(v: unknown): v is GenerationDifficulty {
  *
  * The two directions are NOT equally enforceable, and that asymmetry is
  * deliberate rather than an oversight:
- *   • `single-only` is enforced losslessly — the single path already keeps the
- *     first correct option and demotes the rest to distractors.
+ *   • `single-only` is enforceable — the single path keeps the first correct
+ *     option and DROPS any surplus correct ones. It is not lossless: an option
+ *     the model marked correct is discarded rather than shown as wrong, because
+ *     displaying it as wrong would mis-grade a student who picked it.
  *   • `multi-only` can only be REQUESTED. A genuine multi needs ≥2 correct
  *     answers, and inventing one would fabricate an answer key — which this
  *     module refuses to do anywhere. So the prompt asks for ≥2, and a question
@@ -87,18 +89,30 @@ export function isQuestionType(v: unknown): v is QuestionType {
 }
 
 /**
- * The per-mode "kind" rule handed to the model. `allow-multi` returns the
- * original sentence verbatim, so a default generate sends a byte-identical
- * prompt to one that predates this option.
+ * The two prompt rules that depend on the question type — which `kind` to emit,
+ * and how many options may be correct. They are returned TOGETHER because they
+ * must agree: stating the correctness rule separately let a generic "a multi
+ * needs at least one" contradict `multi-only`'s demand for two or more, and
+ * re-introduced "multi" as a concept immediately after `single-only` forbade it.
+ *
+ * `allow-multi` returns the original two lines verbatim, so a default generate
+ * sends a byte-identical prompt to one that predates this option.
  */
-function questionTypeInstruction(questionType: QuestionType): string {
+function questionTypeRules(
+  questionType: QuestionType,
+  optionsCap: OptionsPerQuestion
+): string {
+  const optionCount = `- Exactly ${optionsCap} options each; mark each option's "is_correct" boolean.`;
   switch (questionType) {
     case "single-only":
-      return `- "kind": ALWAYS "single" — every question must have exactly one correct answer. Never produce a multi-answer question.`;
+      return `- "kind": ALWAYS "single" — every question must have exactly one correct answer. Never produce a multi-answer question.
+${optionCount} Exactly ONE option is correct; every other option must be wrong.`;
     case "multi-only":
-      return `- "kind": ALWAYS "multi" — every question must have TWO OR MORE correct answers. Choose moments in the video that genuinely support several correct answers, and mark every one of them "is_correct": true.`;
+      return `- "kind": ALWAYS "multi" — every question must have TWO OR MORE correct answers. Choose moments in the video that genuinely support several correct answers.
+${optionCount} At least TWO options must be marked correct, and at least one must be wrong.`;
     case "allow-multi":
-      return `- "kind": "single" (exactly one correct) for most; "multi" (two or more correct) only when the content genuinely supports it.`;
+      return `- "kind": "single" (exactly one correct) for most; "multi" (two or more correct) only when the content genuinely supports it.
+${optionCount} A "single" question must have exactly one correct; a "multi" at least one.`;
   }
 }
 
@@ -225,8 +239,11 @@ export function normalizeGeneratedQuestion(
   let picked: { text: string; is_correct: boolean }[];
   if (kind === "single") {
     const correctOne = correct[0];
-    // Leftover "correct" options become distractors (single needs exactly one).
-    const fillers = [...distractors, ...correct.slice(1)];
+    // Surplus correct options are DROPPED, never demoted to distractors: keeping
+    // them would display a genuinely correct answer as wrong, and grading is
+    // exact-set-match, so a student picking one would be marked incorrect.
+    // If that leaves fewer than 2 options the question is discarded below.
+    const fillers = distractors;
     picked = [correctOne, ...fillers]
       .slice(0, optionsCap)
       .map((o) => ({ text: o.text, is_correct: o === correctOne }));
@@ -327,10 +344,13 @@ export async function generateQuizQuestions(
   const difficultyBlock = difficultyInstruction(opts.difficulty ?? "medium");
   const optionsCap = opts.optionsPerQuestion ?? DEFAULT_OPTIONS_PER_QUESTION;
   const questionType = opts.questionType ?? DEFAULT_QUESTION_TYPE;
-  // The example block must show exactly `optionsCap` options, or the model gets a
-  // shape that contradicts the "Exactly N options" rule above it.
+  // The example must agree with the rules above it on BOTH counts — options and
+  // correct answers — or the model is handed a shape that contradicts them, and
+  // a concrete example tends to win over prose.
+  const exampleKind = questionType === "multi-only" ? "multi" : "single";
+  const exampleCorrect = questionType === "multi-only" ? 2 : 1;
   const exampleOptions = Array.from({ length: optionsCap }, (_, i) =>
-    `      { "text": "...", "is_correct": ${i === 0} }`
+    `      { "text": "...", "is_correct": ${i < exampleCorrect} }`
   ).join(",\n");
   const avoidPrompts = (opts.avoidPrompts ?? [])
     .map((p) => p.trim())
@@ -364,15 +384,14 @@ Design exactly ${n} multiple-choice comprehension questions spread across the WH
 Rules:
 - Write every prompt, option and explanation in ${LANGUAGE_NAMES[baseLanguage]}, regardless of the transcript's language.
 - "position_seconds": an integer number of seconds where the question should pop up (the moment AFTER the relevant content was covered). Use the <seconds> markers.
-${questionTypeInstruction(questionType)}
-- Exactly ${optionsCap} options each; mark each option's "is_correct" boolean. A "single" question must have exactly one correct; a "multi" at least one.
+${questionTypeRules(questionType, optionsCap)}
 - Questions must be specific to the content, not generic.
 ${difficultyBlock}${avoidBlock}
 Return ONLY a JSON array:
 [
   {
     "position_seconds": 123,
-    "kind": "single",
+    "kind": "${exampleKind}",
     "prompt": "...",
     "explanation": "...",
     "options": [

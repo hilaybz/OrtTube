@@ -62,7 +62,10 @@ export async function POST(
     questionType?: unknown;
   } = {};
   try {
-    body = (await req.json()) as typeof body;
+    // `req.json()` RETURNS null for the body `null` rather than throwing, so the
+    // catch below would not fire and the property reads underneath would throw a
+    // TypeError — surfacing as a bare 500 instead of the error envelope.
+    body = ((await req.json()) ?? {}) as typeof body;
   } catch {
     // absent or malformed body → defaults
   }
