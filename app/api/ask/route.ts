@@ -32,6 +32,10 @@ import {
  */
 
 export const dynamic = "force-dynamic";
+// The platform duration limit covers the WHOLE streamed response, not just time
+// to first token, so a long tutor answer needs headroom past a short default.
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const MAX_PROMPT_CHARS = 1000;
 

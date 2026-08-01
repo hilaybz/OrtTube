@@ -64,3 +64,9 @@ export async function POST(req: Request): Promise<Response> {
 
   return jobOk({ deleted, scanned: orphans.length, errors, olderThanMinutes });
 }
+
+// Vercel Cron invokes scheduled paths with GET, so the schedule would 405 against
+// a POST-only handler and the job would silently never run. POST is kept for
+// manual invocation. Vercel attaches `Authorization: Bearer $CRON_SECRET` itself,
+// which is what assertSecret(req, "cron") already checks.
+export const GET = POST;

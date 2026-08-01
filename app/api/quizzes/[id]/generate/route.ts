@@ -37,6 +37,14 @@ import type { Language } from "@/lib/lang";
  *   unauthorized(401), invalid_request(400), not_found(404), forbidden(403),
  *   transcript_unavailable(409), generation_failed(422).
  */
+// Reads a whole transcript, then asks Claude for up to 20 questions — the
+// slowest route in the app, and well past a short platform default, which would
+// kill it mid-generation and surface as a generic failure to the teacher. 60s is
+// the ceiling on Vercel Hobby; raise it if the account is on a plan that allows
+// more and long videos still time out.
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });
 }

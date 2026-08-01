@@ -119,3 +119,42 @@ See [`.env.local.example`](.env.local.example) for the full list. Notable:
 `ANTHROPIC_API_KEY`, the Supabase URL/keys, `SUPABASE_DB_URL` (used by the test
 harness), and two separate bearer secrets — `CRON_SECRET` for scheduled jobs and
 `ADMIN_SECRET` for admin endpoints.
+
+## Deploying (Vercel)
+
+Set these seven in the Vercel project's environment variables. Two are worth
+calling out because searching the code for their names finds nothing:
+`ANTHROPIC_API_KEY` is read implicitly by the Anthropic SDK constructor, and
+`CRON_SECRET` is looked up through a map in [`lib/jobs/auth.ts`](lib/jobs/auth.ts).
+
+| Variable | Notes |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | read implicitly by `new Anthropic()` |
+| `NEXT_PUBLIC_SUPABASE_URL` | |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | |
+| `SUPABASE_SERVICE_ROLE_KEY` | server-only; bypasses RLS |
+| `TRANSCRIPT_BUCKET` | `transcripts` |
+| `CRON_SECRET` | guards `/api/jobs/*`; Vercel Cron sends it automatically |
+| `ADMIN_SECRET` | guards `/api/admin/*`; must differ from `CRON_SECRET` |
+
+Optional tuning, all defaulted: `GC_VIDEO_GRACE_MINUTES`, `PURGE_RETENTION_DAYS`,
+`RECONCILE_AUTH_MINUTES`, `TRANSCRIPT_TTL_DAYS`.
+
+**Never set `SUPABASE_DB_URL` in a deployed environment.** No application code
+reads it — only the test harness, which truncates every table and clears
+`auth.users`.
+
+### Scheduled jobs
+
+[`vercel.json`](vercel.json) schedules the four maintenance endpoints (staggered
+so they don't overlap): transcript sweep 03:00 UTC daily, orphan-video GC 03:30
+daily, auth reconcile 04:00 daily, and the content retention purge 05:00 Sundays.
+
+Vercel Cron invokes paths with **GET**, so each job route exports `GET = POST`
+alongside its `POST`; a POST-only handler would return 405 and the job would
+silently never run. Vercel attaches `Authorization: Bearer $CRON_SECRET` itself
+when that variable is set, which is what the routes already check.
+
+Hobby accounts cap the number of cron jobs and allow only daily granularity — if
+the schedule above is rejected, collapse the four into one dispatcher rather than
+dropping jobs.
