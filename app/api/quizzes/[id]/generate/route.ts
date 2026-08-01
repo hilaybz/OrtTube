@@ -6,7 +6,11 @@ import {
   generateQuizQuestions,
   isGenerationDifficulty,
   GENERATION_DIFFICULTIES,
+  isOptionsPerQuestion,
+  OPTIONS_PER_QUESTION_VALUES,
+  DEFAULT_OPTIONS_PER_QUESTION,
   type GenerationDifficulty,
+  type OptionsPerQuestion,
 } from "@/lib/ai/generate";
 import { persistGeneratedQuestions, QuizError } from "@/lib/quiz";
 import { getQuizForAuthor } from "@/lib/quizAuthor";
@@ -20,8 +24,9 @@ import type { Language } from "@/lib/lang";
  * `upsert_question(source='generated')`. Manual authoring stays available when
  * the transcript is unavailable — this endpoint just refuses to auto-generate.
  *
- * Body (all optional): `{ count?: 1-20, difficulty?: "easy"|"medium"|"hard" }`.
- * A bare `{}` keeps working; omitted fields take today's defaults.
+ * Body (all optional): `{ count?: 1-20, difficulty?: "easy"|"medium"|"hard",
+ * optionsPerQuestion?: 3|4|5 }`. A bare `{}` keeps working; omitted fields take
+ * today's defaults.
  *
  * Errors: `{ error: { code, message } }` with codes:
  *   unauthorized(401), invalid_request(400), not_found(404), forbidden(403),
@@ -45,7 +50,11 @@ export async function POST(
   // Scope the catch to the PARSE only. Validation below must be able to reject
   // loudly — inside the try, a thrown validation error would be swallowed and
   // silently downgraded to the defaults.
-  let body: { count?: unknown; difficulty?: unknown } = {};
+  let body: {
+    count?: unknown;
+    difficulty?: unknown;
+    optionsPerQuestion?: unknown;
+  } = {};
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -69,6 +78,18 @@ export async function POST(
       );
     }
     difficulty = body.difficulty;
+  }
+
+  let optionsPerQuestion: OptionsPerQuestion = DEFAULT_OPTIONS_PER_QUESTION;
+  if (body.optionsPerQuestion !== undefined) {
+    if (!isOptionsPerQuestion(body.optionsPerQuestion)) {
+      return err(
+        "invalid_request",
+        `optionsPerQuestion must be one of: ${OPTIONS_PER_QUESTION_VALUES.join(", ")}`,
+        400
+      );
+    }
+    optionsPerQuestion = body.optionsPerQuestion;
   }
 
   // Owner check via the authenticated client (owner-RLS lets a teacher read own).
@@ -147,6 +168,7 @@ export async function POST(
     baseOrderIndex,
     avoidPrompts,
     difficulty,
+    optionsPerQuestion,
   });
   if (generated.length === 0) {
     return err("generation_failed", "The model returned no usable questions", 422);

@@ -10,7 +10,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
 import { SegmentedToggle, type Segment } from "@/components/ui/SegmentedToggle";
-import type { GenerationDifficulty } from "@/lib/ai/generate";
+import type { GenerationDifficulty, OptionsPerQuestion } from "@/lib/ai/generate";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import { QuestionModal } from "./QuestionModal";
@@ -36,6 +36,15 @@ const DIFFICULTY_SEGMENTS: ReadonlyArray<Segment<GenerationDifficulty>> = [
   { value: "hard", label: "מאתגר" },
 ];
 const GEN_DIFFICULTY_DEFAULT: GenerationDifficulty = "medium";
+
+// Mirrors the server's 3/4/5 enum. Values are numbers, so the segment values are
+// their string forms and are converted back on change.
+const OPTIONS_SEGMENTS: ReadonlyArray<Segment<string>> = [
+  { value: "3", label: "3" },
+  { value: "4", label: "4" },
+  { value: "5", label: "5" },
+];
+const GEN_OPTIONS_DEFAULT: OptionsPerQuestion = 4;
 
 /**
  * The "generate with AI" button — primary hero on an empty quiz, quiet "add
@@ -69,6 +78,8 @@ function GenerateModal({
   onCount,
   difficulty,
   onDifficulty,
+  optionsPerQuestion,
+  onOptionsPerQuestion,
   onGenerate,
   onClose,
   busy,
@@ -79,6 +90,8 @@ function GenerateModal({
   onCount: (n: number) => void;
   difficulty: GenerationDifficulty;
   onDifficulty: (d: GenerationDifficulty) => void;
+  optionsPerQuestion: OptionsPerQuestion;
+  onOptionsPerQuestion: (n: OptionsPerQuestion) => void;
   onGenerate: () => void;
   onClose: () => void;
   busy: boolean;
@@ -116,6 +129,16 @@ function GenerateModal({
             value={difficulty}
             onChange={onDifficulty}
             ariaLabel="רמת קושי"
+            className="self-start"
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <span className="text-sm text-[var(--body)]">תשובות לכל שאלה</span>
+          <SegmentedToggle
+            segments={OPTIONS_SEGMENTS}
+            value={String(optionsPerQuestion)}
+            onChange={(v) => onOptionsPerQuestion(Number(v) as OptionsPerQuestion)}
+            ariaLabel="תשובות לכל שאלה"
             className="self-start"
           />
         </div>
@@ -160,6 +183,9 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
   const [genCount, setGenCount] = useState(GEN_COUNT_DEFAULT);
   const [genDifficulty, setGenDifficulty] = useState<GenerationDifficulty>(
     GEN_DIFFICULTY_DEFAULT
+  );
+  const [genOptions, setGenOptions] = useState<OptionsPerQuestion>(
+    GEN_OPTIONS_DEFAULT
   );
   const [metaBusy, setMetaBusy] = useState(false);
 
@@ -219,7 +245,11 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
         `/api/quizzes/${quizId}/generate`,
         {
           method: "POST",
-          body: JSON.stringify({ count: genCount, difficulty: genDifficulty }),
+          body: JSON.stringify({
+            count: genCount,
+            difficulty: genDifficulty,
+            optionsPerQuestion: genOptions,
+          }),
         }
       );
       setBanner({
@@ -440,6 +470,8 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
         onCount={setGenCount}
         difficulty={genDifficulty}
         onDifficulty={setGenDifficulty}
+        optionsPerQuestion={genOptions}
+        onOptionsPerQuestion={setGenOptions}
         onGenerate={generate}
         onClose={() => setGenModalOpen(false)}
         busy={genBusy}

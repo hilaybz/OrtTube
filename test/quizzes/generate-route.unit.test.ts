@@ -35,6 +35,10 @@ vi.mock("@/lib/ai/generate", () => ({
   GENERATION_DIFFICULTIES: ["easy", "medium", "hard"],
   isGenerationDifficulty: (v: unknown) =>
     typeof v === "string" && ["easy", "medium", "hard"].includes(v),
+  OPTIONS_PER_QUESTION_VALUES: [3, 4, 5],
+  DEFAULT_OPTIONS_PER_QUESTION: 4,
+  isOptionsPerQuestion: (v: unknown) =>
+    typeof v === "number" && [3, 4, 5].includes(v),
 }));
 
 const persistMock = vi.fn();
@@ -173,7 +177,63 @@ describe("generate route transcript warming (C1)", () => {
       baseOrderIndex: 3,
       avoidPrompts: ["existing A", "existing B"],
       difficulty: "medium",
+      optionsPerQuestion: 4,
     });
+  });
+});
+
+describe("generate route optionsPerQuestion", () => {
+  beforeEach(() => {
+    stubQuizAndVideo(authoredQuiz, {
+      youtube_video_id: "yt-ready",
+      transcript_status: "ready",
+    });
+  });
+
+  it("passes a valid optionsPerQuestion through to the generator", async () => {
+    await POST(generateRequest({ count: 1, optionsPerQuestion: 3 }), {
+      params: routeParams,
+    });
+
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      "he",
+      expect.objectContaining({ optionsPerQuestion: 3 })
+    );
+  });
+
+  it("defaults to 4 when omitted", async () => {
+    await POST(generateRequest({ count: 1 }), { params: routeParams });
+
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      "he",
+      expect.objectContaining({ optionsPerQuestion: 4 })
+    );
+  });
+
+  it("rejects an out-of-range value with 400 instead of clamping", async () => {
+    const response = await POST(
+      generateRequest({ count: 1, optionsPerQuestion: 10 }),
+      { params: routeParams }
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe("invalid_request");
+    expect(generateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a numeric-looking string", async () => {
+    const response = await POST(
+      generateRequest({ count: 1, optionsPerQuestion: "4" }),
+      { params: routeParams }
+    );
+
+    expect(response.status).toBe(400);
+    expect(generateMock).not.toHaveBeenCalled();
   });
 });
 
