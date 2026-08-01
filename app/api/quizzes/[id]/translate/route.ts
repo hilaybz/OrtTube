@@ -15,6 +15,11 @@ import { ensureTranslation, QuizError } from "@/lib/quiz";
  * Errors: `{ error: { code, message } }` with codes:
  *   unauthorized(401), invalid_request(400), not_found(404), forbidden(403).
  */
+// Translates every question and option in the quiz through Claude, so duration
+// scales with quiz length and needs more than a short platform default.
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });
 }

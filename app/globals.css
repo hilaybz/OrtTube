@@ -8,6 +8,11 @@
  * `.glass` component classes below or Tailwind arbitrary values (var(--token)).
  */
 :root {
+  /* The palette below is light-only — there is no dark theme. Declaring the
+     scheme stops browsers with force-dark ("Auto Dark Mode for Web Contents")
+     from algorithmically inverting the page into unreadable contrast. */
+  color-scheme: light;
+
   /* neutral / surface */
   --neutral-primary-soft: #ffffff;
   --neutral-secondary-soft: #f8fafb;
