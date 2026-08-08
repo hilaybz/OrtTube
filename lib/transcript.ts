@@ -21,7 +21,7 @@ export type FetchOutcome =
       status: "ok";
       segments: TranscriptSegment[];
       language: string | null;
-      /** Provenance of the winning track. Manual (human) captions never equal "asr". */
+      /** Provenance of the captions — see `trackKind`. Descriptive only. */
       kind: "manual" | "asr" | "package";
     }
   /**
@@ -36,8 +36,8 @@ export type FetchOutcome =
    */
   | { status: "error"; reason: string };
 
-// Caption-language preference within a track group. The app speaks he/ar/en;
-// "iw" is the legacy ISO code for Hebrew that older videos still use.
+// Order in which caption languages are requested. The app speaks he/ar/en; "iw"
+// is the legacy ISO code for Hebrew that older videos still use.
 const LANG_PREFERENCE = ["he", "iw", "ar", "en"];
 
 const YOUTUBE_HEADERS = {
@@ -140,12 +140,6 @@ async function fetchCaptionTracks(videoId: string): Promise<CaptionScrape> {
   }
 }
 
-function langRank(code: string): number {
-  const base = code.toLowerCase().split("-")[0];
-  const i = LANG_PREFERENCE.indexOf(base);
-  return i === -1 ? LANG_PREFERENCE.length : i;
-}
-
 /** Normalize caption language codes to the app's supported set (iw → he). */
 export function normalizeLang(code: string | null | undefined): string | null {
   if (!code) return null;
@@ -154,149 +148,87 @@ export function normalizeLang(code: string | null | undefined): string | null {
 }
 
 /**
- * Selection order: prefer a **manual** (human) track in any language over any
- * ASR track; within a group prefer the app's languages (he/ar/en). Returns null
- * when the track list is empty.
+ * Provenance of a downloaded transcript, read off the scraped track list by
+ * matching the language the download actually used. `"package"` means the scrape
+ * could not corroborate it — the watch page was blocked, or it listed no track in
+ * that language — so whether a human or a machine wrote the captions is unknown.
  */
-export function pickCaptionTrack(tracks: CaptionTrack[]): CaptionTrack | null {
-  const manual = tracks.filter((t) => t.kind !== "asr");
-  const asr = tracks.filter((t) => t.kind === "asr");
-  const byPreference = (a: CaptionTrack, b: CaptionTrack) =>
-    langRank(a.languageCode) - langRank(b.languageCode);
-  if (manual.length) return [...manual].sort(byPreference)[0];
-  if (asr.length) return [...asr].sort(byPreference)[0];
-  return null;
+function trackKind(
+  tracks: CaptionTrack[],
+  language: string | null
+): "manual" | "asr" | "package" {
+  if (!language) return "package";
+  const match = tracks.find((t) => normalizeLang(t.languageCode) === language);
+  if (!match) return "package";
+  return match.kind === "asr" ? "asr" : "manual";
 }
 
-// ─── Transcript parsing ──────────────────────────────────────────────────────
+// ─── Transcript download (InnerTube) ────────────────────────────────────────
 
-function decodeHtmlEntities(s: string): string {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
-}
-
-function parseSrv3(xml: string): TranscriptSegment[] {
-  const segments: TranscriptSegment[] = [];
-  const pRegex = /<p\s+t="(\d+)"\s+d="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
-  let m;
-  while ((m = pRegex.exec(xml)) !== null) {
-    const startMs = parseInt(m[1], 10);
-    const durMs = parseInt(m[2], 10);
-    const inner = m[3];
-    let text = "";
-    const sRegex = /<s[^>]*>([^<]*)<\/s>/g;
-    let sMatch;
-    while ((sMatch = sRegex.exec(inner)) !== null) {
-      text += sMatch[1];
-    }
-    if (!text) text = inner.replace(/<[^>]+>/g, "");
-    text = decodeHtmlEntities(text).trim();
-    if (text) {
-      segments.push({ text, offset: startMs, duration: durMs });
-    }
-  }
-  return segments;
-}
-
-function parseClassic(xml: string): TranscriptSegment[] {
-  const segments: TranscriptSegment[] = [];
-  const regex = /<text start="([\d.]+)" dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
-  let m;
-  while ((m = regex.exec(xml)) !== null) {
-    const text = decodeHtmlEntities(m[3]).trim();
-    if (text) {
-      segments.push({
-        text,
-        offset: parseFloat(m[1]) * 1000,
-        duration: parseFloat(m[2]) * 1000,
-      });
-    }
-  }
-  return segments;
-}
-
-async function fetchAndParseTranscript(url: string): Promise<TranscriptSegment[] | null> {
-  try {
-    const res = await fetch(url, { headers: YOUTUBE_HEADERS });
-    if (!res.ok) return null;
-    const xml = await res.text();
-
-    const srv3 = parseSrv3(xml);
-    if (srv3.length > 0) return srv3;
-
-    const classic = parseClassic(xml);
-    if (classic.length > 0) return classic;
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function tryPackage(videoId: string, lang?: string): Promise<TranscriptSegment[] | null> {
+async function tryPackage(
+  videoId: string,
+  lang?: string
+): Promise<{ segments: TranscriptSegment[]; language: string | null } | null> {
   try {
     const raw = await YoutubeTranscript.fetchTranscript(videoId, lang ? { lang } : undefined);
     if (!raw || raw.length === 0) return null;
-    return raw.map((s) => ({ text: s.text, offset: s.offset, duration: s.duration }));
+    return {
+      segments: raw.map((s) => ({ text: s.text, offset: s.offset, duration: s.duration })),
+      // Read the language off the RESPONSE, not off `lang`: the request carries a
+      // preference the download may satisfy with a different track, so trusting
+      // the request would mislabel the transcript.
+      language: normalizeLang(raw[0].lang ?? lang),
+    };
   } catch {
     return null;
   }
 }
 
+/** Tries the app's languages in preference order, then whatever the video has. */
 async function fetchViaPackage(
   videoId: string
 ): Promise<{ segments: TranscriptSegment[]; language: string | null } | null> {
   for (const lang of LANG_PREFERENCE) {
-    const segments = await tryPackage(videoId, lang);
-    if (segments && segments.length) {
-      return { segments, language: normalizeLang(lang) };
-    }
+    const got = await tryPackage(videoId, lang);
+    if (got) return got;
   }
-  const any = await tryPackage(videoId);
-  if (any && any.length) return { segments: any, language: null };
-  return null;
+  return tryPackage(videoId);
 }
 
-// ─── Fresh transcript fetch (manual-first, original language) ────────────────
+// ─── Fresh transcript fetch (original language) ──────────────────────────────
 
 /**
- * Fetches a fresh transcript for `videoId`, preferring manual captions.
+ * Fetches a fresh transcript for `videoId`, in its **original language** — it is
+ * never machine-translated here.
  *
- * Order: scrape the caption track list → pick a manual track (any language) →
- * else an ASR track → else the `youtube-transcript` package. The transcript is
- * returned in its **original language**; it is never machine-translated here.
+ * The download runs over the InnerTube player endpoint (an ANDROID client
+ * context, via `youtube-transcript`). The watch-page scrape is deliberately NOT a
+ * download path: YouTube answers an `api/timedtext` URL lifted out of the watch
+ * page with an empty 200 — on every IP, including a residential one, in every
+ * subtitle format — so requesting one only ever burned a request and made the
+ * real download look like a fallback. The scrape survives for the two questions
+ * it still answers reliably:
  *
- * Distinguishes a **confirmed** no-captions result (page loaded, zero tracks,
- * package empty → `"unavailable"`) from a **transient** failure (network/parse
- * problem, or tracks existed but couldn't be downloaded → `"error"`), so callers
- * only downgrade `transcript_status` on a confirmed change.
+ *   1. `playabilityStatus` — the only discriminator between a page served INTACT
+ *      that genuinely lists no captions and a degraded one withholding them.
+ *   2. The track list, which says whether the captions are human or ASR.
+ *
+ * Distinguishes a **confirmed** no-captions result (page loaded, playable, zero
+ * tracks, download empty → `"unavailable"`) from a **transient** failure
+ * (blocked, unparseable, or tracks that wouldn't download → `"error"`), so
+ * callers only downgrade `transcript_status` on a confirmed change.
  */
 export async function fetchFreshTranscript(videoId: string): Promise<FetchOutcome> {
   const scrape = await fetchCaptionTracks(videoId);
 
-  if (scrape.pageLoaded && scrape.tracks.length > 0) {
-    const track = pickCaptionTrack(scrape.tracks);
-    if (track) {
-      const segments = await fetchAndParseTranscript(track.baseUrl);
-      if (segments && segments.length) {
-        return {
-          status: "ok",
-          segments,
-          language: normalizeLang(track.languageCode),
-          kind: track.kind === "asr" ? "asr" : "manual",
-        };
-      }
-    }
-  }
-
   const pkg = await fetchViaPackage(videoId);
   if (pkg) {
-    return { status: "ok", segments: pkg.segments, language: pkg.language, kind: "package" };
+    return {
+      status: "ok",
+      segments: pkg.segments,
+      language: pkg.language,
+      kind: trackKind(scrape.tracks, pkg.language),
+    };
   }
 
   // A CONFIRMED no-captions video requires evidence the page was served INTACT:
