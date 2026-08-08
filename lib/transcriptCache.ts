@@ -59,6 +59,21 @@ function objectPath(youtubeId: string): string {
   return `${youtubeId}.json`;
 }
 
+/**
+ * Records a non-success fetch outcome to the platform log.
+ *
+ * The failures that matter happen on production egress IPs and cannot be
+ * reproduced locally, which is exactly why `fetchFreshTranscript` bothers to
+ * compute a reason code — but nothing used to read it, so every distinct cause
+ * (bot check, login wall, rate limit, genuinely caption-less video) surfaced to
+ * the teacher as one indistinguishable 409 and left no trace. `youtube_video_id`
+ * is included because the canonical video row is shared across schools, so it is
+ * the only handle that ties a log line back to a specific video.
+ */
+function log(youtubeId: string, outcome: string): void {
+  console.warn(`[transcript] video=${youtubeId} ${outcome}`);
+}
+
 /** Freshness is decided solely from `videos.fetched_at` + status (one source). */
 function isFresh(video: VideoFreshnessRow | null): boolean {
   if (!video || video.transcript_status !== "ready" || !video.fetched_at) return false;
@@ -262,6 +277,7 @@ export async function getTranscript(
     }
 
     if (outcome.status === "unavailable") {
+      log(youtubeId, "confirmed no usable captions (page intact and playable)");
       await markUnavailable(client, youtubeId);
       return null;
     }
@@ -273,8 +289,13 @@ export async function getTranscript(
     // carries a timestamp with a TTL. Automatic callers are therefore throttled
     // for CLAIM_TTL_MS, while an explicit retry only has to beat the 30s force
     // floor. A crashed fetch self-heals on the same expiry, exactly as before.
+    log(
+      youtubeId,
+      `transient failure reason=${outcome.reason} served_stale=${cached ? "yes" : "no"}`
+    );
     return cached ? { segments: cached.segments, language: cached.language } : null;
-  } catch {
+  } catch (e) {
+    log(youtubeId, `threw: ${e instanceof Error ? e.message : String(e)}`);
     return cached ? { segments: cached.segments, language: cached.language } : null;
   }
 }
