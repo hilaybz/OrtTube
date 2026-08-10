@@ -46,7 +46,12 @@ async function call(fn: string, args: Record<string, unknown>): Promise<void> {
   if (error) throw new MutationError(error.message || "internal_error");
 }
 
-/** Patch a quiz's editable meta. Null fields are left unchanged by the RPC. */
+/**
+ * Patch a quiz's editable meta. Omitted (null) fields are left unchanged by the
+ * RPC — except `title`, where an EMPTY string means "clear it", so the quiz
+ * falls back to showing the video's title. Passing null for the title reads as
+ * "not provided" and leaves the existing one in place.
+ */
 export function updateQuizMeta(
   quizId: string,
   patch: { title?: string | null; visibility?: QuizVisibility; baseLanguage?: Language }

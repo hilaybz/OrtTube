@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Field } from "@/components/ui/Field";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
@@ -41,10 +42,9 @@ export function SignInForm() {
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       {error && <Alert variant="danger">{error}</Alert>}
       <Field label="אימייל" name="email" type="email" autoComplete="email" required />
-      <Field
+      <PasswordField
         label="סיסמה"
         name="password"
-        type="password"
         autoComplete="current-password"
         required
       />

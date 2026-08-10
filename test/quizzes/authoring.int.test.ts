@@ -61,6 +61,15 @@ async function optionTranslationCount(questionId: string, language: string): Pro
   return res.rows[0].n;
 }
 
+/** The stored quiz title (null once cleared — the UI then shows the video's). */
+async function quizTitle(quizId: string): Promise<string | null> {
+  const res = await getPool().query<{ title: string | null }>(
+    "SELECT title FROM public.quizzes WHERE id=$1",
+    [quizId]
+  );
+  return res.rows[0].title;
+}
+
 /** The soft-delete marker on an option (null while live). */
 async function optionDeletedAt(optionId: string): Promise<string | null> {
   const res = await getPool().query<{ deleted_at: string | null }>(
@@ -233,6 +242,56 @@ describe.skipIf(!online)("authoring RPCs", () => {
     await quiz.softDelete();
     const afterDelete = await teacher.myQuizzes();
     expect(afterDelete.some((q) => q.quiz_id === quiz.id)).toBe(false);
+  });
+
+  // `update_quiz` is a partial patch, so NULL means "field not provided". That
+  // made the title impossible to unset: clearing the box saved null, coalesce
+  // kept the old value, and the teacher was stuck with a title they had deleted.
+  // An empty string is the one way to say "no title", which is a real state —
+  // the UI falls back to the video's title.
+  describe("update_quiz title semantics", () => {
+    it("clears the title when given an empty string", async () => {
+      const quiz = await teacher.authorQuiz({ title: "Chapter One" });
+
+      const { error } = await teacher.client.rpc("update_quiz", {
+        p_quiz_id: quiz.id,
+        p_title: "",
+      });
+
+      expect(error).toBeNull();
+      expect(await quizTitle(quiz.id)).toBeNull();
+    });
+
+    it("treats a whitespace-only title as cleared", async () => {
+      const quiz = await teacher.authorQuiz({ title: "Chapter One" });
+
+      await teacher.client.rpc("update_quiz", { p_quiz_id: quiz.id, p_title: "   " });
+
+      expect(await quizTitle(quiz.id)).toBeNull();
+    });
+
+    it("leaves the title untouched when it is not part of the patch", async () => {
+      const quiz = await teacher.authorQuiz({ title: "Chapter One" });
+
+      // Changing only visibility must not disturb the title.
+      await teacher.client.rpc("update_quiz", {
+        p_quiz_id: quiz.id,
+        p_visibility: "shared",
+      });
+
+      expect(await quizTitle(quiz.id)).toBe("Chapter One");
+    });
+
+    it("stores a new title trimmed", async () => {
+      const quiz = await teacher.authorQuiz({ title: "Chapter One" });
+
+      await teacher.client.rpc("update_quiz", {
+        p_quiz_id: quiz.id,
+        p_title: "  Chapter Two  ",
+      });
+
+      expect(await quizTitle(quiz.id)).toBe("Chapter Two");
+    });
   });
 
   it("students have no direct read of the answer key (RLS)", async () => {

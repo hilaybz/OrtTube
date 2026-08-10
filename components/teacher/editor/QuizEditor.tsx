@@ -221,6 +221,8 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
     GEN_QUESTION_TYPE_DEFAULT
   );
   const [metaBusy, setMetaBusy] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const questions = initial.questions;
   const nextOrderIndex =
@@ -240,7 +242,10 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
     setBanner(null);
     setMetaBusy(true);
     try {
-      await updateQuizMeta(quizId, { title: title.trim() || null });
+      // Send the trimmed string, empty included: an empty title is the teacher
+      // clearing it, which the RPC stores as NULL so the card falls back to the
+      // video's title. Sending null here would read as "unchanged" instead.
+      await updateQuizMeta(quizId, { title: title.trim() });
       setTitleDirty(false);
       refresh();
     } catch (e) {
@@ -250,6 +255,27 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
       });
     } finally {
       setMetaBusy(false);
+    }
+  }
+
+  /**
+   * Soft-deletes the open quiz and leaves the editor. Navigation is deliberate:
+   * staying would leave the teacher editing a quiz that no longer exists.
+   */
+  async function deleteQuiz() {
+    setBanner(null);
+    setDeleting(true);
+    try {
+      await apiFetch<null>(`/api/quizzes/${quizId}`, { method: "DELETE" });
+      router.push("/dashboard/quizzes");
+      router.refresh();
+    } catch (e) {
+      setBanner({
+        kind: "danger",
+        msg: e instanceof ApiError ? e.message : "מחיקת החידון נכשלה.",
+      });
+      setDeleting(false);
+      setDeleteOpen(false);
     }
   }
 
@@ -380,6 +406,14 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
               <Icon name={visibility === "private" ? "lock" : "users"} size={16} />
               {visibility === "private" ? "פרטי" : "משותף לביה״ס"}
             </Button>
+            <button
+              type="button"
+              onClick={() => setDeleteOpen(true)}
+              disabled={metaBusy || deleting}
+              className="rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--body-subtle)] hover:bg-[var(--neutral-quaternary)] hover:text-[var(--fg-danger)] disabled:opacity-50"
+            >
+              מחיקת החידון
+            </button>
           </div>
         </div>
       </GlassCard>
@@ -525,6 +559,33 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
         onClose={() => setModalOpen(false)}
         onSaved={refresh}
       />
+
+      <Modal
+        open={deleteOpen}
+        title="מחיקת חידון"
+        onClose={() => {
+          if (!deleting) setDeleteOpen(false);
+        }}
+      >
+        <p className="text-sm text-[var(--body)]">
+          למחוק את &rdquo;{title.trim() || initial.video.title || "החידון"}&ldquo;?
+          החידון ייעלם מהספרייה וממאגר בית הספר. תשובות ונתוני אנליטיקה של תלמידים
+          שכבר פתרו אותו יישמרו.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setDeleteOpen(false)}
+            disabled={deleting}
+          >
+            ביטול
+          </Button>
+          <Button variant="danger" onClick={deleteQuiz} disabled={deleting}>
+            {deleting ? <Spinner size={16} /> : null}
+            מחיקה
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }

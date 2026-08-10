@@ -216,11 +216,9 @@ export function QuizPlayer({
           <div className="mb-3 flex items-center justify-between gap-2">
             <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--fg-brand)]">
               נקודת עצירה · {mmss(current.position_seconds)}
-              {current.kind === "multi" && (
-                <Badge variant="gray" pill>
-                  בחירה מרובה
-                </Badge>
-              )}
+              <Badge variant={current.kind === "multi" ? "brand" : "gray"} pill>
+                {current.kind === "multi" ? "בחירה מרובה" : "תשובה אחת"}
+              </Badge>
             </span>
             <button
               type="button"
@@ -230,16 +228,31 @@ export function QuizPlayer({
               <Icon name="arrow" size={14} /> צפייה חוזרת בקטע
             </button>
           </div>
-          <h2 className="mb-4 text-lg font-semibold leading-snug">{current.prompt}</h2>
-          <div className="mb-4 flex flex-col gap-2.5">
+          <h2 className="mb-1.5 text-lg font-semibold leading-snug">{current.prompt}</h2>
+          {/* How many answers to pick is said in words as well as shown in the
+              control shape. Grading is exact-set-match, so a student who picks
+              one answer on a multi-answer question loses the mark outright —
+              this must not be something they have to infer. */}
+          <p className="mb-4 text-xs text-[var(--body-subtle)]">
+            {current.kind === "multi"
+              ? "בחרו את כל התשובות הנכונות"
+              : "בחרו תשובה אחת"}
+          </p>
+          <div
+            className="mb-4 flex flex-col gap-2.5"
+            role={current.kind === "multi" ? "group" : "radiogroup"}
+            aria-label={current.prompt}
+          >
             {current.options.map((o, i) => {
               const active = selected.includes(o.id);
+              const single = current.kind === "single";
               return (
                 <button
                   key={o.id}
                   type="button"
                   onClick={() => toggleOption(o.id)}
-                  aria-pressed={active}
+                  role={single ? "radio" : "checkbox"}
+                  aria-checked={active}
                   className={cn(
                     "flex items-center gap-3 rounded-[var(--radius-d)] border p-3.5 text-start text-sm transition-colors",
                     active
@@ -247,9 +260,14 @@ export function QuizPlayer({
                       : "border-[var(--glass-border)] bg-white/50 hover:bg-white/70"
                   )}
                 >
+                  {/* Round = pick one, square = pick several: the convention
+                      students already know from paper and from web forms. This
+                      carries the meaning; the label above only reinforces it. */}
                   <span
+                    data-testid={single ? "option-radio" : "option-checkbox"}
                     className={cn(
-                      "grid h-6 w-6 flex-none place-items-center rounded-md border text-xs font-bold",
+                      "grid h-6 w-6 flex-none place-items-center border text-xs font-bold",
+                      single ? "rounded-full" : "rounded-md",
                       active
                         ? "border-[var(--brand)] bg-[var(--brand)] text-white"
                         : "border-[var(--glass-border)] text-[var(--body)]"
