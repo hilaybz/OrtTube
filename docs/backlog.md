@@ -57,10 +57,27 @@ each needing a defined and tested answer:
 | --- | --- | --- |
 | 1.1 | Show the **YouTube video title** on quiz cards — in both "my quizzes" and the school catalog. | 🎨 |
 | 1.2 | **Delete a quiz** from the library. The `soft_delete_quiz` RPC already exists; this is the button and confirm dialog. | 🎨 |
-| 1.3 | **Preview a catalog quiz before cloning** — open it read-only to see the questions, rather than cloning blind. | 🎨 |
+| 1.3 | **Preview a catalog quiz before cloning** — open it read-only to see the questions, rather than cloning blind. Needs a new correctness-free read; see below. | 🗄️ |
 | 1.4 | **Search, filter and sort** in both the library and the catalog. Agree the axes first (video title, question count, language, date, author). | 🎨 |
 | 1.5 | **Show which classes a quiz is assigned to**, as tags on the card. | 🎨 |
 | 1.6 | General UI pass on the library. | 🎨 |
+
+### 1.3 · Why previewing a shared quiz is not UI-only
+
+There is no read a non-owner can use. `get_quiz_for_author` is strictly
+owner-gated and raises `not_owner`
+(`supabase/migrations/123_get_quiz_for_author.sql`); `list_shared_quizzes`
+returns card metadata only, with no questions.
+
+**Do not widen the gate on `get_quiz_for_author`.** It deliberately exposes the
+answer key (`question_options.is_correct`) and the base-language explanations,
+because it exists for an owner editing their own quiz. Opening it to every
+same-school teacher would circulate the answer key, one leak away from students.
+
+The right shape is a separate correctness-free preview read — questions, options
+and prompts, never `is_correct` and never explanations — reusing the read gate
+from `clone_quiz` (owner, or `shared` and same school) rather than inventing a
+second rule.
 
 ### 1.7 · Show school-sharing state distinctly from student visibility 🎨
 
@@ -363,6 +380,23 @@ forced test mocks to pull in more than they need.
 Twelve integration tests cover cloning, but **none assert that editing a clone
 leaves the source unchanged** — the property teachers actually rely on. Add it
 in both directions. See [`open-questions.md` §2](open-questions.md).
+
+### 7.9 · `videos.title` / `duration_seconds` can stay null forever 🐛🗄️
+
+`create_quiz_for_video` upserts the video row with
+`on conflict (youtube_video_id) do nothing`
+(`supabase/migrations/041_quiz_authoring_rpcs.sql:90-92`), and nothing backfills
+either column. So the **first quiz ever created on a video** sets its metadata
+permanently — if that fetch failed at that moment, the field stays null for
+every teacher, with no recovery from the UI.
+
+Latent today (0 nulls live, oEmbed answers fine from a residential IP), but
+`duration_seconds` comes from the watch-page scrape, which is already known to
+be blocked on Vercel. Same shape as the transcript bug fixed in `1fcdc8c`: a
+transient upstream failure recorded as a permanent fact.
+
+Cheapest fix is `coalesce(videos.title, excluded.title)` on the upsert, so a
+later quiz on the same video repairs the gap for free.
 
 ### 7.8 · Decide: escalate `hard` difficulty to a stronger model? ❓
 
