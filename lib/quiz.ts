@@ -124,6 +124,12 @@ export async function softDeleteOption(
   unwrap(await client.rpc("soft_delete_option", { p_option_id: optionId }));
 }
 
+/**
+ * Partial patch of a quiz's editable meta. An omitted field is left unchanged.
+ * `title` additionally accepts an EMPTY string, which CLEARS it — a quiz with no
+ * title falls back to the video's, so "no title" has to be expressible and null
+ * already means "not provided".
+ */
 export async function updateQuiz(
   client: SupabaseClient,
   quizId: string,

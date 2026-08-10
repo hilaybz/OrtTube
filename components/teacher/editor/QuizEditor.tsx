@@ -242,7 +242,10 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
     setBanner(null);
     setMetaBusy(true);
     try {
-      await updateQuizMeta(quizId, { title: title.trim() || null });
+      // Send the trimmed string, empty included: an empty title is the teacher
+      // clearing it, which the RPC stores as NULL so the card falls back to the
+      // video's title. Sending null here would read as "unchanged" instead.
+      await updateQuizMeta(quizId, { title: title.trim() });
       setTitleDirty(false);
       refresh();
     } catch (e) {
