@@ -172,7 +172,14 @@ function MineTab({ quizzes }: { quizzes: MyQuiz[] }) {
                 baseLanguage={q.base_language}
                 questionCount={q.question_count}
               />
-              <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+              {/* This row must sit ABOVE the stretched link, or the link
+                  swallows the delete click. `.glass > *` in globals.css pins
+                  every direct child to z-index 2 — and because that makes this
+                  row a stacking context, a z-index on the button alone is
+                  trapped inside it and can never beat the link. So the row is
+                  lifted, and made click-through, leaving only the button itself
+                  interactive: "עריכה" keeps falling through to the card link. */}
+              <div className="pointer-events-none relative z-20 mt-auto flex items-center justify-between gap-2 pt-1">
                 <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--fg-brand)]">
                   עריכה
                   <Icon name="arrow" size={16} />
@@ -180,7 +187,7 @@ function MineTab({ quizzes }: { quizzes: MyQuiz[] }) {
                 <button
                   type="button"
                   onClick={() => setPendingDelete(q)}
-                  className="relative z-20 rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--body-subtle)] hover:bg-[var(--neutral-quaternary)] hover:text-[var(--fg-danger)]"
+                  className="pointer-events-auto rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--body-subtle)] hover:bg-[var(--neutral-quaternary)] hover:text-[var(--fg-danger)]"
                 >
                   מחיקה
                 </button>
