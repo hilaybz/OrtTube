@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Spinner } from "@/components/ui/Spinner";
 import { Alert } from "@/components/ui/Alert";
+import { Modal } from "@/components/ui/Modal";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { MyQuiz } from "@/lib/quiz";
 import type { SharedQuiz } from "@/lib/sharing";
@@ -73,7 +74,57 @@ function QuizMeta({
   );
 }
 
+/** The heading shown on a card: the teacher's own title, else the video's. */
+function cardHeading(quiz: { title: string | null; video_title: string | null }) {
+  return quiz.title ?? quiz.video_title ?? "חידון";
+}
+
+/**
+ * The source video, shown under the heading. Rendered only when the teacher gave
+ * the quiz its own title — otherwise `cardHeading` is already showing the video
+ * title and repeating it says nothing.
+ */
+function VideoLine({
+  quiz,
+}: {
+  quiz: { title: string | null; video_title: string | null };
+}) {
+  if (!quiz.title || !quiz.video_title) return null;
+  return (
+    <p
+      className="flex items-center gap-1.5 truncate text-xs text-[var(--body-subtle)]"
+      title={quiz.video_title}
+    >
+      <Icon name="play" size={12} className="flex-none" />
+      <span className="truncate">{quiz.video_title}</span>
+    </p>
+  );
+}
+
 function MineTab({ quizzes }: { quizzes: MyQuiz[] }) {
+  const router = useRouter();
+  const [pendingDelete, setPendingDelete] = useState<MyQuiz | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await apiFetch<null>(`/api/quizzes/${pendingDelete.quiz_id}`, {
+        method: "DELETE",
+      });
+      setPendingDelete(null);
+      // The list is a server read, so re-render it rather than mutating local state.
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "אירעה שגיאה. נסו שוב.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex justify-end">
@@ -84,6 +135,7 @@ function MineTab({ quizzes }: { quizzes: MyQuiz[] }) {
           </Button>
         </Link>
       </div>
+      {error && <Alert variant="danger">{error}</Alert>}
       {quizzes.length === 0 ? (
         <GlassCard>
           <p className="text-[var(--body)]">
@@ -93,33 +145,77 @@ function MineTab({ quizzes }: { quizzes: MyQuiz[] }) {
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {quizzes.map((q) => (
-            <Link
+            <GlassCard
               key={q.quiz_id}
-              href={`/dashboard/quizzes/${q.quiz_id}/edit`}
-              className="group block focus-visible:outline-none"
+              interactive
+              className="relative flex h-full flex-col gap-3"
             >
-              <GlassCard interactive className="flex h-full flex-col gap-3">
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-semibold text-[var(--heading)]">
-                    {q.title ?? q.video_title ?? "חידון"}
-                  </h3>
-                  <Badge variant={q.visibility === "shared" ? "brand" : "gray"}>
-                    {q.visibility === "shared" ? "משותף" : "פרטי"}
-                  </Badge>
-                </div>
-                <QuizMeta
-                  baseLanguage={q.base_language}
-                  questionCount={q.question_count}
-                />
-                <span className="mt-auto inline-flex items-center gap-1.5 pt-1 text-sm font-medium text-[var(--fg-brand)]">
+              {/* Stretched link: the whole card opens the editor, while the
+                  delete control sits above it and stays separately clickable.
+                  Keeps the card-wide target without nesting a button in an
+                  anchor. */}
+              <Link
+                href={`/dashboard/quizzes/${q.quiz_id}/edit`}
+                aria-label={`עריכת ${cardHeading(q)}`}
+                className="absolute inset-0 z-10 rounded-[inherit]"
+              />
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="font-semibold text-[var(--heading)]">
+                  {cardHeading(q)}
+                </h3>
+                <Badge variant={q.visibility === "shared" ? "brand" : "gray"}>
+                  {q.visibility === "shared" ? "משותף" : "פרטי"}
+                </Badge>
+              </div>
+              <VideoLine quiz={q} />
+              <QuizMeta
+                baseLanguage={q.base_language}
+                questionCount={q.question_count}
+              />
+              <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--fg-brand)]">
                   עריכה
                   <Icon name="arrow" size={16} />
                 </span>
-              </GlassCard>
-            </Link>
+                <button
+                  type="button"
+                  onClick={() => setPendingDelete(q)}
+                  className="relative z-20 rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--body-subtle)] hover:bg-[var(--neutral-quaternary)] hover:text-[var(--fg-danger)]"
+                >
+                  מחיקה
+                </button>
+              </div>
+            </GlassCard>
           ))}
         </div>
       )}
+
+      <Modal
+        open={pendingDelete !== null}
+        title="מחיקת חידון"
+        onClose={() => {
+          if (!deleting) setPendingDelete(null);
+        }}
+      >
+        <p className="text-sm text-[var(--body)]">
+          למחוק את &rdquo;{pendingDelete ? cardHeading(pendingDelete) : ""}&ldquo;?
+          החידון ייעלם מהספרייה וממאגר בית הספר. תשובות ונתוני אנליטיקה של תלמידים
+          שכבר פתרו אותו יישמרו.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setPendingDelete(null)}
+            disabled={deleting}
+          >
+            ביטול
+          </Button>
+          <Button variant="danger" onClick={confirmDelete} disabled={deleting}>
+            {deleting ? <Spinner size={16} /> : null}
+            מחיקה
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -164,10 +260,11 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
             <GlassCard key={q.quiz_id} className="flex h-full flex-col gap-3">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-semibold text-[var(--heading)]">
-                  {q.title ?? q.video_title ?? "חידון"}
+                  {cardHeading(q)}
                 </h3>
                 {q.is_own && <Badge variant="brand">שלי</Badge>}
               </div>
+              <VideoLine quiz={q} />
               {q.author_name && (
                 <p className="text-xs text-[var(--body-subtle)]">
                   מאת {q.author_name}
