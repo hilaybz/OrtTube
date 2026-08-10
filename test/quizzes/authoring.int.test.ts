@@ -61,6 +61,17 @@ async function optionTranslationCount(questionId: string, language: string): Pro
   return res.rows[0].n;
 }
 
+/** A video row's title/duration, as backfill tests need to inspect both. */
+async function videoMeta(
+  youtubeId: string
+): Promise<{ title: string | null; duration_seconds: number | null }> {
+  const res = await getPool().query<{ title: string | null; duration_seconds: number | null }>(
+    "SELECT title, duration_seconds FROM public.videos WHERE youtube_video_id=$1",
+    [youtubeId]
+  );
+  return res.rows[0];
+}
+
 /** The stored quiz title (null once cleared — the UI then shows the video's). */
 async function quizTitle(quizId: string): Promise<string | null> {
   const res = await getPool().query<{ title: string | null }>(
@@ -291,6 +302,72 @@ describe.skipIf(!online)("authoring RPCs", () => {
       });
 
       expect(await quizTitle(quiz.id)).toBe("Chapter Two");
+    });
+  });
+
+  // Only the FIRST quiz on a video used to set its title/duration — a fetch
+  // failure on that one call left the field null forever, since a later quiz on
+  // the same video was a no-op upsert. `create_quiz_for_video` now backfills
+  // whichever column is currently null on each subsequent call.
+  describe("create_quiz_for_video video metadata backfill", () => {
+    it("backfills a null title/duration from a later quiz on the same video", async () => {
+      const youtubeId = `yt-backfill-${Math.random().toString(36).slice(2)}`;
+
+      // First quiz: simulates the metadata fetch having failed.
+      const first = await teacher.client.rpc("create_quiz_for_video", {
+        p_youtube_id: youtubeId,
+        p_video_title: null,
+        p_duration_seconds: null,
+        p_base_language: "he",
+        p_quiz_title: "First",
+      });
+      expect(first.error).toBeNull();
+      expect(await videoMeta(youtubeId)).toEqual({ title: null, duration_seconds: null });
+
+      // Second quiz on the SAME video: this fetch succeeded.
+      const second = await teacher.client.rpc("create_quiz_for_video", {
+        p_youtube_id: youtubeId,
+        p_video_title: "Real Title",
+        p_duration_seconds: 400,
+        p_base_language: "he",
+        p_quiz_title: "Second",
+      });
+      expect(second.error).toBeNull();
+      expect(await videoMeta(youtubeId)).toEqual({
+        title: "Real Title",
+        duration_seconds: 400,
+      });
+
+      // Both quizzes still point at the ONE shared video row (dedup by
+      // youtube_video_id) — the backfill must not have created a second row.
+      expect(first.data.video_id).toBe(second.data.video_id);
+    });
+
+    it("never overwrites existing metadata with a later null", async () => {
+      const youtubeId = `yt-preserve-${Math.random().toString(36).slice(2)}`;
+
+      await teacher.client.rpc("create_quiz_for_video", {
+        p_youtube_id: youtubeId,
+        p_video_title: "Established Title",
+        p_duration_seconds: 555,
+        p_base_language: "he",
+        p_quiz_title: "First",
+      });
+
+      // A later quiz whose OWN metadata fetch failed must not blank out what is
+      // already stored — coalesce always prefers the existing value.
+      await teacher.client.rpc("create_quiz_for_video", {
+        p_youtube_id: youtubeId,
+        p_video_title: null,
+        p_duration_seconds: null,
+        p_base_language: "he",
+        p_quiz_title: "Second",
+      });
+
+      expect(await videoMeta(youtubeId)).toEqual({
+        title: "Established Title",
+        duration_seconds: 555,
+      });
     });
   });
 
