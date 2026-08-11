@@ -15,6 +15,7 @@ import type {
   OptionsPerQuestion,
   QuestionType,
 } from "@/lib/ai/generate";
+import type { Language } from "@/lib/lang";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import { QuestionModal } from "./QuestionModal";
@@ -85,11 +86,14 @@ function GenerateTrigger({
 
 /**
  * Chooser dialog: pick how many questions to generate. The copy states the
- * questions are ADDED, so the number is never read as a running total.
+ * questions are ADDED, so the number is never read as a running total, and names
+ * the quiz's source language as a fact about this run — generation has no
+ * language input, so the dialog must never read as a language choice.
  */
 function GenerateModal({
   open,
   hasQuestions,
+  baseLanguage,
   count,
   onCount,
   difficulty,
@@ -104,6 +108,7 @@ function GenerateModal({
 }: {
   open: boolean;
   hasQuestions: boolean;
+  baseLanguage: Language;
   count: number;
   onCount: (n: number) => void;
   difficulty: GenerationDifficulty;
@@ -172,6 +177,10 @@ function GenerateModal({
             className="self-start"
           />
         </div>
+        <p className="text-xs text-[var(--body-subtle)]">
+          השאלות ייכתבו בשפת המקור של החידון ({LANGUAGE_LABELS[baseLanguage]}), גם אם
+          הסרטון מדובר בשפה אחרת. תלמידים שקוראים בשפה אחרת מקבלים תרגום אוטומטי.
+        </p>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             ביטול
@@ -538,6 +547,7 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
       <GenerateModal
         open={genModalOpen}
         hasQuestions={questions.length > 0}
+        baseLanguage={initial.base_language}
         count={genCount}
         onCount={setGenCount}
         difficulty={genDifficulty}
