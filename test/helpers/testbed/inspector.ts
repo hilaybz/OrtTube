@@ -12,7 +12,87 @@ import type { Student } from "./student";
 import type { Quiz, AuthoredQuestion } from "./quiz";
 import type { Attempt } from "./attempt";
 
+/** One live option of a quiz's stored structure: identity, answer key, base text. */
+export interface OptionStructure {
+  id: string;
+  orderIndex: number;
+  isCorrect: boolean;
+  text: string | null;
+}
+
+/** One live question of a quiz's stored structure, with its options in order. */
+export interface QuestionStructure {
+  id: string;
+  kind: string;
+  positionSeconds: number;
+  orderIndex: number;
+  prompt: string | null;
+  explanation: string | null;
+  options: OptionStructure[];
+}
+
 export class Inspector {
+  /**
+   * The quiz's whole live structure — questions in display order with their
+   * base-language prompt/explanation, and each option's id, answer-key bit and
+   * text. Deep enough to compare two quizzes, or one quiz before and after an
+   * edit elsewhere.
+   */
+  async structureOf(quiz: Quiz | string): Promise<QuestionStructure[]> {
+    const id = typeof quiz === "string" ? quiz : quiz.id;
+    const questions = await getPool().query<{
+      id: string;
+      kind: string;
+      position_seconds: number;
+      order_index: number;
+      prompt: string | null;
+      explanation: string | null;
+    }>(
+      `SELECT q.id, q.kind, q.position_seconds, q.order_index,
+              qt.prompt, qt.explanation
+         FROM public.questions q
+         JOIN public.quizzes z ON z.id = q.quiz_id
+         LEFT JOIN public.question_translations qt
+           ON qt.question_id = q.id AND qt.language = z.base_language
+        WHERE q.quiz_id = $1 AND q.deleted_at IS NULL
+        ORDER BY q.order_index, q.id`,
+      [id]
+    );
+    const options = await getPool().query<{
+      question_id: string;
+      id: string;
+      order_index: number;
+      is_correct: boolean;
+      text: string | null;
+    }>(
+      `SELECT o.question_id, o.id, o.order_index, o.is_correct, ot.text
+         FROM public.question_options o
+         JOIN public.questions q ON q.id = o.question_id
+         JOIN public.quizzes z ON z.id = q.quiz_id
+         LEFT JOIN public.option_translations ot
+           ON ot.option_id = o.id AND ot.language = z.base_language
+        WHERE q.quiz_id = $1 AND q.deleted_at IS NULL AND o.deleted_at IS NULL
+        ORDER BY o.order_index, o.id`,
+      [id]
+    );
+    return questions.rows.map((q) => ({
+      id: q.id,
+      kind: q.kind,
+      positionSeconds: q.position_seconds,
+      orderIndex: q.order_index,
+      prompt: q.prompt,
+      explanation: q.explanation,
+      options: options.rows
+        .filter((o) => o.question_id === q.id)
+        .map((o) => ({
+          id: o.id,
+          orderIndex: o.order_index,
+          isCorrect: o.is_correct,
+          text: o.text,
+        })),
+    }));
+  }
+
   /** Whether the student currently has a membership row in the class. */
   async isMember(classroom: Classroom, student: Student): Promise<boolean> {
     const res = await getPool().query(

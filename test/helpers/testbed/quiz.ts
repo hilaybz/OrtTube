@@ -26,7 +26,8 @@ export class AuthoredQuestion {
   constructor(
     readonly id: string,
     readonly options: QuizOption[],
-    private readonly quiz: Quiz
+    /** The quiz this question belongs to, so owner-scoped RPCs run as its owner. */
+    readonly quiz: Quiz
   ) {}
 
   /** The correct option ids (one for single, ≥1 for multi). */
@@ -126,5 +127,10 @@ export class Quiz {
   /** Return this quiz to private (owner-only). */
   makePrivate(): Promise<void> {
     return this.owner.setVisibility(this, "private");
+  }
+
+  /** Retitle this quiz (owner-only). An empty string clears the title. */
+  rename(title: string): Promise<void> {
+    return this.owner.setTitle(this, title);
   }
 }

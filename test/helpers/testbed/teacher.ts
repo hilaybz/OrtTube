@@ -47,6 +47,20 @@ import { Classroom, type AssignOptions } from "./classroom";
 import { Quiz, AuthoredQuestion, QuizOption, type SharedQuizRow } from "./quiz";
 import type { Student } from "./student";
 
+/**
+ * An in-place edit of an existing question. Omitted fields keep their stored
+ * value; `options` replaces the text and answer key of the question's live
+ * options, one entry per option in display order.
+ */
+export interface QuestionRevision {
+  prompt?: string;
+  explanation?: string | null;
+  kind?: "single" | "multi";
+  at?: number;
+  order?: number;
+  options?: { text: string; correct: boolean }[];
+}
+
 export class Teacher implements Actor {
   constructor(
     readonly id: string,
@@ -145,6 +159,85 @@ export class Teacher implements Actor {
     return authored;
   }
 
+  /**
+   * Rewrite an EXISTING question in place (real `upsert_question` RPC with the
+   * question's id): its prompt/explanation and, when `options` is given, the text
+   * and answer key of its live options — matched positionally in display order, so
+   * the option rows keep their identity. Returns a refreshed handle (and swaps it
+   * into `quiz.questions`), since the revision moves the answer key.
+   */
+  async reviseQuestion(
+    q: AuthoredQuestion,
+    revision: QuestionRevision
+  ): Promise<AuthoredQuestion> {
+    const quiz = q.quiz;
+    const current = await this.readQuestionRow(q.id, quiz.baseLanguage);
+
+    if (revision.options && revision.options.length !== q.options.length) {
+      throw new Error(
+        `reviseQuestion expects one entry per live option (has ${q.options.length}, got ${revision.options.length})`
+      );
+    }
+    const options = q.options.map((option, i) => {
+      const replacement = revision.options?.[i];
+      return {
+        option_id: option.id,
+        is_correct: replacement ? replacement.correct : option.isCorrect,
+        order_index: option.orderIndex,
+        base_text: replacement ? replacement.text : option.baseText,
+      };
+    });
+
+    await upsertQuestion(this.client, {
+      quizId: quiz.id,
+      questionId: q.id,
+      kind: revision.kind ?? current.kind,
+      positionSeconds: revision.at ?? current.positionSeconds,
+      orderIndex: revision.order ?? current.orderIndex,
+      basePrompt: revision.prompt ?? current.prompt ?? "",
+      baseExplanation:
+        revision.explanation !== undefined
+          ? revision.explanation
+          : current.explanation,
+      options,
+      source: "authored",
+    });
+
+    const revised = new AuthoredQuestion(
+      q.id,
+      await this.readOptions(q.id, quiz.baseLanguage),
+      quiz
+    );
+    const at = quiz.questions.indexOf(q);
+    if (at >= 0) quiz.questions[at] = revised;
+    return revised;
+  }
+
+  /**
+   * Hydrate `quiz.questions` with handles for the quiz's live questions and their
+   * options. Needed for a quiz this teacher did not author through the DSL — a
+   * fresh clone — so its questions become editable/assertable like authored ones.
+   */
+  async loadQuestions(quiz: Quiz): Promise<AuthoredQuestion[]> {
+    const res = await getPool().query<{ id: string }>(
+      `SELECT id FROM public.questions
+        WHERE quiz_id = $1 AND deleted_at IS NULL
+        ORDER BY order_index, id`,
+      [quiz.id]
+    );
+    quiz.questions.length = 0;
+    for (const row of res.rows) {
+      quiz.questions.push(
+        new AuthoredQuestion(
+          row.id,
+          await this.readOptions(row.id, quiz.baseLanguage),
+          quiz
+        )
+      );
+    }
+    return quiz.questions;
+  }
+
   /** Soft-delete a question (owner-scoped `soft_delete_question` RPC). */
   removeQuestion(q: AuthoredQuestion): Promise<void> {
     return softDeleteQuestion(this.client, q.id);
@@ -159,6 +252,11 @@ export class Teacher implements Actor {
   /** Set a quiz's visibility (owner-scoped `update_quiz` RPC). */
   setVisibility(quiz: Quiz, visibility: "private" | "shared"): Promise<void> {
     return updateQuiz(this.client, quiz.id, { visibility });
+  }
+
+  /** Set a quiz's title (owner-scoped `update_quiz` RPC); `""` clears it. */
+  setTitle(quiz: Quiz, title: string): Promise<void> {
+    return updateQuiz(this.client, quiz.id, { title });
   }
 
   /** This teacher's own-quizzes library (incl. unassigned). */
@@ -177,7 +275,8 @@ export class Teacher implements Actor {
    * Deep-clone a quiz the teacher may read into a new private copy (real
    * `clone_quiz` RPC). Accepts a `Quiz` handle or a raw id (for the missing-quiz
    * guard). Throws the RPC's stable code (`not_authorized`, `quiz_not_found`,
-   * `quiz_deleted`) on rejection.
+   * `quiz_deleted`) on rejection. The returned handle carries the COPIED questions
+   * and their own option ids, so the clone is editable as this teacher's own quiz.
    */
   async clone(source: Quiz | string): Promise<Quiz> {
     const sourceId = typeof source === "string" ? source : source.id;
@@ -190,7 +289,14 @@ export class Teacher implements Actor {
       "SELECT base_language, video_id FROM public.quizzes WHERE id=$1",
       [newId]
     );
-    return new Quiz(newId, row.rows[0].base_language, this, row.rows[0].video_id);
+    const clone = new Quiz(
+      newId,
+      row.rows[0].base_language,
+      this,
+      row.rows[0].video_id
+    );
+    await this.loadQuestions(clone);
+    return clone;
   }
 
   // ── Analytics (owner-checked compute-on-read) ───────────────────────────────
@@ -265,6 +371,42 @@ export class Teacher implements Actor {
   }
 
   // ── internals ───────────────────────────────────────────────────────────────
+
+  /** Read a question's structural fields + base-language text, for a partial revision. */
+  private async readQuestionRow(
+    questionId: string,
+    baseLanguage: Language
+  ): Promise<{
+    kind: "single" | "multi";
+    positionSeconds: number;
+    orderIndex: number;
+    prompt: string | null;
+    explanation: string | null;
+  }> {
+    const res = await getPool().query<{
+      kind: "single" | "multi";
+      position_seconds: number;
+      order_index: number;
+      prompt: string | null;
+      explanation: string | null;
+    }>(
+      `SELECT q.kind, q.position_seconds, q.order_index, qt.prompt, qt.explanation
+         FROM public.questions q
+         LEFT JOIN public.question_translations qt
+           ON qt.question_id = q.id AND qt.language = $2
+        WHERE q.id = $1`,
+      [questionId, baseLanguage]
+    );
+    if (res.rowCount === 0) throw new Error(`no question ${questionId}`);
+    const row = res.rows[0];
+    return {
+      kind: row.kind,
+      positionSeconds: row.position_seconds,
+      orderIndex: row.order_index,
+      prompt: row.prompt,
+      explanation: row.explanation,
+    };
+  }
 
   /** Read the live options of a just-authored question, in display order. */
   private async readOptions(

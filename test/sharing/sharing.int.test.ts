@@ -7,7 +7,8 @@
  * Covers: the same-school shared browse surface, teacher-only visibility, deep-copy
  * clone (questions/options/translations, cloned_from_id, reused video, private
  * visibility), soft-deleted rows excluded, attempts/answers not copied,
- * owner-clones-own-private, and cross-school denial.
+ * owner-clones-own-private, clone/source independence in both directions, and
+ * cross-school denial.
  *
  * Runs at the integration/gate step (owns DB application). Skipped when the local
  * DB is unreachable so unit suites still pass without Supabase running.
@@ -384,6 +385,168 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     expect(await testbed.db.quizRow(clone)).toMatchObject({
       cloned_from_id: source.id,
       visibility: "private",
+    });
+  });
+
+  // ── clone independence ──────────────────────────────────────────────────────
+  // A clone is an eager deep copy with no runtime coupling: each side is an
+  // ordinary quiz owned by its own teacher, so editing either one must never be
+  // visible in the other.
+
+  it("editing a clone leaves the source quiz untouched", async () => {
+    const source = await teacher.authorQuiz({
+      title: "Original",
+      questions: [
+        question({
+          kind: "single",
+          prompt: "What is X?",
+          at: 42,
+          explanation: "Because Y.",
+          options: [
+            { text: "option 0", correct: false },
+            { text: "option 1", correct: true },
+            { text: "option 2", correct: false },
+          ],
+        }),
+      ],
+    });
+    await source.makeShared();
+    const sourceBefore = await testbed.db.structureOf(source);
+
+    const cloner = await lincoln.enrollTeacher({ name: "Grace" });
+    const clone = await cloner.clone(source);
+
+    // The clone's questions and options are its OWN rows, not the source's.
+    const [sourceQuestion] = source.questions;
+    const [clonedQuestion] = clone.questions;
+    expect(clonedQuestion.id).not.toBe(sourceQuestion.id);
+    const sourceOptionIds = new Set(sourceQuestion.optionIds);
+    expect(clonedQuestion.optionIds.filter((id) => sourceOptionIds.has(id))).toEqual(
+      []
+    );
+
+    // The cloner reworks their copy: new prompt/explanation, new option text, the
+    // answer key moved to a different option, an extra question, a new title.
+    await cloner.reviseQuestion(clonedQuestion, {
+      prompt: "What is X, really?",
+      explanation: "Because Z.",
+      options: [
+        { text: "clone option 0", correct: false },
+        { text: "clone option 1", correct: false },
+        { text: "clone option 2", correct: true },
+      ],
+    });
+    await cloner.addQuestion(
+      clone,
+      singleChoice({
+        prompt: "A clone-only question",
+        at: 120,
+        order: 1,
+        correct: "yes",
+        distractors: ["no"],
+      })
+    );
+    await clone.rename("Grace's Adaptation");
+
+    // The clone really did change …
+    const cloneAfter = await testbed.db.structureOf(clone);
+    expect(cloneAfter.map((q) => q.prompt)).toEqual([
+      "What is X, really?",
+      "A clone-only question",
+    ]);
+    expect(cloneAfter[0].options.map((o) => o.text)).toEqual([
+      "clone option 0",
+      "clone option 1",
+      "clone option 2",
+    ]);
+    expect(
+      cloneAfter[0].options.filter((o) => o.isCorrect).map((o) => o.text)
+    ).toEqual(["clone option 2"]);
+
+    // … and the source's prompts, options and answer key are exactly as authored.
+    expect(await testbed.db.structureOf(source)).toEqual(sourceBefore);
+    expect(await testbed.db.quizRow(source)).toMatchObject({
+      title: "Original",
+      visibility: "shared",
+      author_id: teacher.id,
+    });
+  });
+
+  it("editing the source leaves an existing clone untouched", async () => {
+    const source = await teacher.authorQuiz({
+      title: "Original",
+      questions: [
+        question({
+          kind: "single",
+          prompt: "What is X?",
+          at: 42,
+          explanation: "Because Y.",
+          options: [
+            { text: "option 0", correct: false },
+            { text: "option 1", correct: true },
+            { text: "option 2", correct: false },
+          ],
+        }),
+        singleChoice({
+          prompt: "What is Y?",
+          at: 90,
+          order: 1,
+          correct: "yes",
+          distractors: ["no"],
+        }),
+      ],
+    });
+    await source.makeShared();
+
+    const cloner = await lincoln.enrollTeacher({ name: "Grace" });
+    const clone = await cloner.clone(source);
+    const cloneBefore = await testbed.db.structureOf(clone);
+    expect(cloneBefore).toHaveLength(2);
+
+    // The author reworks the original: new prompt/explanation, new option text,
+    // the answer key moved, the second question dropped, a third added, retitled
+    // and pulled back out of the shared catalog.
+    const [firstQuestion, secondQuestion] = source.questions;
+    await teacher.reviseQuestion(firstQuestion, {
+      prompt: "Reworked prompt",
+      explanation: "Reworked explanation.",
+      options: [
+        { text: "source option 0", correct: true },
+        { text: "source option 1", correct: false },
+        { text: "source option 2", correct: false },
+      ],
+    });
+    await secondQuestion.softDelete();
+    await teacher.addQuestion(
+      source,
+      singleChoice({
+        prompt: "A source-only question",
+        at: 150,
+        order: 2,
+        correct: "yes",
+        distractors: ["no"],
+      })
+    );
+    await source.rename("Reworked Original");
+    await source.makePrivate();
+
+    // The source really did change …
+    const sourceAfter = await testbed.db.structureOf(source);
+    expect(sourceAfter.map((q) => q.prompt)).toEqual([
+      "Reworked prompt",
+      "A source-only question",
+    ]);
+    expect(
+      sourceAfter[0].options.filter((o) => o.isCorrect).map((o) => o.text)
+    ).toEqual(["source option 0"]);
+
+    // … and the clone is exactly what was copied, lineage pointer included.
+    expect(await testbed.db.structureOf(clone)).toEqual(cloneBefore);
+    expect(await testbed.db.quizRow(clone)).toMatchObject({
+      title: "Original",
+      visibility: "private",
+      cloned_from_id: source.id,
+      author_id: cloner.id,
     });
   });
 
