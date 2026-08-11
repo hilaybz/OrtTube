@@ -105,18 +105,37 @@ describe("fetchFreshTranscript classification", () => {
 
     expect(outcome.status).toBe("error");
     if (outcome.status === "error") {
-      expect(outcome.reason).toBe("page_not_loaded");
+      // The status survives into the reason. A refused request argues for paid
+      // egress; the unparseable case below does not, and a bare "page_not_loaded"
+      // could not tell them apart.
+      expect(outcome.reason).toBe("page_not_loaded:http_429");
     }
   });
 
-  it("treats an unparseable page as transient", async () => {
+  it("treats an unparseable page as transient, distinctly from a refusal", async () => {
     youtubeServes("<html><body>nothing useful here</body></html>");
 
     const outcome = await fetchFreshTranscript("vid");
 
     expect(outcome.status).toBe("error");
     if (outcome.status === "error") {
-      expect(outcome.reason).toBe("page_not_loaded");
+      expect(outcome.reason).toBe("page_not_loaded:no_player_json");
+    }
+  });
+
+  it("keeps a network error distinct from an answered request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      })
+    );
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    expect(outcome.status).toBe("error");
+    if (outcome.status === "error") {
+      expect(outcome.reason).toBe("page_not_loaded:TypeError: fetch failed");
     }
   });
 
@@ -211,5 +230,79 @@ describe("fetchFreshTranscript provenance", () => {
       expect(outcome.language).toBe("he");
       expect(outcome.kind).toBe("package");
     }
+  });
+});
+
+/**
+ * The trace is the only record of what a fetch actually did. These failures
+ * happen on production egress IPs and cannot be reproduced locally, so if the
+ * trace loses a request or an error class, that information is gone for good —
+ * which is what these pin.
+ */
+describe("fetchFreshTranscript trace", () => {
+  it("records the scrape's status and the track list it found", async () => {
+    youtubeServes(
+      watchPage({
+        playabilityStatus: { status: "OK" },
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [{ baseUrl: "u", languageCode: "en", kind: "asr" }],
+          },
+        },
+      })
+    );
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    expect(outcome.trace).toContain("GET www.youtube.com/watch → 200");
+    expect(outcome.trace).toContain("scrape → playability=OK tracks=1 [en:asr]");
+  });
+
+  it("keeps the download's error CLASS, not just its message", async () => {
+    // The package reports a captcha wall, disabled captions and an unavailable
+    // video as distinct error classes. That distinction is the sharpest diagnosis
+    // available anywhere in this flow, and it used to be swallowed whole.
+    youtubeServes(watchPage({ playabilityStatus: { status: "LOGIN_REQUIRED" } }));
+    class YoutubeTranscriptTooManyRequestError extends Error {}
+    fetchTranscript.mockRejectedValue(
+      new YoutubeTranscriptTooManyRequestError("captcha required")
+    );
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    expect(outcome.trace).toContain(
+      "download lang=he → YoutubeTranscriptTooManyRequestError: captcha required"
+    );
+  });
+
+  it("records every request the download makes, which it otherwise hides", async () => {
+    // The download's own requests are most of the upstream surface and the
+    // package exposes none of them; only the injected fetch reaches them.
+    youtubeServes(watchPage({ playabilityStatus: { status: "OK" } }));
+    fetchTranscript.mockImplementation(
+      async (_id: string, config: { fetch: typeof globalThis.fetch }) => {
+        await config.fetch("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", {
+          method: "POST",
+        });
+        throw new Error("no transcripts available");
+      }
+    );
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    // Query string dropped: it carries the video id and keys, and the endpoint is
+    // what identifies the call.
+    expect(outcome.trace).toContain("POST www.youtube.com/youtubei/v1/player → 200");
+  });
+
+  it("separates a download that answered empty from one that failed", async () => {
+    youtubeServes(watchPage({ playabilityStatus: { status: "OK" } }));
+    fetchTranscript.mockResolvedValue([]);
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    // An empty answer says something about the video; a throw says something
+    // about the egress. Both end as "no transcript" and must stay tellable apart.
+    expect(outcome.trace).toContain("download lang=he → empty");
   });
 });
