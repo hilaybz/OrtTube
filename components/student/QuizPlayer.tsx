@@ -315,10 +315,7 @@ export function QuizPlayer({
         onProgress={onProgress}
       />
 
-      <CheckpointStepper
-        markers={markers}
-        onSeek={(s) => stageRef.current?.seekTo(s)}
-      />
+      <CheckpointStepper markers={markers} />
 
       {allAnswered && (
         <GlassCard className="flex flex-col items-center gap-3 text-center">
@@ -339,31 +336,38 @@ interface RailMarker {
   index: number;
 }
 
+/** What a marker's appearance means, spelled out for assistive tech. */
+const MARKER_STATE_LABEL = {
+  done: "נענתה",
+  current: "השאלה הנוכחית",
+  upcoming: "טרם נפתחה",
+} as const;
+
 /**
  * The quiz-checkpoint stepper below the player. Numbered nodes in QUESTION order
  * (not time position, so they never cluster on a long video), connected by a
- * progress line — done ✓, the current one ringed + clickable ("jump to it"),
- * upcoming ones locked. A caption shows when the next checkpoint is.
+ * progress line — done ✓, the current one ringed, upcoming ones locked. A caption
+ * shows when the next checkpoint is.
+ *
+ * The stepper is a read-only progress display, not a navigation control: it tells
+ * a student where the questions are and how far along they are, but seeking is
+ * owned entirely by the block-skip gate. So the nodes are non-interactive, and
+ * each one's accessible name describes its state rather than an action.
  */
-function CheckpointStepper({
-  markers,
-  onSeek,
-}: {
-  markers: RailMarker[];
-  onSeek: (seconds: number) => void;
-}) {
+function CheckpointStepper({ markers }: { markers: RailMarker[] }) {
   if (markers.length === 0) return null;
   const currentSeconds = markers.find((m) => m.current)?.seconds ?? null;
   return (
     <div className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-white/50 px-5 py-4">
       {/* LTR: question 1 on the left, progressing right (like a video timeline). */}
-      <div dir="ltr" className="flex items-center">
+      <div dir="ltr" role="list" aria-label="נקודות העצירה בחידון" className="flex items-center">
         {markers.map((m, i) => {
-          const locked = !m.done && !m.current;
+          const state = m.done ? "done" : m.current ? "current" : "upcoming";
           return (
             <Fragment key={m.seconds}>
               {i > 0 && (
                 <div
+                  aria-hidden="true"
                   className={cn(
                     "h-0.5 flex-1",
                     markers[i - 1].done
@@ -372,25 +376,24 @@ function CheckpointStepper({
                   )}
                 />
               )}
-              <button
-                type="button"
-                disabled={locked}
-                title={mmss(m.seconds)}
-                aria-label={m.current ? "מעבר לנקודת העצירה" : `שאלה ${m.index + 1}`}
-                onClick={() => {
-                  if (!locked) onSeek(m.seconds);
-                }}
+              <span
+                role="listitem"
+                data-testid="checkpoint-marker"
+                data-state={state}
                 className={cn(
                   "grid h-7 w-7 flex-none place-items-center rounded-full border-2 text-xs font-bold transition",
                   m.done
-                    ? "cursor-pointer border-[var(--brand)] bg-[var(--brand)] text-white"
+                    ? "border-[var(--brand)] bg-[var(--brand)] text-white"
                     : m.current
-                      ? "cursor-pointer border-[var(--brand)] bg-white text-[var(--fg-brand)] ring-4 ring-[var(--brand-softer)]"
-                      : "cursor-not-allowed border-[var(--neutral-quaternary)] bg-white text-[var(--body-subtle)]"
+                      ? "border-[var(--brand)] bg-white text-[var(--fg-brand)] ring-4 ring-[var(--brand-softer)]"
+                      : "border-[var(--neutral-quaternary)] bg-white text-[var(--body-subtle)]"
                 )}
               >
-                {m.done ? "✓" : m.index + 1}
-              </button>
+                <span aria-hidden="true">{m.done ? "✓" : m.index + 1}</span>
+                <span className="sr-only">
+                  {`שאלה ${m.index + 1} · ${mmss(m.seconds)} · ${MARKER_STATE_LABEL[state]}`}
+                </span>
+              </span>
             </Fragment>
           );
         })}
