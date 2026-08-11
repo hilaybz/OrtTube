@@ -14,7 +14,7 @@ import type {
   GenerationDifficulty,
   OptionsPerQuestion,
   QuestionType,
-} from "@/lib/ai/generate";
+} from "@/lib/ai/generationOptions";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import { QuestionModal } from "./QuestionModal";
