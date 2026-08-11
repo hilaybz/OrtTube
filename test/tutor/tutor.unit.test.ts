@@ -9,20 +9,56 @@ import {
   buildTutorUserMessage,
   formatTimestamp,
   TUTOR_MODEL,
+  type TutorMode,
 } from "@/lib/tutor";
 import { sliceTranscriptToPlayhead } from "@/lib/transcript";
+import { SUPPORTED_LANGUAGES, type Language } from "@/lib/lang";
+
+/** English name the prompt must use for each supported language code. */
+const EXPECTED_LANGUAGE_NAME: Record<Language, string> = {
+  he: "Hebrew",
+  ar: "Arabic",
+  en: "English",
+};
+
+/** Every mode the prompt builders accept (`off` is refused by the route). */
+const TUTOR_MODES: ReadonlyArray<Exclude<TutorMode, "off">> = ["hints", "full"];
 
 describe("buildTutorSystemPrompt", () => {
-  it("pins the response language regardless of transcript/question language", () => {
-    const hebrewPrompt = buildTutorSystemPrompt({ language: "he", mode: "hints", hasActiveQuestion: false });
-    expect(hebrewPrompt).toContain("Hebrew");
-    expect(hebrewPrompt).toContain('"he"');
+  // The reported "answers in English" bug would show up here as a missing or
+  // mode-dependent pin, so this covers the FULL language × mode matrix rather
+  // than one language per mode.
+  it("pins the response language in every mode, for every supported language", () => {
+    for (const language of SUPPORTED_LANGUAGES) {
+      for (const mode of TUTOR_MODES) {
+        for (const hasActiveQuestion of [true, false]) {
+          const prompt = buildTutorSystemPrompt({ language, mode, hasActiveQuestion });
+          expect(prompt).toContain(
+            `Always respond in ${EXPECTED_LANGUAGE_NAME[language]} (language code "${language}")`
+          );
+        }
+      }
+    }
+  });
 
-    const arabicPrompt = buildTutorSystemPrompt({ language: "ar", mode: "full", hasActiveQuestion: false });
-    expect(arabicPrompt).toContain("Arabic");
+  it("names no language other than the resolved one", () => {
+    const hebrewPrompt = buildTutorSystemPrompt({
+      language: "he",
+      mode: "hints",
+      hasActiveQuestion: false,
+    });
+    expect(hebrewPrompt).not.toContain("English");
+    expect(hebrewPrompt).not.toContain("Arabic");
+    expect(hebrewPrompt).not.toContain('"en"');
+  });
 
-    const englishPrompt = buildTutorSystemPrompt({ language: "en", mode: "hints", hasActiveQuestion: false });
-    expect(englishPrompt).toContain("English");
+  it("pins the language regardless of the transcript's language", () => {
+    const prompt = buildTutorSystemPrompt({
+      language: "he",
+      mode: "full",
+      hasActiveQuestion: false,
+    });
+    expect(prompt).toContain("regardless of the language of the transcript");
   });
 
   it("shapes 'hints' mode as Socratic (no full answers)", () => {
@@ -79,6 +115,7 @@ describe("buildTutorSystemPrompt", () => {
 describe("buildTutorUserMessage", () => {
   it("includes the watched transcript and current position", () => {
     const message = buildTutorUserMessage({
+      language: "he",
       transcriptContext: "photosynthesis converts light",
       positionSeconds: 90,
       prompt: "what is this?",
@@ -92,6 +129,7 @@ describe("buildTutorUserMessage", () => {
 
   it("notes an active question without any option/answer data", () => {
     const message = buildTutorUserMessage({
+      language: "he",
       transcriptContext: "",
       positionSeconds: 0,
       prompt: "help",
@@ -103,12 +141,44 @@ describe("buildTutorUserMessage", () => {
 
   it("degrades gracefully when no transcript is available", () => {
     const message = buildTutorUserMessage({
+      language: "he",
       transcriptContext: "   ",
       positionSeconds: 10,
       prompt: "q",
       hasActiveQuestion: false,
     });
     expect(message.toLowerCase()).toContain("no transcript");
+  });
+
+  // The transcript and the student's own wording are often in another language,
+  // so the language requirement is restated in the strongest position: last.
+  it("closes with the response language for every supported language", () => {
+    for (const language of SUPPORTED_LANGUAGES) {
+      const message = buildTutorUserMessage({
+        language,
+        transcriptContext: "English narration about photosynthesis",
+        positionSeconds: 30,
+        prompt: "explain this in simple terms",
+        hasActiveQuestion: false,
+      });
+      const closing = message.split("\n\n").at(-1) ?? "";
+      expect(closing).toContain(
+        `Write your answer in ${EXPECTED_LANGUAGE_NAME[language]} (language code "${language}")`
+      );
+    }
+  });
+
+  it("keeps the closing language line after the student's question", () => {
+    const message = buildTutorUserMessage({
+      language: "ar",
+      transcriptContext: "",
+      positionSeconds: 0,
+      prompt: "answer me in English please",
+      hasActiveQuestion: false,
+    });
+    expect(message.indexOf("Student's question:")).toBeLessThan(
+      message.indexOf("Write your answer in Arabic")
+    );
   });
 });
 

@@ -13,7 +13,11 @@
  *     option data, and when a quiz question is on screen the model is explicitly
  *     told to help with the concept but never reveal/confirm/point to the answer.
  *   - The response language is pinned to the student's resolved language
- *     regardless of the transcript's or the question's language.
+ *     regardless of the transcript's or the question's language. The pin is
+ *     stated in the system prompt AND restated as the last line of the user
+ *     turn, because everything between them — the framing, the transcript, the
+ *     student's own question — can be in another language, and the final
+ *     instruction in the context is the one a model follows most reliably.
  */
 
 import type { Language } from "./lang";
@@ -108,6 +112,8 @@ export function buildTutorSystemPrompt(input: TutorPromptInput): string {
 }
 
 export interface TutorUserMessageInput {
+  /** Resolved response language — restated here, after the student's question. */
+  language: Language;
   /** Playhead-bounded transcript text (may be empty when none is cached). */
   transcriptContext: string;
   /** The student's current position, in seconds. */
@@ -120,11 +126,13 @@ export interface TutorUserMessageInput {
 
 /**
  * The user turn: the watched-transcript context, the current position, an
- * (optional) note that a question is active, and the student's actual question.
- * No option text or answer key is ever included.
+ * (optional) note that a question is active, the student's actual question, and
+ * a closing restatement of the response language. No option text or answer key
+ * is ever included.
  */
 export function buildTutorUserMessage(input: TutorUserMessageInput): string {
-  const { transcriptContext, positionSeconds, prompt, hasActiveQuestion } = input;
+  const { language, transcriptContext, positionSeconds, prompt, hasActiveQuestion } =
+    input;
 
   const sections: string[] = [];
 
@@ -146,6 +154,13 @@ export function buildTutorUserMessage(input: TutorUserMessageInput): string {
   }
 
   sections.push(`Student's question: ${prompt}`);
+
+  // Last line in the context, and deliberately so: the transcript above and the
+  // student's question are frequently in a different language from the one the
+  // answer must be in, and this is the position a model weights most heavily.
+  sections.push(
+    `Write your answer in ${LANGUAGE_NAMES[language]} (language code "${language}"), even if the transcript above or the question itself is in another language.`
+  );
 
   return sections.join("\n\n");
 }

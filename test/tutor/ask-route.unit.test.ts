@@ -198,6 +198,68 @@ describe("streaming, context, logging", () => {
     expect(lastStreamArgs().system).toContain("Arabic");
   });
 
+  // The resolved language must reach BOTH prompt halves for every supported
+  // language and every mode — the tutor answering in the wrong language would
+  // show up here as a code that never makes it out of the RPC context.
+  it.each([
+    { code: "he", name: "Hebrew" },
+    { code: "ar", name: "Arabic" },
+    { code: "en", name: "English" },
+  ])(
+    "sends the resolved language ($code) to the model in both modes",
+    async ({ code, name }) => {
+      for (const tutor_mode of ["hints", "full"] as const) {
+        rpcMock.mockResolvedValue({
+          data: { ...TUTOR_CONTEXT, tutor_mode, preferred_language: code },
+          error: null,
+        });
+        await POST(askRequest(BASE_BODY));
+
+        const { system, messages } = lastStreamArgs();
+        expect(system).toContain(`Always respond in ${name} (language code "${code}")`);
+        expect(messages.at(-1)!.content).toContain(
+          `Write your answer in ${name} (language code "${code}")`
+        );
+      }
+    }
+  );
+
+  // With no preferred_language the class language decides — a quiz authored in
+  // English must not drag a Hebrew class into English answers.
+  it("falls back to the class language when the student has no preference", async () => {
+    rpcMock.mockResolvedValue({
+      data: {
+        ...TUTOR_CONTEXT,
+        preferred_language: null,
+        class_language: "he",
+        base_language: "en",
+      },
+      error: null,
+    });
+    await POST(askRequest(BASE_BODY));
+
+    const { system } = lastStreamArgs();
+    expect(system).toContain('Always respond in Hebrew (language code "he")');
+    expect(system).not.toContain("English");
+  });
+
+  // The chain's last link: nothing set anywhere but the quiz's own language.
+  it("falls back to the quiz base language when nothing else is set", async () => {
+    rpcMock.mockResolvedValue({
+      data: {
+        ...TUTOR_CONTEXT,
+        preferred_language: null,
+        class_language: null,
+        base_language: "ar",
+      },
+      error: null,
+    });
+    await POST(askRequest(BASE_BODY));
+    expect(lastStreamArgs().system).toContain(
+      'Always respond in Arabic (language code "ar")'
+    );
+  });
+
   it("bounds transcript context to the playhead (no spoilers)", async () => {
     getTranscriptMock.mockResolvedValue({
       segments: [

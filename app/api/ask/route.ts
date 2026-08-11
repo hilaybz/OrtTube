@@ -316,6 +316,7 @@ export async function POST(req: NextRequest) {
       {
         role: "user",
         content: buildTutorUserMessage({
+          language,
           transcriptContext,
           positionSeconds,
           prompt,

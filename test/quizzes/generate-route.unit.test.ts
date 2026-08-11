@@ -201,6 +201,48 @@ describe("generate route transcript warming (C1)", () => {
   });
 });
 
+// Generation has no per-run language input: the language is read off the quiz
+// row, so a quiz authored in Arabic must generate in Arabic even when the
+// request body says nothing about language and the transcript is in another one.
+describe("generate route language", () => {
+  it.each(["he", "ar", "en"] as const)(
+    "generates in the quiz's own base_language (%s)",
+    async (base_language) => {
+      stubQuizAndVideo(
+        { ...authoredQuiz, base_language },
+        { youtube_video_id: "yt-ready", transcript_status: "ready" }
+      );
+
+      await POST(generateRequest({ count: 1 }), { params: routeParams });
+
+      expect(generateMock).toHaveBeenCalledWith(
+        expect.anything(),
+        1,
+        base_language,
+        expect.anything()
+      );
+    }
+  );
+
+  it("ignores a language supplied in the request body", async () => {
+    stubQuizAndVideo(
+      { ...authoredQuiz, base_language: "ar" },
+      { youtube_video_id: "yt-ready", transcript_status: "ready" }
+    );
+
+    await POST(generateRequest({ count: 1, language: "en", baseLanguage: "en" }), {
+      params: routeParams,
+    });
+
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      "ar",
+      expect.anything()
+    );
+  });
+});
+
 describe("generate route questionType", () => {
   beforeEach(() => {
     stubQuizAndVideo(authoredQuiz, {
