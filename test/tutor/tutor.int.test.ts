@@ -22,16 +22,9 @@ import {
   type Student,
   type Classroom,
 } from "../helpers/testbed";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 /** A logged tutor-interaction row, read out-of-band for assertions. */
 interface TutorLogRow {

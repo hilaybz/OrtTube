@@ -34,6 +34,7 @@ import { POST as purgeContent } from "@/app/api/jobs/purge-content/route";
 import { POST as gcVideos } from "@/app/api/jobs/gc-videos/route";
 import { POST as reconcileAuth } from "@/app/api/jobs/reconcile-auth/route";
 import { POST as sweepTranscripts } from "@/app/api/jobs/sweep-transcripts/route";
+import { stackOnline } from "../helpers/stack";
 
 const CRON = "test-cron-secret-jobs";
 
@@ -60,16 +61,8 @@ function jobRequest(
   });
 }
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
 
-const online = await dbReachable();
+const online = await stackOnline();
 
 /**
  * A reset, empty school with one teacher, one student, and one classroom — the

@@ -24,16 +24,9 @@ import {
   type Attempt,
 } from "../helpers/testbed";
 import { getAttemptReview } from "@/lib/attempts";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 /** One single-choice question with a base-language prompt + explanation. */
 function oneQuestion(explanation?: string) {

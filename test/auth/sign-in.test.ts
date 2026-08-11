@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { evaluateSignIn, routeForRole } from "@/lib/auth/signIn";
-import { getPool, closePool, getServiceClient } from "../helpers/db";
+import { closePool, getServiceClient } from "../helpers/db";
 import {
   freshTestbed,
   type Testbed,
@@ -20,6 +20,7 @@ import {
   type Student,
 } from "../helpers/testbed";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { stackOnline } from "../helpers/stack";
 
 // ── 1. Pure routing ───────────────────────────────────────────────────────────
 
@@ -38,15 +39,7 @@ describe("routeForRole (pure)", () => {
 
 // ── 2. Deactivation gate against the real profiles table ──────────────────────
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 /** An id that belongs to no profile — used for the missing-account case. */
 const UNKNOWN_USER_ID = "00000000-0000-0000-0000-000000000000";

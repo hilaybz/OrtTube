@@ -11,12 +11,13 @@
  */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { POST } from "@/app/api/auth/sign-up-student/route";
-import { getPool, closePool } from "../helpers/db";
+import { closePool } from "../helpers/db";
 import {
   freshTestbed,
   type Testbed,
   type Classroom,
 } from "../helpers/testbed";
+import { stackOnline } from "../helpers/stack";
 
 /** Drive the real signup route with a JSON body. */
 function signUp(body: unknown): Promise<Response> {
@@ -35,15 +36,7 @@ function newEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${rand}@test.orttube.local`;
 }
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 describe.skipIf(!online)("POST /api/auth/sign-up-student", () => {
   let testbed: Testbed;

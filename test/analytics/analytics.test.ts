@@ -33,16 +33,9 @@ import {
   type QuizOption,
 } from "../helpers/testbed";
 import { AnalyticsError } from "@/lib/analytics";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 /**
  * Seed a COMPLETED attempt with no student (`student_id IS NULL`) — modelling a

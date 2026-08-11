@@ -21,6 +21,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { getTranscript, TRANSCRIPT_BUCKET } from "@/lib/transcriptCache";
 import { fetchFreshTranscript, type FetchOutcome } from "@/lib/transcript";
 import { resetDb, getPool, closePool, getServiceClient } from "../helpers/db";
+import { stackOnline } from "../helpers/stack";
 
 vi.mock("@/lib/transcript", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/transcript")>();
@@ -84,16 +85,8 @@ async function cachedTranscript(youtubeId: string): Promise<{
   return JSON.parse(await data.text());
 }
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
 
-const online = await dbReachable();
+const online = await stackOnline();
 
 describe.skipIf(!online)("getTranscript (transcript cache)", () => {
   beforeEach(async () => {

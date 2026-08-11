@@ -19,7 +19,7 @@
  * local DB is unreachable so unit suites still pass without Supabase running.
  */
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
-import { getPool, closePool } from "../helpers/db";
+import { closePool } from "../helpers/db";
 import {
   freshTestbed,
   singleChoice,
@@ -31,17 +31,10 @@ import {
   type Quiz,
 } from "../helpers/testbed";
 import { POST as deleteUserRoute } from "@/app/api/admin/delete-user/route";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
 
-const online = await dbReachable();
+const online = await stackOnline();
 
 const UNKNOWN_USER_ID = "00000000-0000-0000-0000-000000000000";
 

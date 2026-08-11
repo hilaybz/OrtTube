@@ -12,6 +12,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { ensureVideo } from "@/lib/video";
 import { fetchVideoMetadata } from "@/lib/youtube";
 import { resetDb, getPool, closePool, getServiceClient } from "../helpers/db";
+import { stackOnline } from "../helpers/stack";
 
 vi.mock("@/lib/youtube", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/youtube")>();
@@ -28,16 +29,8 @@ async function countRows(youtubeId: string): Promise<number> {
   return parseInt(rows[0].n, 10);
 }
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
 
-const online = await dbReachable();
+const online = await stackOnline();
 
 describe.skipIf(!online)("ensureVideo", () => {
   beforeEach(async () => {

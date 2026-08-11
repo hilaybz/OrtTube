@@ -22,17 +22,10 @@ import {
   signInAs,
   type Fixture,
 } from "../helpers/db";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
 
-const online = await dbReachable();
+const online = await stackOnline();
 
 /** Every profile created here shares one password so tests can sign in as them. */
 const USER_PASSWORD = "x-password-123";
