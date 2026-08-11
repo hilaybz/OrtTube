@@ -29,16 +29,9 @@ import {
   type Actor,
   type SharedQuizRow,
 } from "../helpers/testbed";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 // ── Actor-agnostic RPC helpers ────────────────────────────────────────────────
 // The DSL exposes `sharedQuizzes()` / `clone()` only on Teacher (the only role

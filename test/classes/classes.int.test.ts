@@ -13,7 +13,7 @@
  * DB is unreachable so unit suites still pass without Supabase running.
  */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { getPool, closePool } from "../helpers/db";
+import { closePool } from "../helpers/db";
 import {
   freshTestbed,
   type Testbed,
@@ -23,16 +23,9 @@ import {
   type Classroom,
 } from "../helpers/testbed";
 import { ClassError } from "@/lib/classes";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 describe.skipIf(!online)("classes / roster / assignment", () => {
   let testbed: Testbed;

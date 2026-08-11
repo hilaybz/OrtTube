@@ -17,7 +17,7 @@
  * Skipped when the local DB is unreachable so unit suites still pass offline.
  */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { getPool, closePool } from "../helpers/db";
+import { closePool } from "../helpers/db";
 import {
   freshTestbed,
   singleChoice,
@@ -29,16 +29,9 @@ import {
 } from "../helpers/testbed";
 import { AnalyticsError } from "@/lib/analytics";
 import { fetchTutorPrompts } from "@/lib/analyticsTopics";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 // Raw RPC invoker for the bad-scope cases (both/neither), which `fetchTutorPrompts`
 // cannot express — it always sends exactly one scope. Mirrors the un-parameterised

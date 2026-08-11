@@ -18,7 +18,7 @@
  * Skipped when the local DB is unreachable so unit suites still pass offline.
  */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { getPool, closePool } from "../helpers/db";
+import { closePool } from "../helpers/db";
 import {
   freshTestbed,
   singleChoice,
@@ -30,16 +30,9 @@ import {
   type AuthoredQuestion,
 } from "../helpers/testbed";
 import { AnalyticsError } from "@/lib/analytics";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 describe.skipIf(!online)("roster analytics (per-student progress)", () => {
   let teacher: Teacher; // owns the class + quizzes

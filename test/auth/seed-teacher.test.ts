@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { POST } from "@/app/api/admin/seed-teacher/route";
 import {
-  haveEnv,
   service,
   uniqueEmail,
   deleteUser,
   deleteSchool,
   getProfile,
 } from "./helpers";
+import { stackOnline } from "../helpers/stack";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
@@ -25,8 +25,10 @@ function post(body: unknown, opts?: { secret?: string | null }): Promise<Respons
   );
 }
 
-// Requires both the DB env and a configured ADMIN_SECRET.
-const d = haveEnv() && ADMIN_SECRET ? describe : describe.skip;
+// Requires a reachable local stack (not merely the env vars naming one) plus a
+// configured ADMIN_SECRET. Gating on env alone let this file run with nothing
+// behind it, turning an absent stack into failures that read as product bugs.
+const d = (await stackOnline()) && ADMIN_SECRET ? describe : describe.skip;
 
 d("POST /api/admin/seed-teacher", () => {
   let db: SupabaseClient;

@@ -19,7 +19,7 @@
  * DB is unreachable so unit suites still pass without Supabase running.
  */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { getPool, closePool } from "../helpers/db";
+import { closePool } from "../helpers/db";
 import {
   freshTestbed,
   singleChoice,
@@ -30,16 +30,9 @@ import {
   type Student,
   type Classroom,
 } from "../helpers/testbed";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 /** A two-option single-choice question: `correct` right, one distractor. */
 const trueFalse = (at: number, order = 0) =>

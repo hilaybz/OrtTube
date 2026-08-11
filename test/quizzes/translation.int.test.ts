@@ -23,16 +23,9 @@ import {
 import { ensureTranslation } from "@/lib/quiz";
 import type { TranslationItem } from "@/lib/ai/translate";
 import type { Language } from "@/lib/lang";
+import { stackOnline } from "../helpers/stack";
 
-async function dbReachable(): Promise<boolean> {
-  try {
-    await getPool().query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-const online = await dbReachable();
+const online = await stackOnline();
 
 /** Deterministic stand-in for the AI translator: prefixes each text with the target language. */
 const translateByPrefixing = async (

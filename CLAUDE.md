@@ -29,20 +29,32 @@ npm run dev        # Dev server (localhost:3000)
 npm run build      # Production build
 npm run start      # Serve production build
 npm run lint       # ESLint
-npm test           # Vitest suite once
+npm test           # Vitest suite once (integration tests skip if no local stack)
+npm run test:int   # Same, but fail rather than skip when the local stack is down
 npm run test:watch # Vitest watch mode
 npm run smoke      # E2E smoke against a running app (real YouTube + Claude)
 npm run gen:types  # Regenerate lib/supabase/types.ts from the linked (remote) schema
 npm run seed       # Seed a teacher, student, class and playable quiz
 ```
 
-Development targets a **hosted** Supabase project — there is no local Docker stack.
-Link the CLI once (`supabase link --project-ref <ref>`), apply migrations with
-`supabase db push`, and fill `.env.local` from `.env.local.example`.
+There are **two** Supabase environments, with distinct jobs:
 
-Leave `SUPABASE_DB_URL` unset: the integration harness truncates every table and
-clears `auth.users`, so it must only ever point at a local throwaway Postgres. The
-integration suite consequently does not run against the hosted project.
+- **Local** (`supabase start`, Docker) — what `.env.local` points at, what the dev
+  server runs against, and what the integration suite requires. Starting it applies
+  every migration in `supabase/migrations/`, so the schema needs no separate step.
+  There is no `seed.sql`: a fresh stack is empty, and each test arranges its own
+  world through the testbed DSL.
+- **Hosted** (the linked project) — the deployed environment. Link the CLI once
+  (`supabase link --project-ref <ref>`), apply migrations with `supabase db push`,
+  and read the schema for `npm run gen:types`.
+
+Fill `.env.local` from `.env.local.example`; the URLs there already point at the
+local stack, and `supabase start` prints the anon and service-role keys to paste in.
+
+`SUPABASE_DB_URL` must only ever address a **local** database. The integration
+harness truncates every table and clears `auth.users`, so a hosted value would
+destroy the project. This is enforced, not merely documented: `test/helpers/stack.ts`
+refuses to start against a non-local host.
 
 ## Architecture
 
@@ -96,9 +108,18 @@ Vitest. Three layers:
   the local DB, returns an isolated world), then reads as a story:
   `school.enrollTeacher(...)`, `teacher.authorQuiz({ questions: [...] })`,
   `student.startAttempt(...)`, `attempt.complete()`, with `testbed.db` for
-  out-of-band assertions. Tests target the **local** Supabase stack and self-skip
-  when it's unreachable. The `test/helpers/db.ts` fixture harness backs the
+  out-of-band assertions. The `test/helpers/db.ts` fixture harness backs the
   low-level `schema.test.ts` only.
+
+  These need **both** halves of the local stack: Postgres on the `pg` wire for
+  arranging and asserting rows, and the API gateway over HTTP for the supabase-js
+  calls that create users and sign them in. `test/helpers/stack.ts` gates every
+  such file on both, and treats the three cases differently: absent → skip, with
+  one announcement so a green run isn't mistaken for a verified one; half-started
+  → fail, naming the missing service, because those symptoms otherwise read as
+  product bugs; non-local `SUPABASE_DB_URL` → refuse before connecting. Gate a new
+  integration file with `describe.skipIf(!(await stackOnline()))` — never on env-var
+  presence, which says nothing about reachability.
 - **Smoke** (`npm run smoke`) — drives the HTTP surface end to end against a
   running dev server.
 

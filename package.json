@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:int": "REQUIRE_STACK=1 vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest run --project ui",
     "e2e": "playwright test",
