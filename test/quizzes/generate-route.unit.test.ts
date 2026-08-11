@@ -26,13 +26,13 @@ vi.mock("@/lib/transcriptCache", () => ({
 }));
 
 const generateMock = vi.fn();
-// Stub ONLY the network-calling export and keep everything else real. Hand-copying
-// the validators here instead would mean a change to a real guard or default could
-// never fail these tests, while production silently diverged. Importing the real
-// module is safe: the Anthropic client is constructed inside generateQuizQuestions,
-// not at module scope, so nothing reaches out on import.
-vi.mock("@/lib/ai/generate", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/ai/generate")>()),
+// The network-calling export is the only thing this route takes from the generator,
+// so stubbing it replaces the whole module and keeps the Anthropic SDK out of the
+// graph. The option guards and defaults the route validates against come from the
+// SDK-free `@/lib/ai/generationOptions`, which is deliberately left REAL: copies of
+// them here would let a change to a guard or default pass these tests while
+// production diverged.
+vi.mock("@/lib/ai/generate", () => ({
   generateQuizQuestions: (...args: unknown[]) => generateMock(...args),
 }));
 

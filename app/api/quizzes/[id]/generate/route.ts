@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getTranscript } from "@/lib/transcriptCache";
+import { generateQuizQuestions } from "@/lib/ai/generate";
 import {
-  generateQuizQuestions,
   isGenerationDifficulty,
   GENERATION_DIFFICULTIES,
   isOptionsPerQuestion,
@@ -15,7 +15,7 @@ import {
   type GenerationDifficulty,
   type OptionsPerQuestion,
   type QuestionType,
-} from "@/lib/ai/generate";
+} from "@/lib/ai/generationOptions";
 import { persistGeneratedQuestions, QuizError } from "@/lib/quiz";
 import { getQuizForAuthor } from "@/lib/quizAuthor";
 import type { Language } from "@/lib/lang";

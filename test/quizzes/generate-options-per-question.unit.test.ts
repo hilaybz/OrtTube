@@ -19,9 +19,11 @@ vi.mock("@anthropic-ai/sdk", () => ({
 import {
   normalizeGeneratedQuestion,
   generateQuizQuestions,
+} from "@/lib/ai/generate";
+import {
   isOptionsPerQuestion,
   DEFAULT_OPTIONS_PER_QUESTION,
-} from "@/lib/ai/generate";
+} from "@/lib/ai/generationOptions";
 import type { TranscriptSegment } from "@/lib/transcript";
 
 const segments: TranscriptSegment[] = [
