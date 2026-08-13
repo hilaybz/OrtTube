@@ -132,7 +132,7 @@ export default async function DashboardPage() {
 
         <section>
           <h2 className="mb-3 text-xl font-semibold text-[var(--heading)]">
-            החידונים שלי
+            החידונים הפעילים שלי
           </h2>
           {allocatedQuizzes.length === 0 ? (
             <GlassCard>
