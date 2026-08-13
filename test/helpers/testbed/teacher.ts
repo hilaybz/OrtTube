@@ -40,6 +40,7 @@ import {
   type ClassRosterProgress,
   type StudentQuizProgress,
 } from "@/lib/analyticsProgress";
+import { getQuizForAuthor, type AuthorQuiz } from "@/lib/quizAuthor";
 import { getPool } from "../db";
 import type { Actor } from "./internal";
 import type { QuestionFixture } from "./builders";
@@ -85,6 +86,15 @@ export class Teacher implements Actor {
   /** This teacher's own classes. */
   myClasses(): Promise<ClassRow[]> {
     return listMyClasses(this.client);
+  }
+
+  /**
+   * The quiz exactly as the editor loads it (`get_quiz_for_author`) — including
+   * question order, which the raw-SQL inspector cannot speak to because the RPC
+   * is what decides it.
+   */
+  editorView(quiz: Quiz | string): Promise<AuthorQuiz> {
+    return getQuizForAuthor(this.client, typeof quiz === "string" ? quiz : quiz.id);
   }
 
   /**

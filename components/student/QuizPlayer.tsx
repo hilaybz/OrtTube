@@ -25,6 +25,20 @@ function mmss(total: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/**
+ * Video order: the timestamp leads, and `order_index` — which records when the
+ * teacher AUTHORED the question, not where it sits — only separates two
+ * questions at the same second. Matches the server's ordering, so this is a
+ * safety net rather than a correction.
+ */
+function byVideoTime(a: StudentQuestion, b: StudentQuestion): number {
+  return (
+    a.position_seconds - b.position_seconds ||
+    a.order_index - b.order_index ||
+    a.id.localeCompare(b.id)
+  );
+}
+
 type Phase = "intro" | "playing" | "done";
 
 export function QuizPlayer({
@@ -54,6 +68,11 @@ export function QuizPlayer({
   // Stable so VideoStage's poll effect isn't torn down/recreated every render.
   const onProgress = useCallback((c: number) => setPlayhead(c), []);
 
+  // `current` is the first UNANSWERED question in list order, and the video is
+  // gated at its timestamp — so the list order has to be video order or the gate
+  // lands behind the playhead and snaps the student backwards. `order_index` is
+  // authoring order and cannot lead here; it only breaks ties between two
+  // questions at the same second. Mirrors the server's ordering.
   const current = questions.find((q) => !answered.has(q.id)) ?? null;
   const allAnswered = questions.length > 0 && current === null;
   const gatePos = current?.position_seconds ?? null;
@@ -72,7 +91,7 @@ export function QuizPlayer({
         { method: "GET" }
       );
       setAttemptId(attempt.attempt_id);
-      setQuestions([...quiz.questions].sort((a, b) => a.order_index - b.order_index));
+      setQuestions([...quiz.questions].sort(byVideoTime));
       setAnswered(new Set(attempt.answered_question_ids));
       setPhase("playing");
     } catch (e) {
@@ -203,6 +222,7 @@ export function QuizPlayer({
 
   // ── PLAYING ──────────────────────────────────────────────────────────────
   const markers = questions.map((q, i) => ({
+    id: q.id,
     seconds: q.position_seconds,
     done: answered.has(q.id),
     current: q.id === current?.id,
@@ -330,6 +350,8 @@ export function QuizPlayer({
 }
 
 interface RailMarker {
+  /** Identity for React. A timestamp cannot serve: two questions may share one. */
+  id: string;
   seconds: number;
   done: boolean;
   current: boolean;
@@ -364,7 +386,7 @@ function CheckpointStepper({ markers }: { markers: RailMarker[] }) {
         {markers.map((m, i) => {
           const state = m.done ? "done" : m.current ? "current" : "upcoming";
           return (
-            <Fragment key={m.seconds}>
+            <Fragment key={m.id}>
               {i > 0 && (
                 <div
                   aria-hidden="true"

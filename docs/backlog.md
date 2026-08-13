@@ -183,7 +183,12 @@ So this needs **no migration**: application-level configuration, enforced in the
 tutor route. Distinct from `class_quizzes.tutor_mode` (`off` / `hints` / `full`),
 which *is* a teaching setting and already exists. Pairs with 4.7.
 
-### 2.11 · Questions are ordered by authoring order, not video time 🐛
+### 2.11 · Questions are ordered by authoring order, not video time ✅
+
+**Fixed** by migration `126_order_questions_by_video_time.sql` plus the matching
+client sort. Kept here until the next backlog reconciliation pass. Original
+report below.
+
 
 **Reported as an editor display nit; it is a student-facing bug.** Reproduce by
 adding questions at 0:30, then 1:30, then 0:30. The editor lists them in that
