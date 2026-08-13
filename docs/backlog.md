@@ -295,7 +295,12 @@ the messages in React state and posts them back as `history`. Nothing server-sid
 feeds context, so a refresh or a second device starts over, and only the last six
 turns survive.
 
-#### 4.7a · Total questions per quiz 🐛
+#### 4.7a · Total questions per quiz ✅
+
+**Built** — `MAX_QUESTIONS_PER_QUIZ` in `app/api/ask/route.ts`. At the cap the
+tutor stops answering: 403 `question_limit_reached`, no Claude call, nothing
+logged. Teacher visibility and reset were not built — it stays invisible platform
+machinery, like the rate limit.
 
 **Decided.** A per-*attempt* cap is worthless here: `max_attempts` may be null,
 and a student who exhausts a per-attempt budget simply starts another attempt. The

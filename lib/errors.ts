@@ -17,6 +17,11 @@ const MESSAGES: Record<string, string> = {
   already_answered: "כבר ענית על שאלה זו.",
   attempt_completed: "הניסיון כבר הושלם.",
   tutor_off: "המורה־AI כבוי במבחן זה.",
+  // Platform guardrails on the tutor. The first is temporary and says so; the
+  // second is a lifetime budget for this quiz, so it must not imply that waiting
+  // helps — the student needs to know it will not come back.
+  rate_limited: "שלחת יותר מדי שאלות ברצף. נסו שוב בעוד דקה.",
+  question_limit_reached: "הגעת למספר השאלות המרבי למורה־AI במבחן זה.",
   not_owner: "אין לך הרשאה לפעולה זו.",
   not_authorized: "אין לך הרשאה לפעולה זו.",
   cross_school: "התלמיד/ה שייך/ת לבית ספר אחר.",

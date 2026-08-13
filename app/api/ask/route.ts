@@ -44,6 +44,21 @@ const MAX_PROMPT_CHARS = 1000;
 // shared store (e.g. Upstash) if the app grows.
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_REQUESTS = 10;
+
+/**
+ * Lifetime tutor budget for one student on one assigned quiz, spanning EVERY
+ * attempt.
+ *
+ * Deliberately not per attempt: `max_attempts` may be null, so a student who
+ * exhausted a per-attempt budget could reset it by starting another attempt, and
+ * the cap would bound nothing. Counting across attempts is what makes it hold.
+ *
+ * Complements the rate limit rather than replacing it — that one stops a script
+ * hammering the endpoint, this one stops sustained grinding. Generous on purpose:
+ * a backstop against runaway cost, not a limit a student doing the work should
+ * ever meet.
+ */
+const MAX_QUESTIONS_PER_QUIZ = 200;
 const rateBuckets = new Map<string, number[]>();
 
 function isRateLimited(userId: string): boolean {
@@ -235,6 +250,36 @@ export async function POST(req: NextRequest) {
   );
 
   const service = createServiceClient();
+
+  // ── Lifetime per-quiz budget ───────────────────────────────────────────────
+  // Counted from `tutor_questions`, which already records every question asked,
+  // so this needs no state of its own. Scoped to the ASSIGNMENT (student + class
+  // + quiz): the same quiz assigned to two classes is two pieces of work and gets
+  // two budgets. Runs after the membership gate so a non-member learns nothing
+  // about a quiz they cannot reach.
+  //
+  // `student_id` is nullable and set null on anonymisation, so anonymised rows
+  // stop counting toward the budget. Acceptable for a guardrail — the alternative
+  // is retaining an identifier we deliberately dropped.
+  const { count: askedSoFar, error: countError } = await service
+    .from("tutor_questions")
+    .select("id", { count: "exact", head: true })
+    .eq("student_id", user.id)
+    .eq("class_id", classId)
+    .eq("quiz_id", quizId);
+
+  // A failed count must not silently disable the budget, nor deny a student their
+  // tutor over a transient database blip. Log it and let the request through: the
+  // rate limit still bounds the damage.
+  if (countError) {
+    console.warn(`[ask] budget count failed quiz=${quizId}: ${countError.message}`);
+  } else if ((askedSoFar ?? 0) >= MAX_QUESTIONS_PER_QUIZ) {
+    return jsonError(
+      403,
+      "question_limit_reached",
+      "You have reached the question limit for this quiz."
+    );
+  }
 
   // ── Server-side validation of client-supplied ids (B3) + active-question
   //    derivation from SERVER state (A4) ────────────────────────────────────────

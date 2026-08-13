@@ -37,10 +37,22 @@ const insertMock = vi.fn();
 const attemptRowMock = vi.fn(); // .from("attempts")...maybeSingle()  (validation)
 const questionRowMock = vi.fn(); // .from("questions")...maybeSingle() (validation)
 const inProgressMock = vi.fn(); // .from("attempts")...limit()        (active check)
+const budgetCountMock = vi.fn(); // .from("tutor_questions").select(count) (budget)
 vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => ({
     from: (table: string) => {
-      if (table === "tutor_questions") return { insert: insertMock };
+      if (table === "tutor_questions") {
+        // Serves two callers: the logging insert, and the per-quiz budget count,
+        // which awaits a `select(...).eq().eq().eq()` chain — hence the thenable.
+        const q: Record<string, unknown> = {
+          insert: insertMock,
+          select: () => q,
+          eq: () => q,
+          then: (resolve: (v: unknown) => unknown) =>
+            Promise.resolve(budgetCountMock()).then(resolve),
+        };
+        return q;
+      }
       const builder: Record<string, unknown> = {
         select: () => builder,
         eq: () => builder,
@@ -127,6 +139,7 @@ beforeEach(() => {
   });
   streamMock.mockReturnValue(textStream("Here is a hint."));
   insertMock.mockResolvedValue({ error: null });
+  budgetCountMock.mockResolvedValue({ count: 0, error: null });
 });
 
 // ── Auth & validation ────────────────────────────────────────────────────────
@@ -177,6 +190,58 @@ describe("membership & mode gating", () => {
     expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.error.code).toBe("not_assigned");
+  });
+});
+
+// ── Lifetime per-quiz budget ─────────────────────────────────────────────────
+
+/**
+ * The budget spans EVERY attempt on a quiz, which is the whole point: a
+ * per-attempt cap would be meaningless while `max_attempts` may be null, since a
+ * student could reset it by starting another attempt.
+ */
+describe("per-quiz question budget", () => {
+  it("answers while the student is under the budget", async () => {
+    budgetCountMock.mockResolvedValue({ count: 199, error: null });
+    const response = await POST(askRequest(BASE_BODY));
+    expect(response.status).toBe(200);
+    expect(streamMock).toHaveBeenCalled();
+  });
+
+  it("stops answering once the budget is spent", async () => {
+    budgetCountMock.mockResolvedValue({ count: 200, error: null });
+    const response = await POST(askRequest(BASE_BODY));
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.error.code).toBe("question_limit_reached");
+    // No Claude call, and nothing logged — a refused question is not a question.
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  it("stays spent — the budget is lifetime, not a window", async () => {
+    budgetCountMock.mockResolvedValue({ count: 400, error: null });
+    const response = await POST(askRequest(BASE_BODY));
+    expect(response.status).toBe(403);
+    expect((await response.json()).error.code).toBe("question_limit_reached");
+  });
+
+  it("answers rather than locking a student out when the count itself fails", async () => {
+    // A transient database error must not be indistinguishable from an exhausted
+    // budget: failing closed would silently deny the tutor to a student who has
+    // asked nothing. The rate limit still bounds the damage.
+    budgetCountMock.mockResolvedValue({ count: null, error: { message: "timeout" } });
+    const response = await POST(askRequest(BASE_BODY));
+    expect(response.status).toBe(200);
+    expect(streamMock).toHaveBeenCalled();
+  });
+
+  it("refuses a non-member before consulting their budget", async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { message: "not_member" } });
+    const response = await POST(askRequest(BASE_BODY));
+    expect(response.status).toBe(403);
+    expect((await response.json()).error.code).toBe("not_member");
+    expect(budgetCountMock).not.toHaveBeenCalled();
   });
 });
 
