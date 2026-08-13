@@ -9,9 +9,11 @@
 // (idempotent via `_finalize_attempt_scores`'s own guard, so an overlapping
 // run is harmless).
 //
-// Guarded by CRON_SECRET (Authorization: Bearer …). Suggested cadence: hourly
-// — sub-daily cron frequency may require a paid Vercel tier, and hourly costs
-// nothing here since this job is a backstop, not the primary mechanism.
+// Guarded by CRON_SECRET (Authorization: Bearer …). Runs daily — Vercel's
+// Hobby plan rejects any cron faster than once/day (confirmed: an hourly
+// schedule here failed deployment outright), and a day's lag costs nothing
+// since this job is a backstop, not the primary mechanism. Tighten the
+// cadence in vercel.json if the project ever moves to a paid tier.
 //
 // Batch limit, highest priority first: JSON body `batchLimit` → `?batchLimit=`
 // → default 500. Clamped to >= 1.

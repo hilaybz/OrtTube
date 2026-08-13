@@ -98,7 +98,7 @@ maintenance via the service role and returns a JSON summary.
 | POST | `/api/jobs/gc-videos` | Delete orphan videos (no referencing quiz) past a grace window, plus their cached transcript objects. | hourly |
 | POST | `/api/jobs/reconcile-auth` | Delete orphan `auth.users` with no profile (crash-safety net for interrupted signups). | ~15 min |
 | POST | `/api/jobs/sweep-transcripts` | Delete cached transcript objects older than the TTL (Storage has no native expiry). | weekly |
-| POST | `/api/jobs/close-attempt-windows` | Force-finalize attempts whose allocation window closed and nobody came back to interact with — a backstop; `submit_answer`/`complete_attempt` already finalize anyone still present. | hourly |
+| POST | `/api/jobs/close-attempt-windows` | Force-finalize attempts whose allocation window closed and nobody came back to interact with — a backstop; `submit_answer`/`complete_attempt` already finalize anyone still present. | daily |
 
 ## RPC layer
 

@@ -333,14 +333,16 @@ mid-attempt, at 18:00 it is as if they submitted — unanswered questions count
 wrong, scored on whatever they'd actually answered. Two interactive paths
 force-finalize in place (`submit_answer` on the next answer attempt,
 `complete_attempt` if the student clicks submit late — both backdating
-`completed_at` to the window's close, never wall-clock `now()`), plus an
-hourly cron sweep (`close_expired_attempt_windows`) for attempts nobody came
-back to interact with. The player enforces the cutoff client-side too, timed
-off a clock-skew offset computed from the server's clock at page load — not a
-countdown (the due date lives in the student feed instead) — so a student
-actually watching gets a clean transition to their results the instant the
-window closes, without waiting for the hourly sweep. Full detail in
-`docs/data-model.md`'s `class_quizzes` entry.
+`completed_at` to the window's close, never wall-clock `now()`), plus a daily
+cron sweep (`close_expired_attempt_windows`) for attempts nobody came back to
+interact with — daily, not hourly, because Vercel's Hobby plan rejects any
+faster cron schedule outright (confirmed by a failed deployment); tighten it
+if the project ever moves to a paid tier. The player enforces the cutoff
+client-side too, timed off a clock-skew offset computed from the server's
+clock at page load — not a countdown (the due date lives in the student feed
+instead) — so a student actually watching gets a clean transition to their
+results the instant the window closes, without waiting for the daily sweep.
+Full detail in `docs/data-model.md`'s `class_quizzes` entry.
 
 **One thing this deliberately does NOT cover: what a teacher (or the student
 feed) sees once an allocation's window has closed.** See the new item below.

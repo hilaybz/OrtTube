@@ -12,11 +12,12 @@
 --   • complete_attempt — a student who clicks submit after the window has
 --     already passed gets backdated to the window's close, not `now()`, so
 --     both paths agree on when the attempt "really" ended.
---   • close_expired_attempt_windows — an hourly sweep (see the job route) for
---     attempts nobody ever came back to interact with. This is a correctness
---     backstop for analytics (an abandoned attempt would otherwise stay
---     `completed_at is null` forever), not the primary mechanism — the two
---     paths above already handle anyone actually present.
+--   • close_expired_attempt_windows — a daily sweep (see the job route; daily
+--     rather than hourly because Vercel's Hobby plan rejects a faster cron
+--     schedule outright) for attempts nobody ever came back to interact with.
+--     This is a correctness backstop for analytics (an abandoned attempt
+--     would otherwise stay `completed_at is null` forever), not the primary
+--     mechanism — the two paths above already handle anyone actually present.
 --
 -- `completed_at` is always stamped as the WINDOW'S close time, never wall-clock
 -- `now()` (except when there's no window at all) — an attempt finalized by a
@@ -428,7 +429,7 @@ revoke all on function public.get_attempt_review(uuid) from public;
 grant execute on function public.get_attempt_review(uuid) to authenticated, service_role;
 
 -- ── close_expired_attempt_windows ─────────────────────────────────────────────
--- The hourly sweep backstop (see app/api/jobs/close-attempt-windows). Finds
+-- The daily sweep backstop (see app/api/jobs/close-attempt-windows). Finds
 -- attempts nobody ever came back to interact with after their window closed —
 -- the two interactive paths above already handle anyone still present, so this
 -- exists purely so analytics don't understate completion for abandoned

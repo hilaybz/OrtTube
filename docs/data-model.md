@@ -234,11 +234,13 @@ erDiagram
   closes is treated as having submitted right then: `submit_answer` and
   `complete_attempt` force-finalize the attempt (backdating `completed_at` to
   the window's close, never wall-clock `now()`), and unanswered questions
-  count wrong by omission — no `answers` row needed. An hourly cron sweep
-  (`close_expired_attempt_windows`, `app/api/jobs/close-attempt-windows`)
-  finalizes attempts nobody came back to interact with; the two interactive
-  paths already handle anyone still present, so the sweep is an analytics
-  backstop, not the primary mechanism. The reveal gate (`get_attempt_review`)
+  count wrong by omission — no `answers` row needed. A daily cron sweep
+  (`close_expired_attempt_windows`, `app/api/jobs/close-attempt-windows` —
+  daily rather than hourly because Vercel's Hobby plan rejects a faster
+  schedule outright) finalizes attempts nobody came back to interact with;
+  the two interactive paths already handle anyone still present, so the
+  sweep is an analytics backstop, not the primary mechanism. The reveal gate
+  (`get_attempt_review`)
   treats a closed window as "no retake remains," the same as an exhausted
   `max_attempts` — otherwise a windowed quiz with attempts left could never
   reveal per-question detail. **`attempts` deliberately has no "how it was
