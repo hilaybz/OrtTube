@@ -56,7 +56,7 @@ each needing a defined and tested answer:
 | # | Task | Flag |
 | --- | --- | --- |
 | 1.1 | Show the **YouTube video title** on quiz cards — in both "my quizzes" and the school catalog. | 🎨 |
-| 1.2 | **Delete a quiz** from the library. The `soft_delete_quiz` RPC already exists; this is the button and confirm dialog. | 🎨 |
+| 1.2 | ~~**Delete a quiz** from the library.~~ **Done** — `bdb0903`. | ✅ |
 | 1.3 | **Preview a catalog quiz before cloning** — open it read-only to see the questions, rather than cloning blind. Needs a new correctness-free read; see below. | 🗄️ |
 | 1.4 | **Search, filter and sort** in both the library and the catalog. Agree the axes first (video title, question count, language, date, author). | 🎨 |
 | 1.5 | **Show which classes a quiz is assigned to**, as tags on the card. | 🎨 |
@@ -246,7 +246,7 @@ what is already there is the teacher's decision, made explicitly.
 | --- | --- | --- |
 | 4.1 | UI pass, with a **clear visual distinction between single-answer and multi-answer questions** so students know whether to pick one or several. | 🎨 |
 | 4.2 | Search, filter and sort quizzes. | 🎨 |
-| 4.3 | **The timeline and its checkpoint markers stay fully visible** — a student sees where the questions are. What must be disabled is *navigation*: clicking a question marker must not seek the video to that point. | 🎨 |
+| 4.3 | ~~**Checkpoint markers stay visible; only navigation is disabled.**~~ **Done** — `c906c7c`, pinned by `test/ui/QuizPlayerCheckpoints.test.tsx`. | ✅ |
 
 ### 4.4 · No seeking forward past unwatched content ❓
 
@@ -268,7 +268,9 @@ menu, suppress the title overlay, and remove any plain-text video ID from the
 page. A determined student still gets there. Recommend framing this as
 "don't make it one click" and putting the real weight on assessment design.
 
-### 4.6 · Ask-AI answers in English 🐛
+### 4.6 · Ask-AI answers in English ✅
+
+**Done** — `da19c4f` restates the response language at the end of the tutor user turn.
 
 Should answer in the quiz's language or the student's. The language-resolution
 chain already exists (`profiles.preferred_language → classes.language →
@@ -409,19 +411,27 @@ passes, responsive, and an a11y audit. Its plan file was never written. The UI
 tasks scattered through Epics 1–4 cover part of this; worth deciding whether P5
 survives as its own phase or is absorbed.
 
-### 7.6 · Extract generation enums to an SDK-free leaf module
+### 7.6 · Extract generation enums to an SDK-free leaf module ✅
+
+**Done** — `5d501ae`, now `lib/ai/generationOptions.ts`.
 
 Low-severity review finding. The generation option enums (`difficulty`,
 `optionsPerQuestion`, `questionType`) live alongside SDK-importing code, which
 forced test mocks to pull in more than they need.
 
-### 7.7 · Pin clone independence with a test
+### 7.7 · Pin clone independence with a test ✅
+
+**Done** — `089d5d2`, both directions.
 
 Twelve integration tests cover cloning, but **none assert that editing a clone
 leaves the source unchanged** — the property teachers actually rely on. Add it
 in both directions. See [`open-questions.md` §2](open-questions.md).
 
-### 7.9 · `videos.title` / `duration_seconds` can stay null forever 🐛🗄️
+### 7.9 · `videos.title` / `duration_seconds` can stay null forever ✅
+
+**Done** — `1e5b0f8` + migration 125, applied to the linked project. Note it repairs a
+gap on a LATER quiz for the same video; it does not make the first fetch succeed,
+so `duration_seconds` still arrives null while Epic 0 is unresolved.
 
 `create_quiz_for_video` upserts the video row with
 `on conflict (youtube_video_id) do nothing`
@@ -453,7 +463,7 @@ Small, unblocked, none of it urgent.
 | # | Task |
 | --- | --- |
 | 8.1 | Delete the `yt-probe` Supabase Edge Function — a throwaway spike, still deployed: `npx supabase functions delete yt-probe` |
-| 8.2 | Delete four merged remote branches: `chore/vercel-deploy`, `feat/hebrew-ui-polish`, `fix/transcript-fetch`, `frontend-redesign` |
+| 8.2 | ~~Delete four merged remote branches.~~ **Done** — all four gone. Two new ones to retire: `fix/transcript-diagnostics` (superseded — ido merged it into `fix/transcript-fetch-diagnostics`) and any branch left behind by PR #63. |
 | 8.3 | Check `feat/generate-question-type` before deleting — git reports it **not merged** even though its work landed in `ecc80fe`, because the branch was rebased. Confirm nothing unique is on it. |
 | 8.4 | Verify Vercel → Settings → Cron Jobs lists all four jobs |
 | 8.5 | Rotate `ADMIN_SECRET` / `CRON_SECRET`. *Deferred by decision — recorded for completeness.* |
