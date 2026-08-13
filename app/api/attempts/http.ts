@@ -31,6 +31,7 @@ export function statusForCode(code: string): number {
     case "no_attempts_left":
     case "already_answered":
     case "attempt_completed":
+    case "window_closed":
       return 409;
     case "invalid_selection_count":
     case "invalid_option":

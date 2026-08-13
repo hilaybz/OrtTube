@@ -18,7 +18,10 @@ import type {
 import type { Language } from "@/lib/lang";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
+import type { ClassRow } from "@/lib/classes";
+import type { QuizAllocation } from "@/lib/allocations";
 import { QuestionModal } from "./QuestionModal";
+import { AllocationsSection } from "./AllocationsSection";
 import { updateQuizMeta, deleteQuestion, MutationError } from "./mutations";
 import { formatTime, LANGUAGE_LABELS } from "./format";
 
@@ -203,7 +206,15 @@ function GenerateModal({
  * RPCs directly. After each mutation it `router.refresh()`es so the server re-reads
  * the canonical tree.
  */
-export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
+export function QuizEditor({
+  initial,
+  classes,
+  allocations,
+}: {
+  initial: AuthorQuiz;
+  classes: ClassRow[];
+  allocations: QuizAllocation[];
+}) {
   const router = useRouter();
   const quizId = initial.quiz_id;
 
@@ -426,6 +437,8 @@ export function QuizEditor({ initial }: { initial: AuthorQuiz }) {
           </div>
         </div>
       </GlassCard>
+
+      <AllocationsSection quizId={quizId} classes={classes} allocations={allocations} />
 
       {banner && (
         <Alert variant={banner.kind} className="mb-6">

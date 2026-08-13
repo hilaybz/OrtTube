@@ -156,12 +156,20 @@ export interface SubmitAnswerResult {
   attempt_id: string;
   question_id: string;
   recorded: boolean;
+  window_closed: boolean;
 }
 
 /**
  * Submit the chosen option(s) for a question in an attempt. Grading is
  * server-side; the result is recorded with a `was_correct` snapshot and is NOT
  * returned to the client. Raises `already_answered` on a repeat submission.
+ *
+ * If the allocation's scheduling window has already closed, the RPC finalizes
+ * the attempt right there (hard cutoff — see 129_attempt_window_finalization)
+ * and returns `{ recorded: false, window_closed: true }` instead of raising —
+ * a raised exception would roll back that finalizing write. This wrapper turns
+ * that flag into a thrown `AttemptError("window_closed")` so callers keep
+ * handling it the same way as any other stable error code.
  */
 export async function submitAnswer(
   client: SupabaseClient,
@@ -176,7 +184,11 @@ export async function submitAnswer(
       p_option_ids: optionIds,
     })
   );
-  return data as unknown as SubmitAnswerResult;
+  const result = data as unknown as SubmitAnswerResult;
+  if (result.window_closed) {
+    throw new AttemptError("window_closed");
+  }
+  return result;
 }
 
 // ── Complete ──────────────────────────────────────────────────────────────────
@@ -267,6 +279,15 @@ export interface StudentAttemptState {
   tutor_mode: "off" | "hints" | "full";
   /** null = unlimited. */
   max_attempts: number | null;
+  /**
+   * The allocation's close time and the server's clock at read time — null
+   * when the allocation has no end bound. The player derives a clock-skew-
+   * proof deadline timer from the two: `Date.now() + (server_now - client_now)`
+   * gives the offset, applied to `available_until`, rather than trusting the
+   * device clock directly.
+   */
+  available_until: string | null;
+  server_now: string;
   attempt_count: number;
   completed_count: number;
   /** Remaining completed-attempt allowance; null = unlimited. */
@@ -295,4 +316,37 @@ export async function listMyAttemptsForQuiz(
     })
   );
   return data as unknown as StudentAttemptState;
+}
+
+/**
+ * The newest completed attempt for (student, class, quiz), read directly off
+ * `attempts` under RLS (`attempts_student_select`: `student_id = auth.uid()`)
+ * rather than through any `class_quizzes`-gated RPC. Deliberately independent
+ * of whether the allocation is currently published/live/unassigned —
+ * "a closed window does not unassign; attempts, grades and analytics remain
+ * intact" (docs/backlog.md, Epic 2A) applies here precisely because a student
+ * must always be able to see their own past results, even once the window
+ * that produced them has closed. `list_my_attempts_for_quiz` and
+ * `get_quiz_for_student`, by contrast, correctly gate on liveness because they
+ * hand back *playable* content, not history — this is the fallback both the
+ * player and results pages use when those raise `not_assigned` for that
+ * reason, so a closed window still lands the student on their score rather
+ * than a dead end.
+ */
+export async function findLatestCompletedAttempt(
+  client: SupabaseClient,
+  classId: string,
+  quizId: string
+): Promise<{ id: string; num_correct: number | null; num_questions: number | null } | null> {
+  const { data, error } = await client
+    .from("attempts")
+    .select("id, num_correct, num_questions")
+    .eq("class_id", classId)
+    .eq("quiz_id", quizId)
+    .not("completed_at", "is", null)
+    .order("attempt_no", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new AttemptError(error.message);
+  return (data as { id: string; num_correct: number | null; num_questions: number | null } | null) ?? null;
 }

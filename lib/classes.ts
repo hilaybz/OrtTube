@@ -213,9 +213,21 @@ export interface AssignmentResult {
   quiz_id: string;
   tutor_mode: TutorMode;
   max_attempts: number | null;
+  published: boolean;
+  available_from: string | null;
+  available_until: string | null;
   class_language: Language;
   base_language: Language;
 }
+
+/**
+ * Re-exported from the dependency-free leaf module for server-side
+ * convenience. Client components must import `allocationState` from
+ * `@/lib/allocationState` directly rather than from here — see that module's
+ * header comment for why (importing any value from this file pulls
+ * `ensureTranslation`'s server-only chain into the client bundle).
+ */
+export { allocationState, type AllocationState } from "./allocationState";
 
 /** Signature of the translation primitive (injectable for tests). */
 export type EnsureTranslationFn = (
@@ -233,9 +245,17 @@ export type EnsureTranslationFn = (
 ) => Promise<EnsureTranslationResult>;
 
 /**
- * Assign a quiz to a class with per-class `tutor_mode` + `max_attempts`, then
- * best-effort eager-translate the quiz into the class language
- * (`ensureTranslation`).
+ * Assign a quiz to a class with per-class `tutor_mode` + `max_attempts` +
+ * `published` + an optional scheduling window, then best-effort
+ * eager-translate the quiz into the class language (`ensureTranslation`).
+ *
+ * `published` defaults to `true` — omitting it keeps the pre-2A.1 behaviour of
+ * assignment meaning instant visibility. Pass `false` to assign as a draft the
+ * students in the class can't see until it's explicitly published.
+ *
+ * `availableFrom`/`availableUntil` default to `null` (no window — visible for
+ * as long as `published` stays true). Both are ISO timestamps; the RPC
+ * rejects `availableFrom >= availableUntil` with `invalid_schedule_window`.
  *
  * The translation is intentionally non-fatal: any failure is swallowed so a
  * translation hiccup never fails the assignment (the reader path falls back to
@@ -251,6 +271,9 @@ export async function assignQuizToClass(
     quizId: string;
     tutorMode?: TutorMode;
     maxAttempts?: number | null;
+    published?: boolean;
+    availableFrom?: string | null;
+    availableUntil?: string | null;
   },
   opts?: {
     ensureTranslation?: EnsureTranslationFn;
@@ -269,6 +292,9 @@ export async function assignQuizToClass(
       p_tutor_mode: params.tutorMode ?? "hints",
       // `undefined` lets the SQL default (1) apply; explicit `null` = unlimited.
       p_max_attempts: params.maxAttempts === undefined ? 1 : params.maxAttempts,
+      p_published: params.published ?? true,
+      p_available_from: params.availableFrom ?? null,
+      p_available_until: params.availableUntil ?? null,
     })
   );
   const result = data as unknown as AssignmentResult;
@@ -305,6 +331,48 @@ export async function unassignQuiz(
   );
 }
 
+/**
+ * Flip an existing assignment's published state without touching its
+ * `tutor_mode` / `max_attempts`. Owner-checked the same way `unassignQuiz` is.
+ */
+export async function setClassQuizPublished(
+  client: SupabaseClient,
+  classId: string,
+  quizId: string,
+  published: boolean
+): Promise<void> {
+  unwrap(
+    await client.rpc("set_class_quiz_published", {
+      p_class_id: classId,
+      p_quiz_id: quizId,
+      p_published: published,
+    })
+  );
+}
+
+/**
+ * Edit an existing allocation's scheduling window without touching
+ * `tutor_mode` / `max_attempts` / `published`. Same one-field-setter shape as
+ * `setClassQuizPublished`, for the same reason: the editor/class-page row
+ * actions are single-purpose, so a partial update never clobbers an unrelated
+ * field. Pass `null` for either bound to clear it.
+ */
+export async function setClassQuizSchedule(
+  client: SupabaseClient,
+  classId: string,
+  quizId: string,
+  schedule: { availableFrom: string | null; availableUntil: string | null }
+): Promise<void> {
+  unwrap(
+    await client.rpc("set_class_quiz_schedule", {
+      p_class_id: classId,
+      p_quiz_id: quizId,
+      p_available_from: schedule.availableFrom,
+      p_available_until: schedule.availableUntil,
+    })
+  );
+}
+
 export interface AssignedQuiz {
   quiz_id: string;
   title: string | null;
@@ -315,6 +383,9 @@ export interface AssignedQuiz {
   video_title: string | null;
   tutor_mode: TutorMode;
   max_attempts: number | null;
+  published: boolean;
+  available_from: string | null;
+  available_until: string | null;
   assigned_at: string;
   question_count: number;
 }
@@ -339,6 +410,9 @@ export interface StudentFeedQuiz {
   video_title: string | null;
   tutor_mode: TutorMode;
   max_attempts: number | null;
+  /** Due date, when the allocation has one — shown in the feed, not the player. */
+  available_from: string | null;
+  available_until: string | null;
   assigned_at: string;
 }
 export interface StudentFeedClass {

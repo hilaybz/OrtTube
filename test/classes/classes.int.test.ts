@@ -7,7 +7,11 @@
  * Covers: class CRUD; add-student same-school / cross-school / is_teacher / invite
  * fallback + auto-conversion on signup; roster read; owner enforcement;
  * assignment storing tutor_mode/max_attempts + same-school guard + private-quiz
- * guard; soft-deleted quizzes hidden from listings; the student class-tabbed feed.
+ * guard; soft-deleted quizzes hidden from listings; the student class-tabbed feed;
+ * the published/draft split (2A.1) across every student-facing read; the
+ * scheduling-window setter, quiz-side allocation reads, and bulk-assign
+ * (2A.2 / 2A.3). Attempt-level window enforcement (force-completion, the
+ * reveal gate, the cron sweep) lives in `test/attempts/window.int.test.ts`.
  *
  * Runs at the integration/gate step (owns DB application). Skipped when the local
  * DB is unreachable so unit suites still pass without Supabase running.
@@ -258,5 +262,193 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     // `student` is NOT enrolled in `biology` here.
     const feed = await student.assignedFeed();
     expect(feed.find((c) => c.class_id === biology.id)).toBeUndefined();
+  });
+
+  // ── Publish/draft (2A.1) ────────────────────────────────────────────────────
+
+  it("assigning without `published` behaves exactly as before: instantly visible", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    const result = await teacher.assignQuiz(quiz, { to: biology });
+    expect(result.published).toBe(true);
+
+    await biology.enroll(student);
+    const view = await student.viewQuiz(quiz, { in: biology });
+    expect(view.quiz_id).toBe(quiz.id);
+    const attempt = await student.startAttempt(quiz, { in: biology });
+    expect(attempt).toBeTruthy();
+    const tutor = await student.tutorContext(quiz, { in: biology });
+    expect(tutor.tutor_mode).toBeDefined();
+
+    const feed = await student.assignedFeed();
+    const biologyFeed = feed.find((c) => c.class_id === biology.id);
+    expect(biologyFeed!.quizzes.map((q) => q.quiz_id)).toContain(quiz.id);
+  });
+
+  it("an unpublished assignment is invisible to students everywhere, but not to the owner", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    await teacher.assignQuiz(quiz, { to: biology, published: false });
+    await biology.enroll(student);
+
+    await expect(
+      student.viewQuiz(quiz, { in: biology })
+    ).rejects.toMatchObject({ code: "not_assigned" });
+    await expect(
+      student.startAttempt(quiz, { in: biology })
+    ).rejects.toMatchObject({ code: "not_assigned" });
+    await expect(
+      student.tutorContext(quiz, { in: biology })
+    ).rejects.toMatchObject({ code: "not_assigned" });
+
+    const feed = await student.assignedFeed();
+    const biologyFeed = feed.find((c) => c.class_id === biology.id);
+    expect(biologyFeed!.quizzes.map((q) => q.quiz_id)).not.toContain(quiz.id);
+
+    // The owner still sees the draft assignment.
+    const listed = await biology.assignedQuizzes();
+    const row = listed.find((q) => q.quiz_id === quiz.id);
+    expect(row).toBeTruthy();
+    expect(row!.published).toBe(false);
+  });
+
+  it("set_class_quiz_published toggles visibility without touching tutor_mode/max_attempts", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    await teacher.assignQuiz(quiz, {
+      to: biology,
+      published: false,
+      tutor: "full",
+      maxAttempts: 3,
+    });
+    await biology.enroll(student);
+
+    await teacher.setQuizPublished(quiz, { in: biology, published: true });
+    let stored = await testbed.db.assignment(biology, quiz);
+    expect(stored).toMatchObject({
+      published: true,
+      tutor_mode: "full",
+      max_attempts: 3,
+    });
+    await expect(student.viewQuiz(quiz, { in: biology })).resolves.toMatchObject({
+      quiz_id: quiz.id,
+    });
+
+    await teacher.setQuizPublished(quiz, { in: biology, published: false });
+    stored = await testbed.db.assignment(biology, quiz);
+    expect(stored!.published).toBe(false);
+    await expect(
+      student.viewQuiz(quiz, { in: biology })
+    ).rejects.toMatchObject({ code: "not_assigned" });
+  });
+
+  it("a non-owner teacher cannot toggle publish state (not_owner)", async () => {
+    const peerTeacher = await lincoln.enrollTeacher({ name: "Grace" });
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    await teacher.assignQuiz(quiz, { to: biology });
+
+    await expect(
+      peerTeacher.setQuizPublished(quiz, { in: biology, published: false })
+    ).rejects.toMatchObject({ code: "not_owner" });
+  });
+
+  // ── Scheduling window & allocation reads (2A.2 / 2A.3) ──────────────────────
+
+  it("assign rejects an invalid schedule window (availableFrom not before availableUntil)", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    const t = new Date().toISOString();
+    await expect(
+      teacher.assignQuiz(quiz, { to: biology, availableFrom: t, availableUntil: t })
+    ).rejects.toMatchObject({ code: "invalid_schedule_window" });
+  });
+
+  it("set_class_quiz_schedule replaces the window without touching tutor_mode/max_attempts/published", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    await teacher.assignQuiz(quiz, { to: biology, tutor: "full", maxAttempts: 3 });
+    const until = new Date(Date.now() + 3600_000).toISOString();
+    await teacher.setSchedule(quiz, { in: biology, availableFrom: null, availableUntil: until });
+
+    const stored = await testbed.db.assignment(biology, quiz);
+    expect(stored).toMatchObject({ tutor_mode: "full", max_attempts: 3, published: true });
+    expect(new Date(stored!.available_until!).getTime()).toBe(new Date(until).getTime());
+    expect(stored!.available_from).toBeNull();
+  });
+
+  it("list_quiz_allocations returns every state to the owner, not_owner to everyone else", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    const secondClass = await teacher.openClass({ name: "History", language: "he" });
+    await teacher.assignQuiz(quiz, { to: biology, published: false }); // draft
+    await teacher.assignQuiz(quiz, { to: secondClass }); // live
+
+    const allocations = await teacher.listAllocations(quiz);
+    expect(allocations).toHaveLength(2);
+    const byClass = new Map(allocations.map((a) => [a.class_id, a]));
+    expect(byClass.get(biology.id)!.published).toBe(false);
+    expect(byClass.get(secondClass.id)!.published).toBe(true);
+
+    const peerTeacher = await lincoln.enrollTeacher({ name: "Grace" });
+    await expect(peerTeacher.listAllocations(quiz)).rejects.toMatchObject({
+      code: "not_owner",
+    });
+  });
+
+  it("list_my_quiz_allocation_tags buckets live vs scheduled; drafts/closed appear with empty buckets; unallocated quizzes are absent", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    const liveClass = await teacher.openClass({ name: "Live", language: "he" });
+    const scheduledClass = await teacher.openClass({ name: "Scheduled", language: "he" });
+    const draftClass = await teacher.openClass({ name: "Draft", language: "he" });
+    const closedClass = await teacher.openClass({ name: "Closed", language: "he" });
+
+    await teacher.assignQuiz(quiz, { to: liveClass });
+    await teacher.assignQuiz(quiz, {
+      to: scheduledClass,
+      availableFrom: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    await teacher.assignQuiz(quiz, { to: draftClass, published: false });
+    await teacher.assignQuiz(quiz, {
+      to: closedClass,
+      availableUntil: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const untouchedQuiz = await teacher.authorQuiz({
+      baseLanguage: "he",
+      title: "Never allocated",
+    });
+
+    const tags = await teacher.listAllocationTags();
+    const forQuiz = tags.find((t) => t.quiz_id === quiz.id);
+    expect(forQuiz).toBeTruthy();
+    expect(forQuiz!.live.map((c) => c.class_id)).toEqual([liveClass.id]);
+    expect(forQuiz!.scheduled.map((c) => c.class_id)).toEqual([scheduledClass.id]);
+    // Draft and closed land in neither bucket, but the quiz itself still shows
+    // up (both buckets present, both empty of THOSE classes) — it just isn't
+    // tagged live or scheduled for draftClass/closedClass.
+    expect(forQuiz!.live.map((c) => c.class_id)).not.toContain(draftClass.id);
+    expect(forQuiz!.live.map((c) => c.class_id)).not.toContain(closedClass.id);
+    expect(forQuiz!.scheduled.map((c) => c.class_id)).not.toContain(draftClass.id);
+    expect(forQuiz!.scheduled.map((c) => c.class_id)).not.toContain(closedClass.id);
+    // A quiz with no allocation at all doesn't appear.
+    expect(tags.some((t) => t.quiz_id === untouchedQuiz.id)).toBe(false);
+  });
+
+  it("bulk-assign assigns to several classes in one call; a bad class id fails only that entry", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    const classA = await teacher.openClass({ name: "A", language: "he" });
+    const classB = await teacher.openClass({ name: "B", language: "he" });
+
+    const result = await teacher.bulkAssign(quiz, {
+      classIds: [classA.id, classB.id, "00000000-0000-0000-0000-000000000000"],
+      tutor: "full",
+      maxAttempts: 2,
+    });
+
+    expect(result.assigned).toHaveLength(2);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0].classId).toBe("00000000-0000-0000-0000-000000000000");
+
+    expect(await testbed.db.assignment(classA, quiz)).toMatchObject({
+      tutor_mode: "full",
+      max_attempts: 2,
+    });
+    expect(await testbed.db.assignment(classB, quiz)).toMatchObject({
+      tutor_mode: "full",
+      max_attempts: 2,
+    });
   });
 });

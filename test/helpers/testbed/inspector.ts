@@ -124,13 +124,40 @@ export class Inspector {
   async assignment(
     classroom: Classroom,
     quiz: Quiz
-  ): Promise<{ tutor_mode: string; max_attempts: number | null } | null> {
+  ): Promise<{
+    tutor_mode: string;
+    max_attempts: number | null;
+    published: boolean;
+    available_from: string | null;
+    available_until: string | null;
+  } | null> {
     const res = await getPool().query<{
       tutor_mode: string;
       max_attempts: number | null;
+      published: boolean;
+      available_from: string | null;
+      available_until: string | null;
     }>(
-      "SELECT tutor_mode, max_attempts FROM public.class_quizzes WHERE class_id=$1 AND quiz_id=$2",
+      `SELECT tutor_mode, max_attempts, published, available_from, available_until
+         FROM public.class_quizzes WHERE class_id=$1 AND quiz_id=$2`,
       [classroom.id, quiz.id]
+    );
+    return res.rows[0] ?? null;
+  }
+
+  /** An attempt's stored completion/score columns — for asserting force-finalization. */
+  async attemptRow(attempt: Attempt): Promise<{
+    completed_at: string | null;
+    num_questions: number | null;
+    num_correct: number | null;
+  } | null> {
+    const res = await getPool().query<{
+      completed_at: string | null;
+      num_questions: number | null;
+      num_correct: number | null;
+    }>(
+      "SELECT completed_at, num_questions, num_correct FROM public.attempts WHERE id=$1",
+      [attempt.id]
     );
     return res.rows[0] ?? null;
   }

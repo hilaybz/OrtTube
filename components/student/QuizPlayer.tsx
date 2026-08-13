@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/components/ui/cn";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -63,8 +63,21 @@ export function QuizPlayer({
   const [selected, setSelected] = useState<string[]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [summary, setSummary] = useState<AttemptSummary | null>(null);
+  // Set only when the "done" screen was reached via the deadline timer rather
+  // than by answering every question — swaps the heading/copy so the student
+  // understands what happened instead of wondering why the video just ended.
+  const [timedOut, setTimedOut] = useState(false);
 
   const stageRef = useRef<VideoStageHandle>(null);
+  // Clock-skew-proof offset, captured once (lazy useState initializer, not a
+  // ref — reading a ref's `.current` during render is unsafe) from the
+  // server/client times the page loaded with: `Date.now() + clockOffsetMs`
+  // approximates the server's `now()` for the rest of this session, so a
+  // student whose device clock is off doesn't gain or lose real minutes
+  // against the deadline.
+  const [clockOffsetMs] = useState(
+    () => new Date(state.server_now).getTime() - Date.now()
+  );
   // Stable so VideoStage's poll effect isn't torn down/recreated every render.
   const onProgress = useCallback((c: number) => setPlayhead(c), []);
 
@@ -121,25 +134,6 @@ export function QuizPlayer({
     );
   }
 
-  const submit = useCallback(async () => {
-    if (!current || !attemptId || selected.length === 0) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await apiFetch(`/api/attempts/${attemptId}/answers`, {
-        method: "POST",
-        body: JSON.stringify({ questionId: current.id, optionIds: selected }),
-      });
-      setAnswered((prev) => new Set(prev).add(current.id));
-      setSelected([]);
-      // The gate advances → VideoStage auto-resumes toward the next checkpoint.
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "לא ניתן לשמור את התשובה.");
-    } finally {
-      setBusy(false);
-    }
-  }, [current, attemptId, selected]);
-
   const finish = useCallback(async () => {
     if (!attemptId) return;
     setBusy(true);
@@ -157,6 +151,80 @@ export function QuizPlayer({
       setBusy(false);
     }
   }, [attemptId]);
+
+  // ── Deadline cutoff ──────────────────────────────────────────────────────
+  // Not a countdown — the deadline lives in the feed, per design, not ticking
+  // at the student mid-video. This is the enforcement side: at the real
+  // instant the window closes, pause, block further input, and finish the
+  // attempt exactly the way "all answered" already does (the server backdates
+  // completed_at to the window's close, so unanswered questions count wrong —
+  // see 129_attempt_window_finalization.sql). The server is authoritative
+  // regardless (submit_answer rejects a late answer on its own), so this is
+  // about giving an honest transition, not enforcing anything the client
+  // could be tricked out of. Declared before `submit` — its dependency array
+  // references this directly, not just from inside a deferred callback body,
+  // so it must already be initialized by the time that array literal runs.
+  const handleDeadline = useCallback(() => {
+    stageRef.current?.pause();
+    setTimedOut(true);
+    void finish();
+  }, [finish]);
+
+  const submit = useCallback(async () => {
+    if (!current || !attemptId || selected.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/attempts/${attemptId}/answers`, {
+        method: "POST",
+        body: JSON.stringify({ questionId: current.id, optionIds: selected }),
+      });
+      setAnswered((prev) => new Set(prev).add(current.id));
+      setSelected([]);
+      // The gate advances → VideoStage auto-resumes toward the next checkpoint.
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "window_closed") {
+        // The server already finalized the attempt server-side (unanswered
+        // counts wrong) — this is the same transition the deadline timer
+        // drives, just triggered by an in-flight submit landing after the
+        // close instead of the client's own timer catching it first. Route
+        // through the identical path rather than leaving the student stuck
+        // on a bare error with a video that no longer accepts answers.
+        handleDeadline();
+        return;
+      }
+      setError(e instanceof ApiError ? e.message : "לא ניתן לשמור את התשובה.");
+    } finally {
+      setBusy(false);
+    }
+  }, [current, attemptId, selected, handleDeadline]);
+
+  useEffect(() => {
+    if (phase !== "playing" || !attemptId || !state.available_until) return;
+    const deadlineMs = new Date(state.available_until).getTime();
+    let timer: ReturnType<typeof setTimeout>;
+    let cancelled = false;
+
+    // A single setTimeout for the real delay would overflow on a deadline
+    // more than ~24.8 days out (32-bit signed ms internally) and fire almost
+    // immediately instead — a real risk here, since a scheduled allocation can
+    // be weeks away. Re-check in capped steps instead of trusting one long timer.
+    const MAX_STEP_MS = 60 * 60 * 1000; // 1 hour
+    function scheduleCheck() {
+      const remaining = deadlineMs - (Date.now() + clockOffsetMs);
+      if (remaining <= 0) {
+        if (!cancelled) handleDeadline();
+        return;
+      }
+      timer = setTimeout(scheduleCheck, Math.min(remaining, MAX_STEP_MS));
+    }
+    scheduleCheck();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [phase, attemptId, state.available_until, clockOffsetMs, handleDeadline]);
 
   // ── INTRO ────────────────────────────────────────────────────────────────
   if (phase === "intro") {
@@ -202,9 +270,21 @@ export function QuizPlayer({
       <div className="mx-auto max-w-lg py-10">
         <GlassCard className="flex flex-col items-center gap-4 text-center">
           <span className="grid h-16 w-16 place-items-center rounded-full bg-[var(--brand-softer)]">
-            <Icon name="check" size={30} label="הושלם" className="text-[var(--fg-brand)]" />
+            <Icon
+              name={timedOut ? "clock" : "check"}
+              size={30}
+              label={timedOut ? "הזמן נגמר" : "הושלם"}
+              className="text-[var(--fg-brand)]"
+            />
           </span>
-          <h1 className="text-2xl font-bold">סיימת את החידון!</h1>
+          <h1 className="text-2xl font-bold">
+            {timedOut ? "הזמן למבחן הסתיים" : "סיימת את החידון!"}
+          </h1>
+          {timedOut && (
+            <p className="text-sm text-[var(--body)]">
+              המבחן הוגש באופן אוטומטי עם התשובות שכבר שמרת.
+            </p>
+          )}
           <p className="text-lg text-[var(--body)]">
             ענית נכון על{" "}
             <b className="text-[var(--heading)]">

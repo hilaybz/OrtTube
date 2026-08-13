@@ -11,10 +11,21 @@ import {
   addStudentToClass,
   assignQuizToClass,
   unassignQuiz as unassignQuizFromClass,
+  setClassQuizPublished,
+  setClassQuizSchedule,
   type ClassRow,
   type AddStudentResult,
   type AssignmentResult,
+  type TutorMode,
 } from "@/lib/classes";
+import {
+  listQuizAllocations,
+  listMyQuizAllocationTags,
+  bulkAssignQuizToClasses,
+  type QuizAllocation,
+  type QuizAllocationTags,
+  type BulkAssignResult,
+} from "@/lib/allocations";
 import {
   upsertQuestion,
   softDeleteQuestion,
@@ -358,7 +369,7 @@ export class Teacher implements Actor {
     return addStudentToClass(this.client, classroom.id, email);
   }
 
-  /** Assign a quiz to a class with per-class tutor mode + attempt cap. */
+  /** Assign a quiz to a class with per-class tutor mode + attempt cap + published state + window. */
   assignQuiz(quiz: Quiz, opts: AssignOptions): Promise<AssignmentResult> {
     return assignQuizToClass(
       this.client,
@@ -367,6 +378,9 @@ export class Teacher implements Actor {
         quizId: quiz.id,
         tutorMode: opts.tutor,
         maxAttempts: opts.maxAttempts,
+        published: opts.published,
+        availableFrom: opts.availableFrom,
+        availableUntil: opts.availableUntil,
       },
       {
         awaitTranslation: opts.awaitTranslation ?? false,
@@ -378,6 +392,58 @@ export class Teacher implements Actor {
   /** Remove a quiz assignment from a class. */
   unassignQuiz(quiz: Quiz, opts: { from: Classroom }): Promise<void> {
     return unassignQuizFromClass(this.client, opts.from.id, quiz.id);
+  }
+
+  /** Flip an existing assignment's published state without re-assigning it. */
+  setQuizPublished(
+    quiz: Quiz,
+    opts: { in: Classroom; published: boolean }
+  ): Promise<void> {
+    return setClassQuizPublished(this.client, opts.in.id, quiz.id, opts.published);
+  }
+
+  /** Replace an existing assignment's scheduling window without touching anything else. */
+  setSchedule(
+    quiz: Quiz,
+    opts: { in: Classroom; availableFrom: string | null; availableUntil: string | null }
+  ): Promise<void> {
+    return setClassQuizSchedule(this.client, opts.in.id, quiz.id, {
+      availableFrom: opts.availableFrom,
+      availableUntil: opts.availableUntil,
+    });
+  }
+
+  /** Every allocation of a quiz, any state — the editor's own view (`list_quiz_allocations`). */
+  listAllocations(quiz: Quiz): Promise<QuizAllocation[]> {
+    return listQuizAllocations(this.client, quiz.id);
+  }
+
+  /** This teacher's quizzes with at least one allocation, bucketed live/scheduled. */
+  listAllocationTags(): Promise<QuizAllocationTags[]> {
+    return listMyQuizAllocationTags(this.client);
+  }
+
+  /** Assign a quiz to several classes at once with one shared settings object. */
+  bulkAssign(
+    quiz: Quiz,
+    opts: {
+      classIds: string[];
+      tutor?: TutorMode;
+      maxAttempts?: number | null;
+      published?: boolean;
+      availableFrom?: string | null;
+      availableUntil?: string | null;
+    }
+  ): Promise<BulkAssignResult> {
+    return bulkAssignQuizToClasses(this.client, {
+      quizId: quiz.id,
+      classIds: opts.classIds,
+      tutorMode: opts.tutor,
+      maxAttempts: opts.maxAttempts,
+      published: opts.published,
+      availableFrom: opts.availableFrom,
+      availableUntil: opts.availableUntil,
+    });
   }
 
   // ── internals ───────────────────────────────────────────────────────────────

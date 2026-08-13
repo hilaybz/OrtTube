@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getQuizForAuthor, QuizAuthorError, type AuthorQuiz } from "@/lib/quizAuthor";
+import { listMyClasses, type ClassRow } from "@/lib/classes";
+import { listQuizAllocations, type QuizAllocation } from "@/lib/allocations";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { QuizEditor } from "@/components/teacher/editor/QuizEditor";
@@ -10,7 +12,9 @@ import { QuizEditor } from "@/components/teacher/editor/QuizEditor";
  * Quiz editor: reads the full editable tree via the owner-checked
  * `get_quiz_for_author` RPC and hands it to the client `QuizEditor`. A quiz the
  * caller doesn't own surfaces as `not_owner` and degrades to a friendly notice
- * rather than crashing.
+ * rather than crashing. Also reads the teacher's classes (isolated — a
+ * failure here degrades the allocations section rather than the whole page)
+ * so the allocations section can offer bulk-assign candidates.
  */
 export default async function EditQuizPage({
   params,
@@ -62,10 +66,24 @@ export default async function EditQuizPage({
     );
   }
 
+  let classes: ClassRow[] = [];
+  try {
+    classes = await listMyClasses(client);
+  } catch {
+    classes = [];
+  }
+
+  let allocations: QuizAllocation[] = [];
+  try {
+    allocations = await listQuizAllocations(client, id);
+  } catch {
+    allocations = [];
+  }
+
   return (
     <div className="mx-auto max-w-4xl py-2">
       {backLink}
-      <QuizEditor initial={quiz} />
+      <QuizEditor initial={quiz} classes={classes} allocations={allocations} />
     </div>
   );
 }

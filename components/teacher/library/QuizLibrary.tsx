@@ -13,13 +13,8 @@ import { Modal } from "@/components/ui/Modal";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { MyQuiz } from "@/lib/quiz";
 import type { SharedQuiz } from "@/lib/sharing";
-import type { Language } from "@/lib/lang";
-
-const LANG_LABEL: Record<Language, string> = {
-  he: "עברית",
-  ar: "ערבית",
-  en: "אנגלית",
-};
+import type { QuizAllocationTags } from "@/lib/allocations";
+import { QuizCard, cardHeading, VideoLine, QuizMeta } from "@/components/teacher/QuizCard";
 
 type TabKey = "mine" | "school";
 
@@ -31,9 +26,12 @@ type TabKey = "mine" | "school";
 export function QuizLibrary({
   myQuizzes,
   sharedQuizzes,
+  allocationTags,
 }: {
   myQuizzes: MyQuiz[];
   sharedQuizzes: SharedQuiz[];
+  /** quiz_id → allocation tags (backlog 1.5), keyed for O(1) lookup per card. */
+  allocationTags: Record<string, QuizAllocationTags>;
 }) {
   const [tab, setTab] = useState<TabKey>("mine");
 
@@ -49,7 +47,7 @@ export function QuizLibrary({
         ]}
       />
       {tab === "mine" ? (
-        <MineTab quizzes={myQuizzes} />
+        <MineTab quizzes={myQuizzes} allocationTags={allocationTags} />
       ) : (
         <SchoolTab quizzes={sharedQuizzes} />
       )}
@@ -57,51 +55,13 @@ export function QuizLibrary({
   );
 }
 
-function QuizMeta({
-  baseLanguage,
-  questionCount,
+function MineTab({
+  quizzes,
+  allocationTags,
 }: {
-  baseLanguage: Language;
-  questionCount: number;
+  quizzes: MyQuiz[];
+  allocationTags: Record<string, QuizAllocationTags>;
 }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Badge variant="gray">{LANG_LABEL[baseLanguage] ?? baseLanguage}</Badge>
-      <span className="text-xs text-[var(--body-subtle)]">
-        <span className="tabular-nums">{questionCount}</span> שאלות
-      </span>
-    </div>
-  );
-}
-
-/** The heading shown on a card: the teacher's own title, else the video's. */
-function cardHeading(quiz: { title: string | null; video_title: string | null }) {
-  return quiz.title ?? quiz.video_title ?? "חידון";
-}
-
-/**
- * The source video, shown under the heading. Rendered only when the teacher gave
- * the quiz its own title — otherwise `cardHeading` is already showing the video
- * title and repeating it says nothing.
- */
-function VideoLine({
-  quiz,
-}: {
-  quiz: { title: string | null; video_title: string | null };
-}) {
-  if (!quiz.title || !quiz.video_title) return null;
-  return (
-    <p
-      className="flex items-center gap-1.5 truncate text-xs text-[var(--body-subtle)]"
-      title={quiz.video_title}
-    >
-      <Icon name="play" size={12} className="flex-none" />
-      <span className="truncate">{quiz.video_title}</span>
-    </p>
-  );
-}
-
-function MineTab({ quizzes }: { quizzes: MyQuiz[] }) {
   const router = useRouter();
   const [pendingDelete, setPendingDelete] = useState<MyQuiz | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -145,54 +105,12 @@ function MineTab({ quizzes }: { quizzes: MyQuiz[] }) {
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {quizzes.map((q) => (
-            <GlassCard
+            <QuizCard
               key={q.quiz_id}
-              interactive
-              className="relative flex h-full flex-col gap-3"
-            >
-              {/* Stretched link: the whole card opens the editor, while the
-                  delete control sits above it and stays separately clickable.
-                  Keeps the card-wide target without nesting a button in an
-                  anchor. */}
-              <Link
-                href={`/dashboard/quizzes/${q.quiz_id}/edit`}
-                aria-label={`עריכת ${cardHeading(q)}`}
-                className="absolute inset-0 z-10 rounded-[inherit]"
-              />
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="font-semibold text-[var(--heading)]">
-                  {cardHeading(q)}
-                </h3>
-                <Badge variant={q.visibility === "shared" ? "brand" : "gray"}>
-                  {q.visibility === "shared" ? "משותף" : "פרטי"}
-                </Badge>
-              </div>
-              <VideoLine quiz={q} />
-              <QuizMeta
-                baseLanguage={q.base_language}
-                questionCount={q.question_count}
-              />
-              {/* This row must sit ABOVE the stretched link, or the link
-                  swallows the delete click. `.glass > *` in globals.css pins
-                  every direct child to z-index 2 — and because that makes this
-                  row a stacking context, a z-index on the button alone is
-                  trapped inside it and can never beat the link. So the row is
-                  lifted, and made click-through, leaving only the button itself
-                  interactive: "עריכה" keeps falling through to the card link. */}
-              <div className="pointer-events-none relative z-20 mt-auto flex items-center justify-between gap-2 pt-1">
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--fg-brand)]">
-                  עריכה
-                  <Icon name="arrow" size={16} />
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPendingDelete(q)}
-                  className="pointer-events-auto rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--body-subtle)] hover:bg-[var(--neutral-quaternary)] hover:text-[var(--fg-danger)]"
-                >
-                  מחיקה
-                </button>
-              </div>
-            </GlassCard>
+              quiz={q}
+              tags={allocationTags[q.quiz_id]}
+              onRequestDelete={setPendingDelete}
+            />
           ))}
         </div>
       )}
