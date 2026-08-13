@@ -114,13 +114,13 @@ export async function deleteClass(
   unwrap(await client.from("classes").delete().eq("id", classId));
 }
 
-/** The signed-in teacher's own classes (owner-RLS scoped). */
+/** The signed-in teacher's own classes (owner-RLS scoped), alphabetical by name. */
 export async function listMyClasses(client: SupabaseClient): Promise<ClassRow[]> {
   const rows = unwrap(
     await client
       .from("classes")
       .select("id, teacher_id, school_id, name, language, created_at")
-      .order("created_at", { ascending: false })
+      .order("name")
   );
   return (rows as unknown as ClassRow[]) ?? [];
 }

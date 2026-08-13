@@ -24,13 +24,33 @@ export function Modal({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  // Latest-ref, not a dependency: `onClose` is almost always a fresh inline
+  // closure from the caller (e.g. `onClose={() => !busy && setOpen(false)}`),
+  // so its identity changes on every parent re-render — including a re-render
+  // triggered by typing into a controlled input inside this modal. If the
+  // effect below depended on `onClose` directly, EVERY keystroke would tear
+  // the effect down (running the cleanup's `restoreRef.current?.focus?.()`,
+  // yanking focus back to whatever was focused before the modal opened) and
+  // re-run it (moving focus to the panel div) — the exact "type one letter,
+  // focus vanishes, click back into the field" bug this was causing on every
+  // Modal-wrapped form in the app. Reading the latest callback through a ref
+  // keeps the effect's identity tied to `open` alone, which is the only thing
+  // that should ever re-trigger the open/close focus management.
+  const onCloseRef = useRef(onClose);
+  // Sync post-render, not during it (writing a ref mid-render is unsafe/
+  // disallowed) — an effect with no dependency array runs after every
+  // commit, so the ref is always current by the time a real keypress
+  // could reach the handler below.
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return;
     restoreRef.current = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
       // Trap Tab within the dialog so focus can't reach the page behind it.
@@ -64,7 +84,7 @@ export function Modal({
       document.removeEventListener("keydown", onKey);
       restoreRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open || typeof document === "undefined") return null;
 

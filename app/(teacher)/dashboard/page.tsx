@@ -52,9 +52,13 @@ export default async function DashboardPage() {
   const summaries = classes.map((c, i) => summarizeClass(c, perClassStats[i]));
   const totals = totalsFromSummaries(summaries, perClassStats);
 
-  // Quizzes with at least one allocation of any state (draft/scheduled/live/
-  // done-but-not-yet-surfaced — see the deferred "quiz finished" issue). A
-  // quiz never allocated to any class lives only in the library, not here.
+  // Quizzes that are actually live or scheduled to at least one class right
+  // now. `listMyQuizAllocationTags` also returns an entry for a quiz whose
+  // allocations are all drafts/closed (both arrays empty, for the library's
+  // "לא פעיל" badge) — that's the wrong inclusion test for a section titled
+  // "active", so this filters on the arrays themselves rather than mere
+  // presence in the map. A closed-window quiz is deliberately absent here
+  // too — see the deferred "quiz finished" issue.
   // Isolated the same way class stats are: a failure here degrades to an
   // empty section rather than sinking the whole overview.
   let allocatedQuizzes: { quiz: MyQuiz; tags: QuizAllocationTags }[] = [];
@@ -65,8 +69,14 @@ export default async function DashboardPage() {
     ]);
     const tagsByQuizId = new Map(tags.map((t) => [t.quiz_id, t]));
     allocatedQuizzes = myQuizzes
-      .filter((q) => tagsByQuizId.has(q.quiz_id))
-      .map((q) => ({ quiz: q, tags: tagsByQuizId.get(q.quiz_id)! }));
+      .map((q) => ({ quiz: q, tags: tagsByQuizId.get(q.quiz_id) }))
+      .filter(
+        (
+          entry
+        ): entry is { quiz: MyQuiz; tags: QuizAllocationTags } =>
+          !!entry.tags &&
+          (entry.tags.live.length > 0 || entry.tags.scheduled.length > 0)
+      );
   } catch {
     allocatedQuizzes = [];
   }
@@ -132,7 +142,7 @@ export default async function DashboardPage() {
 
         <section>
           <h2 className="mb-3 text-xl font-semibold text-[var(--heading)]">
-            החידונים שלי
+            החידונים הפעילים שלי
           </h2>
           {allocatedQuizzes.length === 0 ? (
             <GlassCard>
