@@ -27,7 +27,8 @@ production.** Everything else in this backlog assumes videos can be added.
 | 0.1 | Switch the primary caption path to the InnerTube ANDROID client. Fixes a verified bug where the watch-page scrape downloads **0 bytes on every IP including local** — production currently runs entirely on an undocumented package internal. | 🐛 |
 | 0.2 | Re-probe Vercel after 0.1. If InnerTube is not IP-blocked on AWS, the whole problem is solved for free. | — |
 | 0.3 | If 0.2 fails: adopt a paid fetch path behind the same seam. Options priced at ~$3.50–5/month (residential proxy or hosted transcript API). | ❓ |
-| 0.4 | Verify the no-transcript experience end to end (below). | ❓ |
+| 0.4 | Verify the no-transcript experience end to end (below). Tutor behaviour decided; blocked on 0.5. | ❓ |
+| 0.5 | Make "has no transcript" a property of the quiz rather than of request timing. Blocks 0.4 and, until settled, makes tutor availability differ between students in the same class. | ❓ |
 
 ### 0.4 · What happens when there is no transcript
 
@@ -41,13 +42,59 @@ each needing a defined and tested answer:
    video has no captions" and "we couldn't read them right now", because the two
    are often indistinguishable. Retry must be available, not disabled.
    Current copy: *לסרטון זה אין כתוביות או שלא הצלחנו לקרוא אותם כרגע.*
-3. **Ask-AI** — **undefined today and the real gap.** The tutor is grounded in
-   the transcript up to the student's playhead. With no transcript it has no
-   grounding at all. Decide: disable the tutor for that quiz, or let it answer
-   ungrounded? Ungrounded answers on a video it cannot see risks confident
-   nonsense in front of students. Recommend disabling with a clear reason, and
-   surfacing that to the teacher **at assignment time** rather than to the
-   student mid-quiz.
+3. **Ask-AI** — see 0.5. **Decided: disable the tutor** when the video has no
+   transcript, rather than let it answer ungrounded — confident nonsense about a
+   video it cannot see is worse than a missing button. Not yet built, because
+   "has no transcript" is not currently a knowable fact about a quiz. That is
+   0.5.
+
+### 0.5 · "Has no transcript" is not a property of a quiz today ❓
+
+Blocks the 0.4 decision above. Deferred deliberately — worth settling before any
+tutor gate is written, because the gate has nothing dependable to read.
+
+**Nothing ever fetches a transcript proactively.** `create_quiz_for_video` leaves
+`transcript_status` at its `'pending'` default, and the only two triggers are the
+generate route and the tutor route itself. `sweep-transcripts` sounds like it
+would help and does the opposite — it *deletes* Storage objects past their TTL.
+Three consequences:
+
+- **`pending` means "nobody has looked", not "no captions".** A gate keyed on
+  `unavailable` never fires for the case we actually have in production, where a
+  blocked fetch deliberately leaves the status untouched.
+- **A manually-authored quiz never triggers a fetch at all.** If the teacher
+  never presses "generate with AI", no transcript is ever requested, so the video
+  has no known caption state at the moment students start using it.
+- **Availability is decided per student request, so it differs between students
+  in the same class.** The tutor route calls `getTranscript` on every question.
+  Whoever asks first triggers the fetch; if it succeeds the transcript is cached
+  and everyone after them gets a grounded tutor, and if it fails the claim marker
+  throttles the next callers for `CLAIM_TTL_MS` and they get nothing — without
+  even attempting. Over a longer horizon the TTL sweep deletes the object and the
+  next request re-fetches, so a quiz that worked in September can stop working in
+  October.
+
+**That last one is the reason this outranks the tutor-prompt question.** It is
+not only inconsistent, it is an assessment-fairness problem: two students sitting
+the same quiz get materially different help based on who clicked first and
+whether YouTube happened to answer. That is invisible to the teacher and to both
+students.
+
+**The invariant to design to:** tutor availability must be a property of *the
+quiz*, decided once and the same for every student in the class — never a
+side effect of request timing.
+
+Three options, not mutually exclusive:
+
+| | Option | Note |
+| --- | --- | --- |
+| a | **Resolve caption state when the video is added**, and let that define behaviour uniformly | Makes `pending` a real transient state rather than a permanent unknown. Costs one fetch per new video at the moment a teacher is already waiting, and needs a defined answer for "the fetch was blocked" — which, on the current egress, is the common case, so it cannot simply mean "no captions" (that was the `1fcdc8c` bug). |
+| b | **Let the students who can, use it** | Cheapest, and explicitly accepts the fairness problem above. Reasonable only if the tutor is positioned as a bonus rather than part of the assessment. |
+| c | **Give the tutor a short summary of what the video is about**, so it has topical context without a transcript | The most interesting: it changes the tutor from *blocked* to *usefully bounded* — it can say what the video covers and answer around the subject, while being honest that it cannot see what was said. Note the summary cannot come from the transcript in this case; it would come from title/description metadata, or from the teacher. Overlaps directly with the teacher-materials idea, and with 7.4, where the same summarisation machinery is wanted for *long* videos that do have transcripts. |
+
+Worth deciding (a) and (c) together — (a) makes the state knowable, (c) decides
+what to do with the answer. (b) is the do-nothing baseline to measure them
+against.
 
 ---
 
@@ -94,7 +141,7 @@ that model is specified.
 
 | # | Task | Flag |
 | --- | --- | --- |
-| 2.1 | **Video player with a checkpoint timeline** — clickable markers showing where each question sits, as in the previous version. Also unblocks the deferred time-range picker in the AI-generation spec. | 🎨 |
+| 2.1 | **Video player with a checkpoint timeline** — clickable markers showing where each question sits, as in the previous version. Also unblocks the deferred time-range picker in the AI-generation spec. Fix **2.11 first**: a timeline drawn from today's ordering would disagree with the list beside it. | 🎨 |
 | 2.2 | Delete a quiz from the editor. | 🎨 |
 | 2.3 | UI pass on question editing — colour, and possibly a video preview alongside. | 🎨 |
 | 2.4 | **Quiz analytics button** from the editor. | 🎨 |
@@ -135,6 +182,47 @@ setting** — teachers do not configure them and they are not exposed in the UI.
 So this needs **no migration**: application-level configuration, enforced in the
 tutor route. Distinct from `class_quizzes.tutor_mode` (`off` / `hints` / `full`),
 which *is* a teaching setting and already exists. Pairs with 4.7.
+
+### 2.11 · Questions are ordered by authoring order, not video time ✅
+
+**Fixed** by migration `126_order_questions_by_video_time.sql` plus the matching
+client sort. Kept here until the next backlog reconciliation pass. Original
+report below.
+
+
+**Reported as an editor display nit; it is a student-facing bug.** Reproduce by
+adding questions at 0:30, then 1:30, then 0:30. The editor lists them in that
+order rather than 0:30, 0:30, 1:30.
+
+`order_index` is assigned as `max + 1` on insert
+([`QuizEditor.tsx:229`](../components/teacher/editor/QuizEditor.tsx#L229)), so it
+records **when the teacher wrote the question**, and every consumer sorts by it
+with `position_seconds` as a mere tiebreak:
+
+- `get_quiz_for_author` — `order by q.order_index, q.position_seconds, q.id`
+- `get_quiz_for_student` — `order by sub.q_order, sub.q_pos, sub.q_id`
+- `QuizPlayer` — `sort((a, b) => a.order_index - b.order_index)`
+
+The student consequence is the serious half. The player picks the next
+checkpoint as *the first unanswered question in `order_index` order*, and gates
+the video at its `position_seconds`. With the sequence above, a student who has
+just answered the 1:30 question is handed the second 0:30 question, whose gate is
+a minute behind the playhead — so `gateDecision` returns a `clampTo` and **the
+video seeks backwards to 0:30**. A teacher inserting an early question after a
+later one silently makes the video jump back for every student.
+
+`rewatch()` already picks the previous checkpoint by `position_seconds`, so the
+player is half time-ordered and half insertion-ordered today.
+
+**Recommended fix:** sort by `position_seconds` first, with `order_index` as the
+tiebreak for two questions at the same timestamp — three sort clauses and no data
+migration. `order_index` keeps its real job (stable ordering within a timestamp,
+and the frozen `attempt_questions` snapshot); it just stops outranking time.
+
+Decide one thing before building: whether an **in-progress attempt** should keep
+the order it started with. Re-sorting mid-attempt moves a student's remaining
+questions around. The snapshot is per attempt, so either answer is implementable
+— it needs choosing, not discovering.
 
 ---
 

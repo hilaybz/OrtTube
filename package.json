@@ -14,7 +14,7 @@
     "e2e": "playwright test",
     "seed": "node --env-file=.env.local scripts/seed-fixture.mjs",
     "smoke": "node test/e2e/smoke.mjs",
-    "gen:types": "supabase gen types typescript --linked > lib/supabase/types.ts"
+    "gen:types": "npx supabase gen types typescript --linked > lib/supabase/types.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",
@@ -44,6 +44,7 @@
     "eslint-config-next": "16.2.6",
     "jsdom": "^29.1.1",
     "pg": "^8.22.0",
+    "supabase": "2.114.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.6",
