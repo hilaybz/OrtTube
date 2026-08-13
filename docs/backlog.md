@@ -24,11 +24,44 @@ production.** Everything else in this backlog assumes videos can be added.
 
 | # | Task | Flag |
 | --- | --- | --- |
-| 0.1 | Switch the primary caption path to the InnerTube ANDROID client. Fixes a verified bug where the watch-page scrape downloads **0 bytes on every IP including local** — production currently runs entirely on an undocumented package internal. | 🐛 |
-| 0.2 | Re-probe Vercel after 0.1. If InnerTube is not IP-blocked on AWS, the whole problem is solved for free. | — |
-| 0.3 | If 0.2 fails: adopt a paid fetch path behind the same seam. Options priced at ~$3.50–5/month (residential proxy or hosted transcript API). | ❓ |
+| 0.1 | ~~Switch the primary caption path to InnerTube ANDROID.~~ **Done / moot** — `852b3d0`. The package already used ANDROID InnerTube; the dead watch-page download is deleted. | ✅ |
+| 0.2 | ~~Re-probe Vercel.~~ **Answered: blocked.** `not_playable:LOGIN_REQUIRED` from a preview deployment. Not free after all. | ✅ |
+| 0.3 | **The only remaining path.** Paid egress behind the `fetchFreshTranscript` seam — residential proxy or hosted transcript API. | ❓ |
 | 0.4 | Verify the no-transcript experience end to end (below). Tutor behaviour decided; blocked on 0.5. | ❓ |
 | 0.5 | Make "has no transcript" a property of the quiz rather than of request timing. Blocks 0.4 and, until settled, makes tutor availability differ between students in the same class. | ❓ |
+
+### Confirmed 2026-08-13 — YouTube bot-checks Vercel's egress
+
+Logged from a preview deployment:
+
+```
+[transcript] video=tvyOITo5iOk transient failure reason=not_playable:LOGIN_REQUIRED
+```
+
+`LOGIN_REQUIRED` is YouTube's "sign in to confirm you're not a bot". The watch
+page returns 200, parses, and lists zero caption tracks — indistinguishable from
+a caption-less video, which is the trap `1fcdc8c` guards against.
+
+It is the IP, not the code:
+
+- The same video returns **176 Hebrew ASR segments** from a residential IP.
+- The failure shape was byte-identical across two days, two deployments and both
+  environments. A rate limit drifts; a standing block does not.
+- `youtube-transcript` already posts an **ANDROID** client context — the swap
+  0.1 proposed was already what ran, and it is what is refused.
+
+**Two things to do together in 0.3.** Route egress through the
+`fetchFreshTranscript` seam, and cut the request count while you are there: one
+attempt currently makes up to **11 requests, six of them ~1.2 MB watch pages —
+about 7 MB per video**, because `LANG_PREFERENCE` tries five languages in full.
+The scrape already returns the track list, so the language is known before
+downloading: read it off there and make one call. Two requests instead of eleven,
+and ~5× less metered traffic.
+
+**Wider than AI generation:** `duration_seconds` comes from the same scrape, so
+it is null in production too. Titles come from oEmbed and appear unaffected.
+
+Issues #7 and #8 are closed with this evidence; #9 carries the path forward.
 
 ### 0.4 · What happens when there is no transcript
 
