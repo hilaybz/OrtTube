@@ -49,9 +49,12 @@ correctness) live in the database, not the handler.
 | POST | `/api/classes/[id]/students` | Add a student by email (enroll or create a pending invite). |
 | DELETE | `/api/classes/[id]/students/[studentId]` | Remove a student. |
 | DELETE | `/api/classes/[id]/invites` | Revoke a pending invite. |
-| GET / POST | `/api/classes/[id]/quizzes` | List assignments / assign a quiz (`tutorMode`, `maxAttempts`) with best-effort eager translation. |
+| GET / POST | `/api/classes/[id]/quizzes` | List assignments / assign a quiz (`tutorMode`, `maxAttempts`, `published` — defaults `true`, `availableFrom`/`availableUntil` — default no window) with best-effort eager translation. |
+| PATCH | `/api/classes/[id]/quizzes/[quizId]` | Flip an assignment's `published` state and/or replace its scheduling window (`availableFrom`/`availableUntil` must be sent together — the window is replaced as a whole, not merged). |
 | DELETE | `/api/classes/[id]/quizzes/[quizId]` | Unassign a quiz. |
 | GET | `/api/classes/assigned` | A student's class-tabbed feed of assigned quizzes. |
+| GET / POST | `/api/quizzes/[id]/allocations` | The quiz-side mirror of the above: every allocation of this quiz, any state / bulk-assign to several classes at once with one shared settings object (`classIds[]` + the same fields as the class-side POST). Response reports `{ assigned, failed }` — one bad class id fails only that entry. |
+| GET | `/api/quizzes/allocations` | The caller's own quizzes with ≥1 allocation, each split into `live`/`scheduled` class tags — feeds the library-card and dashboard-landing chips. |
 
 ### Attempts
 | Method | Path | Purpose |
@@ -95,6 +98,7 @@ maintenance via the service role and returns a JSON summary.
 | POST | `/api/jobs/gc-videos` | Delete orphan videos (no referencing quiz) past a grace window, plus their cached transcript objects. | hourly |
 | POST | `/api/jobs/reconcile-auth` | Delete orphan `auth.users` with no profile (crash-safety net for interrupted signups). | ~15 min |
 | POST | `/api/jobs/sweep-transcripts` | Delete cached transcript objects older than the TTL (Storage has no native expiry). | weekly |
+| POST | `/api/jobs/close-attempt-windows` | Force-finalize attempts whose allocation window closed and nobody came back to interact with — a backstop; `submit_answer`/`complete_attempt` already finalize anyone still present. | daily |
 
 ## RPC layer
 
@@ -105,16 +109,19 @@ The wrappers in `@/lib/*` call these Postgres functions. Grouped by area:
 - **Translation** — `claim_translation_job`, `release_translation_job`.
 - **Classes / roster** — `add_student_to_class`, `remove_student_from_class`,
   `revoke_invite`, `list_class_roster`.
-- **Assignment** — `assign_quiz_to_class`, `unassign_quiz`, `list_class_quizzes`,
-  `list_assigned_for_student`.
+- **Assignment** — `assign_quiz_to_class`, `set_class_quiz_published`,
+  `set_class_quiz_schedule`, `unassign_quiz`, `list_class_quizzes`,
+  `list_assigned_for_student`, `list_quiz_allocations`,
+  `list_my_quiz_allocation_tags`.
 - **Student play** — `get_quiz_for_student`, `start_or_resume_attempt`,
-  `submit_answer`, `complete_attempt`, `get_attempt_review`.
+  `submit_answer`, `complete_attempt`, `get_attempt_review`,
+  `list_my_attempts_for_quiz`.
 - **Tutor** — `get_tutor_mode`.
 - **Sharing** — `list_shared_quizzes`, `clone_quiz`, `list_my_quizzes`.
 - **Analytics** — `quiz_stats`, `question_stats`, `class_stats`, `tutor_stats`.
 - **Lifecycle** — `deactivate_teacher`, `reassign_ownership`, and the delete-user
   flow.
 - **Maintenance** — `purge_soft_deleted_quizzes`, `gc_orphan_videos`,
-  `list_orphan_auth_users`.
+  `list_orphan_auth_users`, `close_expired_attempt_windows`.
 
 See [`data-model.md`](./data-model.md) for the tables these operate on.

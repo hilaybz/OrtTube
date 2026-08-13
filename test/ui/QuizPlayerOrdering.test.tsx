@@ -61,6 +61,8 @@ const STATE: StudentAttemptState = {
   base_language: "he",
   tutor_mode: "off",
   max_attempts: null,
+  available_until: null,
+  server_now: "2026-01-01T00:00:00.000Z",
   attempt_count: 0,
   completed_count: 0,
   attempts_left: null,

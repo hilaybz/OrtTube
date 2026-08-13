@@ -139,7 +139,7 @@ against.
 | 1.2 | ~~**Delete a quiz** from the library.~~ **Done** — `bdb0903`. | ✅ |
 | 1.3 | **Preview a catalog quiz before cloning** — open it read-only to see the questions, rather than cloning blind. Needs a new correctness-free read; see below. | 🗄️ |
 | 1.4 | **Search, filter and sort** in both the library and the catalog. Agree the axes first (video title, question count, language, date, author). | 🎨 |
-| 1.5 | **Show which classes a quiz is assigned to**, as tags on the card. | 🎨 |
+| 1.5 | ~~**Show which classes a quiz is assigned to**, as tags on the card.~~ **Done** — `components/teacher/QuizCard.tsx` (`list_my_quiz_allocation_tags`), shared by the library and the new dashboard landing section (see 6.1). | ✅ |
 | 1.6 | General UI pass on the library. | 🎨 |
 
 ### 1.3 · Why previewing a shared quiz is not UI-only
@@ -308,24 +308,64 @@ Two rules that are easy to get wrong:
 
 | # | Task | Flag |
 | --- | --- | --- |
-| 2A.1 | Split publication from assignment: add a published state to `class_quizzes`, defaulting to unpublished, and gate the student read path on it. | 🗄️ |
-| 2A.2 | Optional scheduling window per allocation — `available_from` / `available_until`, either or both nullable. | 🗄️ |
-| 2A.3 | **Allocation management from the quiz edit page** — see and edit which classes a quiz is allocated to, each with its own settings, changeable after the fact. | 🎨 |
-| 2A.4 | Show allocation state per class (scheduled / in progress / done) wherever allocations appear — editor, library cards (1.5), classes screens. | 🎨 |
+| 2A.1 | ~~Split publication from assignment: add a published state to `class_quizzes`, defaulting to unpublished, and gate the student read path on it.~~ **Done** — `127_class_quiz_publish_state.sql`. The RPC parameter defaults `true` (assignment stays instantly visible unless a teacher opts into a draft), only the column defaults `false`; a new `set_class_quiz_published` RPC + `AssignedQuizzesSection` toggle let a teacher flip it after the fact. | ✅ |
+| 2A.2 | ~~Optional scheduling window per allocation — `available_from` / `available_until`, either or both nullable.~~ **Done** — `128_class_quiz_scheduling_window.sql` / `129_attempt_window_finalization.sql`. Hard cutoff (decision below); `set_class_quiz_schedule` RPC + the assign flow's window fields. | ✅ |
+| 2A.3 | ~~**Allocation management from the quiz edit page** — see and edit which classes a quiz is allocated to, each with its own settings, changeable after the fact.~~ **Done** — `components/teacher/editor/AllocationsSection.tsx` (`list_quiz_allocations`), including bulk-assign to several classes at once (`components/teacher/editor/BulkAssignModal.tsx`, `POST /api/quizzes/[id]/allocations`) — the cluster-assignment flow this epic was blocking. | ✅ |
+| 2A.4 | ~~Show allocation state per class (scheduled / in progress / done) wherever allocations appear — editor, library cards (1.5), classes screens.~~ **Done** — one shared `allocationState()` (`lib/allocationState.ts`) drives the state badge in the editor's `AllocationsSection`, the class page's `AssignedQuizzesSection`, and (as `זמין:`/`מתוזמן:` chips rather than a single badge) the library/dashboard `QuizCard`. | ✅ |
 | 2A.5 | Enter a quiz from the class's quizzes tab (was 4.9 in the original list). | 🎨 |
 
 **Enforcement must live in the database.** Publication and window checks belong
 in the student-facing RPCs and RLS — `get_quiz_for_student`,
-`start_or_resume_attempt`, the assigned-quiz list, and the tutor route — not in
-the UI. Per `CLAUDE.md`, business rules hold regardless of caller; a hidden quiz
-that is still reachable by direct API call is not hidden.
+`start_or_resume_attempt`, `list_my_attempts_for_quiz`, the assigned-quiz list,
+and the tutor route — not in the UI. Per `CLAUDE.md`, business rules hold
+regardless of caller; a hidden quiz that is still reachable by direct API call
+is not hidden. All five now share one SQL predicate, `_allocation_is_live(cq)`
+(`128_class_quiz_scheduling_window.sql`).
 
-### 2A.6 · Decision: what happens to an attempt in progress when the window closes? ❓
+Bulk-assign (2A.3) is a server-side loop over `assign_quiz_to_class` — one
+independent allocation per selected class, no new atomic multi-row RPC — per
+the ad hoc (non-persistent-group) shape decided for cluster-assignment.
 
-A student mid-attempt at the closing time can be cut off, or allowed to finish.
-Cutting off risks losing their work and grading a partial attempt; allowing it
-means the window is not a hard boundary. Needs a decision before 2A.2 is built —
-it changes what the RPC does, not just the UI.
+### 2A.6 · Decision: what happens to an attempt in progress when the window closes? ✅
+
+**Decided: hard cutoff.** If a window closes at 18:00 and a student is
+mid-attempt, at 18:00 it is as if they submitted — unanswered questions count
+wrong, scored on whatever they'd actually answered. Two interactive paths
+force-finalize in place (`submit_answer` on the next answer attempt,
+`complete_attempt` if the student clicks submit late — both backdating
+`completed_at` to the window's close, never wall-clock `now()`), plus a daily
+cron sweep (`close_expired_attempt_windows`) for attempts nobody came back to
+interact with — daily, not hourly, because Vercel's Hobby plan rejects any
+faster cron schedule outright (confirmed by a failed deployment); tighten it
+if the project ever moves to a paid tier. The player enforces the cutoff
+client-side too, timed off a clock-skew offset computed from the server's
+clock at page load — not a countdown (the due date lives in the student feed
+instead) — so a student actually watching gets a clean transition to their
+results the instant the window closes, without waiting for the daily sweep.
+Full detail in `docs/data-model.md`'s `class_quizzes` entry.
+
+**One thing this deliberately does NOT cover: what a teacher (or the student
+feed) sees once an allocation's window has closed.** See the new item below.
+
+### 2A.7 · A quiz has finished — now what? ❓ (issue #69)
+
+Closed-window allocations are intentionally invisible everywhere a "current
+state" chip appears — the editor's own allocations list still shows them (as
+`הסתיים`), but the library/dashboard `QuizCard` tags and the student feed both
+just drop them, the same way a draft or unpublished allocation always has.
+That's consistent, but it leaves a real gap: nothing tells a teacher a quiz
+has ended and results are ready, and a student who completed a windowed quiz
+last week can no longer find it in their feed (though the results page itself
+still works if they have the link — `findLatestCompletedAttempt` in
+`lib/attempts.ts` reads a student's own `attempts` rows directly, independent
+of the allocation's current state, precisely so a closed window never erases
+access to a student's own results).
+
+Worth scoping as a real feature rather than a chip fix: a notification when a
+quiz's window closes and results are in, and/or a "recently finished" surface
+on both the teacher dashboard and the student feed. The data already exists
+(`available_until`, plus `close_expired_attempt_windows` finalizing every
+attempt) — this is a product/UX decision, not blocked infrastructure.
 
 ---
 
@@ -531,9 +571,12 @@ a teacher deliberately chooses unlimited. It is not the out-of-the-box path.
 
 ## Epic 6 · Design questions (not yet tasks)
 
-- **6.1 — What should the teacher landing/overview page be?** Currently
-  undefined. Needs a decision on what a teacher sees first: recent quizzes,
-  class activity, things needing attention, or a summary.
+- **6.1 — What should the teacher landing/overview page be?** ~~Currently
+  undefined.~~ **Partially answered**: the dashboard now shows a "החידונים שלי"
+  section (`app/(teacher)/dashboard/page.tsx`) — every quiz with at least one
+  allocation, as `QuizCard`s tagged `זמין:`/`מתוזמן:`, above the existing
+  class-summary grid. Still open: whether "things needing attention" (see
+  2A.7) belongs on this same page once it exists.
 - **6.2 — Do teachers need to belong to more than one school?** See
   [`open-questions.md` §1](open-questions.md). Deferred pending evidence: the
   migration path (`profiles.school_id` → a `teacher_schools` join table) stays

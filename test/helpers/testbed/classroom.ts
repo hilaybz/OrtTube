@@ -91,6 +91,11 @@ export interface AssignOptions {
   to: Classroom;
   tutor?: TutorMode;
   maxAttempts?: number | null;
+  /** Defaults to true (assignment is instantly visible), same as the RPC default. */
+  published?: boolean;
+  /** ISO timestamps. Both default to no window (visible for as long as `published`). */
+  availableFrom?: string | null;
+  availableUntil?: string | null;
   /** Await the eager-translation hook (default false: assignment only). */
   awaitTranslation?: boolean;
   /** Inject the translation primitive to observe/stub the eager-translate hook. */

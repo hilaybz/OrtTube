@@ -22,6 +22,12 @@ const MESSAGES: Record<string, string> = {
   // helps — the student needs to know it will not come back.
   rate_limited: "שלחת יותר מדי שאלות ברצף. נסו שוב בעוד דקה.",
   question_limit_reached: "הגעת למספר השאלות המרבי למורה־AI במבחן זה.",
+  // The window closed exactly as this request landed; the attempt was
+  // finalized server-side with whatever was already answered. Must not
+  // imply retrying helps — a retry only ever hits attempt_completed.
+  window_closed: "חלון הזמן למבחן הסתיים. הניסיון הוגש באופן אוטומטי.",
+  invalid_schedule_window:
+    "טווח הזמנים אינו תקין. תחילת הזמינות חייבת להיות לפני סיומה.",
   not_owner: "אין לך הרשאה לפעולה זו.",
   not_authorized: "אין לך הרשאה לפעולה זו.",
   cross_school: "התלמיד/ה שייך/ת לבית ספר אחר.",

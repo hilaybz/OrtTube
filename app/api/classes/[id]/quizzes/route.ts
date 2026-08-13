@@ -1,12 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assignQuizToClass, listClassQuizzes, type TutorMode } from "@/lib/classes";
-import { err, handleError, requireAuth } from "../../http";
+import { err, handleError, isValidIsoOrNull, requireAuth } from "../../http";
 
 /**
  * /api/classes/[id]/quizzes  (assignment)
  *   GET  → the class's assigned (non-deleted) quizzes with delivery settings.
- *   POST → assign a quiz { quizId, tutorMode?, maxAttempts? } and best-effort
- *          eager-translate into the class language.
+ *   POST → assign a quiz { quizId, tutorMode?, maxAttempts?, published?,
+ *          availableFrom?, availableUntil? } and best-effort eager-translate
+ *          into the class language. `published` defaults to true (unchanged
+ *          instant-visibility behaviour); pass false to assign as a draft.
+ *          `availableFrom`/`availableUntil` default to no window; either may
+ *          be `null` explicitly or omitted.
  */
 
 const TUTOR_MODES: TutorMode[] = ["off", "hints", "full"];
@@ -34,7 +38,14 @@ export async function POST(
   const auth = await requireAuth();
   if (auth.response) return auth.response;
 
-  let body: { quizId?: unknown; tutorMode?: unknown; maxAttempts?: unknown };
+  let body: {
+    quizId?: unknown;
+    tutorMode?: unknown;
+    maxAttempts?: unknown;
+    published?: unknown;
+    availableFrom?: unknown;
+    availableUntil?: unknown;
+  };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -68,12 +79,36 @@ export async function POST(
     }
   }
 
+  let published: boolean | undefined;
+  if (body.published !== undefined) {
+    if (typeof body.published !== "boolean") {
+      return err("invalid_request", "published must be a boolean", 400);
+    }
+    published = body.published;
+  }
+
+  let availableFrom: string | null | undefined;
+  if (body.availableFrom !== undefined) {
+    if (!isValidIsoOrNull(body.availableFrom)) {
+      return err("invalid_request", "availableFrom must be null or an ISO date string", 400);
+    }
+    availableFrom = body.availableFrom as string | null;
+  }
+
+  let availableUntil: string | null | undefined;
+  if (body.availableUntil !== undefined) {
+    if (!isValidIsoOrNull(body.availableUntil)) {
+      return err("invalid_request", "availableUntil must be null or an ISO date string", 400);
+    }
+    availableUntil = body.availableUntil as string | null;
+  }
+
   try {
     // Fire-and-forget the translation in this request-scoped server context so the
     // assignment responds immediately; the reader path re-fills lazily if needed.
     const result = await assignQuizToClass(
       auth.client,
-      { classId: id, quizId, tutorMode, maxAttempts },
+      { classId: id, quizId, tutorMode, maxAttempts, published, availableFrom, availableUntil },
       { awaitTranslation: false }
     );
     return NextResponse.json({ assignment: result }, { status: 201 });

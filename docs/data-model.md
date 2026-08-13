@@ -47,6 +47,9 @@ erDiagram
         uuid quiz_id PK, FK
         text tutor_mode "off | hints | full"
         int max_attempts "null = unlimited"
+        bool published "default false"
+        timestamptz available_from "nullable"
+        timestamptz available_until "nullable"
     }
 
     attempts ||--o{ attempt_questions : "snapshot"
@@ -213,8 +216,38 @@ erDiagram
 ### Assignment, attempts, answers
 
 - **`class_quizzes`** — assigns a quiz to a class with per-assignment delivery
-  settings: `tutor_mode` (`off`/`hints`/`full`) and `max_attempts`
-  (`null` = unlimited).
+  settings: `tutor_mode` (`off`/`hints`/`full`), `max_attempts`
+  (`null` = unlimited), `published` (default `false` at the column;
+  `assign_quiz_to_class` defaults its own parameter to `true` so the ordinary
+  assign flow stays instantly visible), and an optional scheduling window
+  `available_from` / `available_until` (either or both nullable — no window
+  means "visible for as long as `published` stays true"). An allocation that
+  is unpublished, not yet inside its window, or past it is invisible to
+  students in every read (`get_quiz_for_student`, `start_or_resume_attempt`,
+  `list_assigned_for_student`, `list_my_attempts_for_quiz`, the tutor route) —
+  same `not_assigned` a missing assignment would raise, via the shared SQL
+  predicate `_allocation_is_live(cq)` every one of those reads calls. The
+  owning teacher always sees every state via `list_class_quizzes` /
+  `list_quiz_allocations` — nothing is hidden from the owner.
+
+  **Hard cutoff at `available_until`.** A student mid-attempt when the window
+  closes is treated as having submitted right then: `submit_answer` and
+  `complete_attempt` force-finalize the attempt (backdating `completed_at` to
+  the window's close, never wall-clock `now()`), and unanswered questions
+  count wrong by omission — no `answers` row needed. A daily cron sweep
+  (`close_expired_attempt_windows`, `app/api/jobs/close-attempt-windows` —
+  daily rather than hourly because Vercel's Hobby plan rejects a faster
+  schedule outright) finalizes attempts nobody came back to interact with;
+  the two interactive paths already handle anyone still present, so the
+  sweep is an analytics backstop, not the primary mechanism. The reveal gate
+  (`get_attempt_review`)
+  treats a closed window as "no retake remains," the same as an exhausted
+  `max_attempts` — otherwise a windowed quiz with attempts left could never
+  reveal per-question detail. **`attempts` deliberately has no "how it was
+  completed" column** — none of `quiz_stats`/`class_stats`/`question_stats`
+  read anything beyond `completed_at`/`num_correct`/`num_questions`, so a
+  force-completed attempt is already indistinguishable from a normal one
+  everywhere that matters.
 - **`attempts`** — one row per student run of an assigned quiz. `student_id` goes
   `NULL` when a student is anonymized (right-to-be-forgotten), and such rows still
   count toward class statistics.

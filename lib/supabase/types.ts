@@ -267,22 +267,31 @@ export type Database = {
       class_quizzes: {
         Row: {
           assigned_at: string
+          available_from: string | null
+          available_until: string | null
           class_id: string
           max_attempts: number | null
+          published: boolean
           quiz_id: string
           tutor_mode: string
         }
         Insert: {
           assigned_at?: string
+          available_from?: string | null
+          available_until?: string | null
           class_id: string
           max_attempts?: number | null
+          published?: boolean
           quiz_id: string
           tutor_mode?: string
         }
         Update: {
           assigned_at?: string
+          available_from?: string | null
+          available_until?: string | null
           class_id?: string
           max_attempts?: number | null
+          published?: boolean
           quiz_id?: string
           tutor_mode?: string
         }
@@ -752,6 +761,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _allocation_is_live: {
+        Args: { cq: Database["public"]["Tables"]["class_quizzes"]["Row"] }
+        Returns: boolean
+      }
       _assert_class_owner: {
         Args: { p_class_id: string }
         Returns: {
@@ -791,14 +804,21 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      _finalize_attempt_scores: {
+        Args: { p_attempt_id: string; p_completed_at: string }
+        Returns: boolean
+      }
       add_student_to_class: {
         Args: { p_class_id: string; p_email: string }
         Returns: Json
       }
       assign_quiz_to_class: {
         Args: {
+          p_available_from?: string
+          p_available_until?: string
           p_class_id: string
           p_max_attempts?: number
+          p_published?: boolean
           p_quiz_id: string
           p_tutor_mode?: string
         }
@@ -811,6 +831,10 @@ export type Database = {
       class_roster_progress: { Args: { p_class_id: string }; Returns: Json }
       class_stats: { Args: { p_class_id: string }; Returns: Json }
       clone_quiz: { Args: { p_source_quiz_id: string }; Returns: string }
+      close_expired_attempt_windows: {
+        Args: { p_batch_limit?: number }
+        Returns: Json
+      }
       complete_attempt: { Args: { p_attempt_id: string }; Returns: Json }
       create_quiz_for_video: {
         Args: {
@@ -852,6 +876,7 @@ export type Database = {
         Args: { p_class_id: string; p_quiz_id: string }
         Returns: Json
       }
+      list_my_quiz_allocation_tags: { Args: never; Returns: Json }
       list_my_quizzes: {
         Args: never
         Returns: {
@@ -874,6 +899,7 @@ export type Database = {
           id: string
         }[]
       }
+      list_quiz_allocations: { Args: { p_quiz_id: string }; Returns: Json }
       list_shared_quizzes: {
         Args: never
         Returns: {
@@ -912,6 +938,19 @@ export type Database = {
       }
       revoke_invite: {
         Args: { p_class_id: string; p_email: string }
+        Returns: undefined
+      }
+      set_class_quiz_published: {
+        Args: { p_class_id: string; p_published: boolean; p_quiz_id: string }
+        Returns: undefined
+      }
+      set_class_quiz_schedule: {
+        Args: {
+          p_available_from?: string
+          p_available_until?: string
+          p_class_id: string
+          p_quiz_id: string
+        }
         Returns: undefined
       }
       soft_delete_option: { Args: { p_option_id: string }; Returns: undefined }

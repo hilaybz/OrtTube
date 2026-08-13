@@ -3,10 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { listMyClasses, type ClassRow } from "@/lib/classes";
 import { getClassStats, type ClassStats } from "@/lib/analytics";
+import { listMyQuizzes, type MyQuiz } from "@/lib/quiz";
+import { listMyQuizAllocationTags, type QuizAllocationTags } from "@/lib/allocations";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { StatTile } from "@/components/teacher/StatTile";
+import { QuizCard } from "@/components/teacher/QuizCard";
 import { ClassCard } from "@/components/teacher/overview/ClassCard";
 import {
   pct,
@@ -15,12 +18,13 @@ import {
 } from "@/components/teacher/overview/aggregate";
 
 /**
- * Teacher overview: a welcome header, cross-class KPI tiles, and a grid of the
- * teacher's classes linking to per-class analytics. There is no rollup RPC, so
- * totals are aggregated here by fanning out `class_stats` per class; a per-class
- * failure is skipped (its stats treated as absent) rather than sinking the page,
- * and a failure to list classes degrades to a friendly Alert. Reads run through
- * the caller's session so RLS applies.
+ * Teacher overview: a welcome header, cross-class KPI tiles, the quizzes
+ * currently in play, and a grid of the teacher's classes linking to per-class
+ * analytics. There is no rollup RPC, so totals are aggregated here by fanning
+ * out `class_stats` per class; a per-class failure is skipped (its stats
+ * treated as absent) rather than sinking the page, and a failure to list
+ * classes degrades to a friendly Alert. Reads run through the caller's
+ * session so RLS applies.
  */
 export default async function DashboardPage() {
   const client = (await createClient()) as unknown as SupabaseClient;
@@ -47,6 +51,25 @@ export default async function DashboardPage() {
 
   const summaries = classes.map((c, i) => summarizeClass(c, perClassStats[i]));
   const totals = totalsFromSummaries(summaries, perClassStats);
+
+  // Quizzes with at least one allocation of any state (draft/scheduled/live/
+  // done-but-not-yet-surfaced — see the deferred "quiz finished" issue). A
+  // quiz never allocated to any class lives only in the library, not here.
+  // Isolated the same way class stats are: a failure here degrades to an
+  // empty section rather than sinking the whole overview.
+  let allocatedQuizzes: { quiz: MyQuiz; tags: QuizAllocationTags }[] = [];
+  try {
+    const [myQuizzes, tags] = await Promise.all([
+      listMyQuizzes(client),
+      listMyQuizAllocationTags(client),
+    ]);
+    const tagsByQuizId = new Map(tags.map((t) => [t.quiz_id, t]));
+    allocatedQuizzes = myQuizzes
+      .filter((q) => tagsByQuizId.has(q.quiz_id))
+      .map((q) => ({ quiz: q, tags: tagsByQuizId.get(q.quiz_id)! }));
+  } catch {
+    allocatedQuizzes = [];
+  }
 
   const header = (
     <>
@@ -105,6 +128,32 @@ export default async function DashboardPage() {
               hint="ממוצע משוקלל על פני כל ההשלמות"
             />
           </div>
+        </section>
+
+        <section>
+          <h2 className="mb-3 text-xl font-semibold text-[var(--heading)]">
+            החידונים שלי
+          </h2>
+          {allocatedQuizzes.length === 0 ? (
+            <GlassCard>
+              <p className="text-[var(--body)]">
+                עדיין לא הקציתם חידון לאף כיתה.{" "}
+                <Link
+                  href="/dashboard/quizzes"
+                  className="font-medium text-[var(--fg-brand)] underline hover:no-underline"
+                >
+                  עברו לספריית החידונים
+                </Link>{" "}
+                כדי להקצות אחד.
+              </p>
+            </GlassCard>
+          ) : (
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {allocatedQuizzes.map(({ quiz, tags }) => (
+                <QuizCard key={quiz.quiz_id} quiz={quiz} tags={tags} />
+              ))}
+            </div>
+          )}
         </section>
 
         <section>

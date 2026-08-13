@@ -1,7 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { listMyAttemptsForQuiz, type StudentAttemptState } from "@/lib/attempts";
+import { listMyAttemptsForQuiz, findLatestCompletedAttempt, type StudentAttemptState } from "@/lib/attempts";
 import { QuizPlayer } from "@/components/student/QuizPlayer";
 
 export default async function QuizPlayerPage({
@@ -16,7 +16,21 @@ export default async function QuizPlayerPage({
   try {
     state = await listMyAttemptsForQuiz(client, classId, quizId);
   } catch {
-    // not a member / not assigned / signed out → nothing to play here.
+    // Not a member / signed out / genuinely never assigned — OR the
+    // allocation's window has closed (or it's a draft) between when the
+    // student last had it and now, which raises the same not_assigned. A
+    // closed window doesn't erase a finished attempt, so check for one before
+    // giving up: if this student has a completed attempt here, send them to
+    // their results instead of a dead "not available" page.
+    let completed: Awaited<ReturnType<typeof findLatestCompletedAttempt>> = null;
+    try {
+      completed = await findLatestCompletedAttempt(client, classId, quizId);
+    } catch {
+      // fall through to notFound()
+    }
+    if (completed) {
+      redirect(`/student/quiz/${classId}/${quizId}/results`);
+    }
     notFound();
   }
 

@@ -12,14 +12,25 @@ import { Icon } from "@/components/ui/Icon";
 import { Spinner } from "@/components/ui/Spinner";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { AssignedQuiz, TutorMode } from "@/lib/classes";
+import { allocationState } from "@/lib/allocationState";
 import type { MyQuiz } from "@/lib/quiz";
 import { TUTOR_MODE_LABELS } from "./labels";
+import {
+  STATE_LABEL,
+  STATE_VARIANT,
+  formatWindowPart,
+  fromDatetimeLocalValue,
+} from "@/components/teacher/scheduleFormat";
 
 /**
  * Assigned-quizzes management for a class: list assignments with their delivery
- * settings (tutor mode + attempt cap) and an unassign action, plus an "assign"
- * modal that picks from the teacher's own quizzes and sets `tutorMode` +
- * `maxAttempts`. Mutations round-trip through `apiFetch` + `router.refresh()`.
+ * settings (tutor mode + attempt cap + allocation state + window), an unassign
+ * action and a publish/draft toggle, plus an "assign" modal that picks from the
+ * teacher's own quizzes and sets `tutorMode` + `maxAttempts` + `published` +
+ * an optional scheduling window. Mutations round-trip through `apiFetch` +
+ * `router.refresh()`. Editing an existing allocation's settings (beyond the
+ * quick publish toggle) is the quiz editor's job (`AllocationsSection`) — this
+ * class-side view is for assigning and for the fast publish/unassign actions.
  */
 export function AssignedQuizzesSection({
   classId,
@@ -43,6 +54,9 @@ export function AssignedQuizzesSection({
   const [tutorMode, setTutorMode] = useState<TutorMode>("hints");
   const [unlimited, setUnlimited] = useState(false);
   const [maxAttempts, setMaxAttempts] = useState("1");
+  const [publishNow, setPublishNow] = useState(true);
+  const [availableFrom, setAvailableFrom] = useState("");
+  const [availableUntil, setAvailableUntil] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -54,6 +68,9 @@ export function AssignedQuizzesSection({
     setTutorMode("hints");
     setUnlimited(false);
     setMaxAttempts("1");
+    setPublishNow(true);
+    setAvailableFrom("");
+    setAvailableUntil("");
     setError("");
     setOpen(true);
   }
@@ -73,12 +90,25 @@ export function AssignedQuizzesSection({
       }
       attempts = n;
     }
+    const from = fromDatetimeLocalValue(availableFrom);
+    const until = fromDatetimeLocalValue(availableUntil);
+    if (from && until && from >= until) {
+      setError("תחילת הזמינות חייבת להיות לפני סיומה.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       await apiFetch(`/api/classes/${classId}/quizzes`, {
         method: "POST",
-        body: JSON.stringify({ quizId, tutorMode, maxAttempts: attempts }),
+        body: JSON.stringify({
+          quizId,
+          tutorMode,
+          maxAttempts: attempts,
+          published: publishNow,
+          availableFrom: from,
+          availableUntil: until,
+        }),
       });
       setOpen(false);
       router.refresh();
@@ -99,6 +129,24 @@ export function AssignedQuizzesSection({
       router.refresh();
     } catch (err) {
       setRowError(err instanceof ApiError ? err.message : "ביטול ההקצאה נכשל.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function togglePublished(id: string, nextPublished: boolean) {
+    setPending(id);
+    setRowError("");
+    try {
+      await apiFetch(`/api/classes/${classId}/quizzes/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ published: nextPublished }),
+      });
+      router.refresh();
+    } catch (err) {
+      setRowError(
+        err instanceof ApiError ? err.message : "עדכון סטטוס הפרסום נכשל."
+      );
     } finally {
       setPending(null);
     }
@@ -157,6 +205,7 @@ export function AssignedQuizzesSection({
         <ul className="flex flex-col gap-3">
           {assigned.map((a) => {
             const busyRow = pending === a.quiz_id;
+            const state = allocationState(a);
             return (
               <li key={a.quiz_id} className="glass p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -165,6 +214,7 @@ export function AssignedQuizzesSection({
                       {a.title ?? a.video_title ?? "חידון"}
                     </h4>
                     <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
                       <Badge variant="gray">
                         <span className="tabular-nums">{a.question_count}</span>{" "}
                         שאלות
@@ -185,16 +235,39 @@ export function AssignedQuizzesSection({
                         )}
                       </Badge>
                     </div>
+                    {(a.available_from || a.available_until) && (
+                      <p className="text-xs text-[var(--body-subtle)]">
+                        {a.available_from && `מ־${formatWindowPart(a.available_from)}`}
+                        {a.available_from && a.available_until && " · "}
+                        {a.available_until && `עד ${formatWindowPart(a.available_until)}`}
+                      </p>
+                    )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-[var(--fg-danger)]"
-                    disabled={busyRow}
-                    onClick={() => unassign(a.quiz_id)}
-                  >
-                    {busyRow ? <Spinner size={16} /> : "ביטול הקצאה"}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busyRow}
+                      onClick={() => togglePublished(a.quiz_id, !a.published)}
+                    >
+                      {busyRow ? (
+                        <Spinner size={16} />
+                      ) : a.published ? (
+                        "הסתרה מתלמידים"
+                      ) : (
+                        "הצגה לתלמידים"
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-[var(--fg-danger)]"
+                      disabled={busyRow}
+                      onClick={() => unassign(a.quiz_id)}
+                    >
+                      {busyRow ? <Spinner size={16} /> : "ביטול הקצאה"}
+                    </Button>
+                  </div>
                 </div>
               </li>
             );
@@ -266,6 +339,32 @@ export function AssignedQuizzesSection({
                   />
                   ניסיונות ללא הגבלה
                 </label>
+                <label className="flex items-center gap-2 text-sm text-[var(--body)]">
+                  <input
+                    type="checkbox"
+                    checked={publishNow}
+                    onChange={(e) => setPublishNow(e.target.checked)}
+                    className="h-4 w-4 rounded-[var(--radius-sm)] border border-[var(--glass-border)] accent-[var(--brand)]"
+                  />
+                  פרסום מיידי לתלמידים
+                </label>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Field
+                  label="זמין החל מ־ (אופציונלי)"
+                  name="availableFrom"
+                  type="datetime-local"
+                  value={availableFrom}
+                  onChange={(e) => setAvailableFrom(e.target.value)}
+                />
+                <Field
+                  label="זמין עד (אופציונלי)"
+                  name="availableUntil"
+                  type="datetime-local"
+                  value={availableUntil}
+                  onChange={(e) => setAvailableUntil(e.target.value)}
+                />
               </div>
             </>
           )}

@@ -4,6 +4,7 @@
     { "path": "/api/jobs/sweep-transcripts", "schedule": "0 3 * * *" },
     { "path": "/api/jobs/gc-videos", "schedule": "30 3 * * *" },
     { "path": "/api/jobs/reconcile-auth", "schedule": "0 4 * * *" },
-    { "path": "/api/jobs/purge-content", "schedule": "0 5 * * 0" }
+    { "path": "/api/jobs/purge-content", "schedule": "0 5 * * 0" },
+    { "path": "/api/jobs/close-attempt-windows", "schedule": "0 6 * * *" }
   ]
 }

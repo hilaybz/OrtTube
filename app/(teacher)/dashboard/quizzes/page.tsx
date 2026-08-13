@@ -2,20 +2,26 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { listMyQuizzes, type MyQuiz } from "@/lib/quiz";
 import { listSharedQuizzes, type SharedQuiz } from "@/lib/sharing";
+import { listMyQuizAllocationTags, type QuizAllocationTags } from "@/lib/allocations";
 import { Alert } from "@/components/ui/Alert";
 import { QuizLibrary } from "@/components/teacher/library/QuizLibrary";
 
 export default async function QuizzesPage() {
   let myQuizzes: MyQuiz[] = [];
   let sharedQuizzes: SharedQuiz[] = [];
+  let allocationTags: Record<string, QuizAllocationTags> = {};
   let failed = false;
 
   try {
     const client = (await createClient()) as unknown as SupabaseClient;
-    [myQuizzes, sharedQuizzes] = await Promise.all([
+    const [myQuizzesResult, sharedQuizzesResult, tags] = await Promise.all([
       listMyQuizzes(client),
       listSharedQuizzes(client),
+      listMyQuizAllocationTags(client),
     ]);
+    myQuizzes = myQuizzesResult;
+    sharedQuizzes = sharedQuizzesResult;
+    allocationTags = Object.fromEntries(tags.map((t) => [t.quiz_id, t]));
   } catch {
     failed = true;
   }
@@ -29,7 +35,11 @@ export default async function QuizzesPage() {
       {failed ? (
         <Alert variant="danger">לא ניתן לטעון את החידונים. נסו לרענן.</Alert>
       ) : (
-        <QuizLibrary myQuizzes={myQuizzes} sharedQuizzes={sharedQuizzes} />
+        <QuizLibrary
+          myQuizzes={myQuizzes}
+          sharedQuizzes={sharedQuizzes}
+          allocationTags={allocationTags}
+        />
       )}
     </div>
   );

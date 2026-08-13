@@ -36,7 +36,7 @@ const QUIZ: MyQuiz = {
 };
 
 function renderLibrary(quizzes: MyQuiz[] = [QUIZ]) {
-  render(<QuizLibrary myQuizzes={quizzes} sharedQuizzes={[]} />);
+  render(<QuizLibrary myQuizzes={quizzes} sharedQuizzes={[]} allocationTags={{}} />);
 }
 
 describe("QuizLibrary — delete", () => {
