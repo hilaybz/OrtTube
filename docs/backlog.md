@@ -287,6 +287,46 @@ assignment, or both.
 Open question — a grades/history view, or anything else. Needs scoping before it
 is a task.
 
+### 4.9 · Unlimited attempts means answers are never revealed 🐛❓
+
+A quiz assigned with unlimited attempts (`class_quizzes.max_attempts` null) never
+shows a student the correct answers or the explanations. Not on the first
+attempt, not on the tenth, not ever. The results screen only ever offers a score
+and a "try again" button.
+
+The gate is working as written —
+[`064_get_attempt_review.sql:82`](../supabase/migrations/064_get_attempt_review.sql#L82)
+says so outright: *"Unlimited (max_attempts NULL) never reveals per-question
+detail."* Reveal is conditioned on having **exhausted** your attempts, and
+unlimited attempts can never be exhausted, so the condition is unsatisfiable.
+
+**The copy promises something that cannot happen.** The screen reads *"פירוט
+התשובות והנימוקים ייחשף לאחר שלא יישארו ניסיונות נוספים"* — details will be
+revealed once no attempts remain. Under unlimited that moment never arrives. Even
+if the behaviour is kept, this sentence has to change.
+
+**Why it is a design question and not just a bug.** The gate exists so a student
+cannot read the answer key and then retake with it, which is exactly the risk
+unlimited attempts create — so "never reveal" is internally consistent. It just
+makes the most formative setting a teacher can choose the one that gives students
+the least feedback, which inverts the intent: a teacher granting unlimited
+retakes has already signalled this is practice, not assessment.
+
+Options:
+
+| | Option | Note |
+| --- | --- | --- |
+| a | **Treat unlimited as formative**: reveal after every completed attempt | No schema change. Follows the teacher's own signal — unlimited retakes means practice. A student can then retake with the answers, which under unlimited attempts is already true of anyone willing to brute-force. |
+| b | **Reveal explanations but not correctness** | Unreliable: explanations routinely give the answer away, which is why `get_quiz_for_student` withholds them entirely. Would need every explanation written to a rule nobody is enforcing. |
+| c | **A per-assignment "show answers after completion" setting**, independent of attempt count | 🗄️ The fullest answer: makes formative-vs-assessed an explicit teaching decision rather than something inferred from `max_attempts`. Belongs with the other per-allocation settings in **Epic 2A**. |
+
+Recommend (a) now, since it is small and unblocks the pilot, and (c) later as part
+of 2A — at which point (a) becomes the default value of the new setting rather
+than a hardcoded rule.
+
+Note the column default is `max_attempts int default 1`, so this only bites when
+a teacher deliberately chooses unlimited. It is not the out-of-the-box path.
+
 ---
 
 ## Epic 5 · General
