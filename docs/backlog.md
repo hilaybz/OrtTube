@@ -103,7 +103,7 @@ against.
 | # | Task | Flag |
 | --- | --- | --- |
 | 1.1 | Show the **YouTube video title** on quiz cards — in both "my quizzes" and the school catalog. | 🎨 |
-| 1.2 | **Delete a quiz** from the library. The `soft_delete_quiz` RPC already exists; this is the button and confirm dialog. | 🎨 |
+| 1.2 | ~~**Delete a quiz** from the library.~~ **Done** — `bdb0903`. | ✅ |
 | 1.3 | **Preview a catalog quiz before cloning** — open it read-only to see the questions, rather than cloning blind. Needs a new correctness-free read; see below. | 🗄️ |
 | 1.4 | **Search, filter and sort** in both the library and the catalog. Agree the axes first (video title, question count, language, date, author). | 🎨 |
 | 1.5 | **Show which classes a quiz is assigned to**, as tags on the card. | 🎨 |
@@ -173,7 +173,10 @@ does to already-graded attempts — it must not alter a student's recorded score
 Moved into **Epic 2A** — scheduling is one property of an allocation, not a
 standalone feature.
 
-### 2.10 · Ask-AI abuse limits — global, not per teacher
+### 2.10 · Ask-AI abuse limits — global, not per teacher ✅
+
+**Closed** — issue #26. Built in July, before the planning pass that filed it:
+the 1000-char cap in `f9827b9` and the 10/60s rate limit in `bcbcf7e`.
 
 A cap on how many questions a student may ask, and how long a question may be.
 These are **platform-level guardrails against abuse and cost, not a teaching
@@ -334,7 +337,7 @@ what is already there is the teacher's decision, made explicitly.
 | --- | --- | --- |
 | 4.1 | UI pass, with a **clear visual distinction between single-answer and multi-answer questions** so students know whether to pick one or several. | 🎨 |
 | 4.2 | Search, filter and sort quizzes. | 🎨 |
-| 4.3 | **The timeline and its checkpoint markers stay fully visible** — a student sees where the questions are. What must be disabled is *navigation*: clicking a question marker must not seek the video to that point. | 🎨 |
+| 4.3 | ~~**Checkpoint markers stay visible; only navigation is disabled.**~~ **Done** — `c906c7c`, pinned by `test/ui/QuizPlayerCheckpoints.test.tsx`. | ✅ |
 
 ### 4.4 · No seeking forward past unwatched content ❓
 
@@ -356,24 +359,131 @@ menu, suppress the title overlay, and remove any plain-text video ID from the
 page. A determined student still gets there. Recommend framing this as
 "don't make it one click" and putting the real weight on assessment design.
 
-### 4.6 · Ask-AI answers in English 🐛
+### 4.6 · Ask-AI answers in English ✅
+
+**Done** — `da19c4f` restates the response language at the end of the tutor user turn.
 
 Should answer in the quiz's language or the student's. The language-resolution
 chain already exists (`profiles.preferred_language → classes.language →
 quizzes.base_language`), so this is most likely the tutor prompt not being told
 which language to use — a bug, not missing infrastructure.
 
-### 4.7 · Ask-AI conversation limits 🗄️
+### 4.7 · Ask-AI conversation limits ✅
 
-Verify context is preserved across a multi-turn conversation, then bound it:
-a cap on questions per attempt, and a character limit per question. Relates to
-2.10 (the per-assignment cap) — decide whether limits are global defaults, per
-assignment, or both.
+**Closed** — issue #43. Bounds are all in place; the per-quiz budget was the
+missing piece.
+
+Most of this is already built — see 2.10. What is in place today, all in
+`app/api/ask/route.ts` unless noted:
+
+| Cap | Value |
+| --- | --- |
+| Question length | 1000 chars, on the prompt and on each history turn |
+| Rate | 10 requests / 60s per user (in-memory, per serverless instance) |
+| History depth | last 6 turns, forced to alternate |
+| Response length | 400 tokens (`TUTOR_MAX_TOKENS`) |
+| Transcript context | ~2000 tokens before the playhead (`TRANSCRIPT_TOKEN_CAP`) |
+
+Context **is** preserved across turns, but it lives in the browser: `AskAI` holds
+the messages in React state and posts them back as `history`. Nothing server-side
+feeds context, so a refresh or a second device starts over, and only the last six
+turns survive.
+
+#### 4.7a · Total questions per quiz ✅
+
+**Built** — `MAX_QUESTIONS_PER_QUIZ` in `app/api/ask/route.ts`. At the cap the
+tutor stops answering: 403 `question_limit_reached`, no Claude call, nothing
+logged. Teacher visibility and reset were not built — it stays invisible platform
+machinery, like the rate limit.
+
+**Decided.** A per-*attempt* cap is worthless here: `max_attempts` may be null,
+and a student who exhausts a per-attempt budget simply starts another attempt. The
+cap has to sit above the attempt.
+
+- **Unit:** one budget per student per quiz, spanning **all attempts**. Scope the
+  count to `(student_id, class_id, quiz_id)` — `tutor_questions` carries all
+  three, and a quiz can be assigned to more than one class, so keying on the
+  assignment keeps two classes from sharing one budget.
+- **Lifetime, not per day.** A student who spends it has spent it.
+- **Keep the 10/60s rate limit.** Different jobs: the rate limit stops a script,
+  this stops sustained grinding.
+- **Suggested value: 200.** Deliberately generous — abuse is not judged likely;
+  this is a backstop, not a barrier.
+
+Cheap to build: `tutor_questions` already records every question, so this is a
+`count(*)` in the tutor route. No migration. One caveat — `student_id` is nullable
+and set null on anonymisation, so anonymised rows stop counting toward it, which
+is fine for a guardrail.
+
+**Two things still undefined:**
+
+1. **What the student sees at the cap.** The tutor going quiet mid-quiz is the
+   same dead end as 4.9 — it needs honest copy, not a bare 429. And decide whether
+   a teacher can see the count or reset it, or whether it stays invisible platform
+   machinery like the rate limit.
+2. **It bounds behaviour, not spend.** The ceiling is
+   `students × quizzes × 200`; 30 students across 10 quizzes is 60,000 questions,
+   each costing roughly 4,000 input tokens plus up to 400 output. If the goal is
+   protecting the bill rather than fairness between students, only an aggregate
+   (school- or day-level) cap does that.
+
+#### 4.7b · Conversation history is client-supplied and unverifiable
+
+**Not required — moved to issue #64 as a suggestion.** `sanitizeHistory` checks
+the shape of the history a client posts but cannot establish that the model said
+any of it, so a forged assistant turn is possible.
+
+Impact is narrower than it first appears: the answer key is never in the tutor's
+context and the transcript is playhead-bounded, so nothing can be extracted that
+was never sent. What it buys is bypassing `tutor_mode` and misusing the endpoint.
+
+Worth doing mainly for the side effect — reading history from `tutor_questions`
+would also stop a refresh wiping the conversation.
 
 ### 4.8 · Additional student tabs? ❓
 
 Open question — a grades/history view, or anything else. Needs scoping before it
 is a task.
+
+### 4.9 · Unlimited attempts means answers are never revealed 🐛❓
+
+A quiz assigned with unlimited attempts (`class_quizzes.max_attempts` null) never
+shows a student the correct answers or the explanations. Not on the first
+attempt, not on the tenth, not ever. The results screen only ever offers a score
+and a "try again" button.
+
+The gate is working as written —
+[`064_get_attempt_review.sql:82`](../supabase/migrations/064_get_attempt_review.sql#L82)
+says so outright: *"Unlimited (max_attempts NULL) never reveals per-question
+detail."* Reveal is conditioned on having **exhausted** your attempts, and
+unlimited attempts can never be exhausted, so the condition is unsatisfiable.
+
+**The copy promises something that cannot happen.** The screen reads *"פירוט
+התשובות והנימוקים ייחשף לאחר שלא יישארו ניסיונות נוספים"* — details will be
+revealed once no attempts remain. Under unlimited that moment never arrives. Even
+if the behaviour is kept, this sentence has to change.
+
+**Why it is a design question and not just a bug.** The gate exists so a student
+cannot read the answer key and then retake with it, which is exactly the risk
+unlimited attempts create — so "never reveal" is internally consistent. It just
+makes the most formative setting a teacher can choose the one that gives students
+the least feedback, which inverts the intent: a teacher granting unlimited
+retakes has already signalled this is practice, not assessment.
+
+Options:
+
+| | Option | Note |
+| --- | --- | --- |
+| a | **Treat unlimited as formative**: reveal after every completed attempt | No schema change. Follows the teacher's own signal — unlimited retakes means practice. A student can then retake with the answers, which under unlimited attempts is already true of anyone willing to brute-force. |
+| b | **Reveal explanations but not correctness** | Unreliable: explanations routinely give the answer away, which is why `get_quiz_for_student` withholds them entirely. Would need every explanation written to a rule nobody is enforcing. |
+| c | **A per-assignment "show answers after completion" setting**, independent of attempt count | 🗄️ The fullest answer: makes formative-vs-assessed an explicit teaching decision rather than something inferred from `max_attempts`. Belongs with the other per-allocation settings in **Epic 2A**. |
+
+Recommend (a) now, since it is small and unblocks the pilot, and (c) later as part
+of 2A — at which point (a) becomes the default value of the new setting rather
+than a hardcoded rule.
+
+Note the column default is `max_attempts int default 1`, so this only bites when
+a teacher deliberately chooses unlimited. It is not the out-of-the-box path.
 
 ---
 
@@ -457,19 +567,27 @@ passes, responsive, and an a11y audit. Its plan file was never written. The UI
 tasks scattered through Epics 1–4 cover part of this; worth deciding whether P5
 survives as its own phase or is absorbed.
 
-### 7.6 · Extract generation enums to an SDK-free leaf module
+### 7.6 · Extract generation enums to an SDK-free leaf module ✅
+
+**Done** — `5d501ae`, now `lib/ai/generationOptions.ts`.
 
 Low-severity review finding. The generation option enums (`difficulty`,
 `optionsPerQuestion`, `questionType`) live alongside SDK-importing code, which
 forced test mocks to pull in more than they need.
 
-### 7.7 · Pin clone independence with a test
+### 7.7 · Pin clone independence with a test ✅
+
+**Done** — `089d5d2`, both directions.
 
 Twelve integration tests cover cloning, but **none assert that editing a clone
 leaves the source unchanged** — the property teachers actually rely on. Add it
 in both directions. See [`open-questions.md` §2](open-questions.md).
 
-### 7.9 · `videos.title` / `duration_seconds` can stay null forever 🐛🗄️
+### 7.9 · `videos.title` / `duration_seconds` can stay null forever ✅
+
+**Done** — `1e5b0f8` + migration 125, applied to the linked project. Note it repairs a
+gap on a LATER quiz for the same video; it does not make the first fetch succeed,
+so `duration_seconds` still arrives null while Epic 0 is unresolved.
 
 `create_quiz_for_video` upserts the video row with
 `on conflict (youtube_video_id) do nothing`
@@ -501,7 +619,7 @@ Small, unblocked, none of it urgent.
 | # | Task |
 | --- | --- |
 | 8.1 | Delete the `yt-probe` Supabase Edge Function — a throwaway spike, still deployed: `npx supabase functions delete yt-probe` |
-| 8.2 | Delete four merged remote branches: `chore/vercel-deploy`, `feat/hebrew-ui-polish`, `fix/transcript-fetch`, `frontend-redesign` |
+| 8.2 | ~~Delete four merged remote branches.~~ **Done** — all four gone. Two new ones to retire: `fix/transcript-diagnostics` (superseded — ido merged it into `fix/transcript-fetch-diagnostics`) and any branch left behind by PR #63. |
 | 8.3 | Check `feat/generate-question-type` before deleting — git reports it **not merged** even though its work landed in `ecc80fe`, because the branch was rebased. Confirm nothing unique is on it. |
 | 8.4 | Verify Vercel → Settings → Cron Jobs lists all four jobs |
 | 8.5 | Rotate `ADMIN_SECRET` / `CRON_SECRET`. *Deferred by decision — recorded for completeness.* |
