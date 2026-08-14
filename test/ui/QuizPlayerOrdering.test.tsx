@@ -22,7 +22,7 @@ vi.mock("next/navigation", () => ({
 // Stands in for the YouTube embed: renders the overlay and lets a test move the
 // playhead. React passes `ref` to a function component as a plain prop, so the
 // imperative handle is published the way the real stage publishes it.
-vi.mock("@/components/student/VideoStage", () => ({
+vi.mock("@/components/video/VideoStage", () => ({
   VideoStage: ({
     overlay,
     onProgress,

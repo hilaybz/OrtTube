@@ -65,6 +65,7 @@ export async function createQuizForVideo(
       p_duration_seconds: meta.durationSeconds,
       p_base_language: params.baseLanguage,
       p_quiz_title: params.title ?? null,
+      p_channel_name: meta.channelName,
     })
   );
   return data as unknown as CreatedQuiz;
@@ -157,6 +158,9 @@ export interface MyQuiz {
   video_id: string;
   youtube_video_id: string;
   video_title: string | null;
+  /** The uploading channel's display name, or `null` if never fetched (a
+   * video added before this field existed) or the oEmbed fetch failed. */
+  channel_name: string | null;
   transcript_status: "pending" | "ready" | "unavailable";
   question_count: number;
   created_at: string;

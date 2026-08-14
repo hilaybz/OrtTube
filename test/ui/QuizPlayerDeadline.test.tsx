@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
 
 const stage = { seekTo: vi.fn(), play: vi.fn(), pause: vi.fn() };
 
-vi.mock("@/components/student/VideoStage", () => ({
+vi.mock("@/components/video/VideoStage", () => ({
   VideoStage: ({ overlay, ref }: { overlay?: React.ReactNode; ref?: { current: unknown } }) => {
     if (ref) ref.current = stage;
     return <div>{overlay}</div>;

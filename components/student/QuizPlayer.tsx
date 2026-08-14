@@ -9,9 +9,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { Alert } from "@/components/ui/Alert";
 import { apiFetch, ApiError } from "@/lib/http";
-import { gateDecision } from "./gate";
+import { gateDecision } from "@/components/video/gate";
 import { AskAI } from "./AskAI";
-import { VideoStage, type VideoStageHandle } from "./VideoStage";
+import { VideoStage, type VideoStageHandle } from "@/components/video/VideoStage";
 import type {
   StudentAttemptState,
   StudentQuiz,

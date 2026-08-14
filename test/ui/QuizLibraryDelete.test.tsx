@@ -30,6 +30,7 @@ const QUIZ: MyQuiz = {
   video_id: "video-1",
   youtube_video_id: "aircAruvnKk",
   video_title: "But what is a neural network?",
+  channel_name: "3Blue1Brown",
   transcript_status: "ready",
   question_count: 4,
   created_at: new Date().toISOString(),

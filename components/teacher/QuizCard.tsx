@@ -46,6 +46,22 @@ export function VideoLine({
   );
 }
 
+/**
+ * The video's uploading channel, shown under the heading/video-title lines —
+ * independent of `VideoLine`'s title-repeat guard, since this is new
+ * information regardless of whether the card's heading already shows the
+ * video's own title. Absent for videos added before this field existed, or
+ * when the oEmbed fetch that supplies it failed.
+ */
+function ChannelLine({ channelName }: { channelName: string | null }) {
+  if (!channelName) return null;
+  return (
+    <p className="truncate text-xs text-[var(--body-subtle)]" title={channelName}>
+      {channelName}
+    </p>
+  );
+}
+
 export function QuizMeta({
   baseLanguage,
   questionCount,
@@ -141,13 +157,24 @@ export function QuizCard({
         aria-label={`עריכת ${cardHeading(quiz)}`}
         className="absolute inset-0 z-10 rounded-[inherit]"
       />
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="font-semibold text-[var(--heading)]">{cardHeading(quiz)}</h3>
-        <Badge variant={quiz.visibility === "shared" ? "brand" : "gray"}>
-          {quiz.visibility === "shared" ? "משותף" : "פרטי"}
-        </Badge>
+      <div className="flex items-start gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={`https://i.ytimg.com/vi/${quiz.youtube_video_id}/mqdefault.jpg`}
+          alt=""
+          className="h-10 w-16 flex-none rounded-[var(--radius-sm)] object-cover"
+        />
+        <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
+          <h3 className="min-w-0 truncate font-semibold text-[var(--heading)]">
+            {cardHeading(quiz)}
+          </h3>
+          <Badge variant={quiz.visibility === "shared" ? "brand" : "gray"}>
+            {quiz.visibility === "shared" ? "משותף" : "פרטי"}
+          </Badge>
+        </div>
       </div>
       <VideoLine quiz={quiz} />
+      <ChannelLine channelName={quiz.channel_name} />
       <QuizMeta baseLanguage={quiz.base_language} questionCount={quiz.question_count} />
       {tags !== undefined && <AllocationTagsRow tags={tags} />}
       {/* This row must sit ABOVE the stretched link, or the link swallows the

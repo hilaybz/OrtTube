@@ -19,7 +19,7 @@ vi.mock("next/navigation", () => ({
 
 // The real stage embeds the YouTube iframe player. Replace it with a stub that
 // renders the overlay and lets a test move the playhead onto the checkpoint.
-vi.mock("@/components/student/VideoStage", () => ({
+vi.mock("@/components/video/VideoStage", () => ({
   VideoStage: ({
     overlay,
     onProgress,

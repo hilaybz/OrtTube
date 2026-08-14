@@ -22,7 +22,7 @@ vi.mock("next/navigation", () => ({
 // lets a test move the playhead onto a checkpoint, and — since React passes `ref`
 // to a function component as a plain prop — publishes the same imperative handle
 // the real stage does, so seeks can be observed.
-vi.mock("@/components/student/VideoStage", () => ({
+vi.mock("@/components/video/VideoStage", () => ({
   VideoStage: ({
     overlay,
     onProgress,

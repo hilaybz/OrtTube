@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { gateDecision } from "@/components/student/gate";
+import { gateDecision } from "@/components/video/gate";
 
 describe("gateDecision (Edpuzzle-style block-skip gate)", () => {
   it("no active checkpoint → never at gate, never clamps", () => {
