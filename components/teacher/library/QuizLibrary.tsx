@@ -12,7 +12,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
-import { Pill } from "@/components/ui/Pill";
+import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { MyQuiz } from "@/lib/quiz";
 import type { SharedQuiz } from "@/lib/sharing";
@@ -86,33 +86,24 @@ export function QuizLibrary({
 
 // ── Shared filter-bar pieces (both tabs) ────────────────────────────────────
 
-function toggleInSet<T>(set: Set<T>, value: T): Set<T> {
-  const next = new Set(set);
-  if (next.has(value)) next.delete(value);
-  else next.add(value);
-  return next;
-}
-
-const ALL_LANGUAGES: Language[] = ["he", "ar", "en"];
+const LANGUAGE_OPTIONS = (["he", "ar", "en"] as const satisfies readonly Language[]).map(
+  (l) => ({ value: l, label: LANG_LABEL[l] })
+);
 
 function LanguageFilter({
   selected,
-  onToggle,
+  onChange,
 }: {
   selected: Set<Language>;
-  onToggle: (l: Language) => void;
+  onChange: (next: Set<Language>) => void;
 }) {
   return (
-    <div className="flex flex-col gap-2">
-      <span className="text-sm font-medium text-[var(--heading)]">שפה</span>
-      <div role="group" aria-label="סינון לפי שפה" className="flex flex-wrap gap-2">
-        {ALL_LANGUAGES.map((l) => (
-          <Pill key={l} active={selected.has(l)} onClick={() => onToggle(l)}>
-            {LANG_LABEL[l]}
-          </Pill>
-        ))}
-      </div>
-    </div>
+    <MultiSelectDropdown
+      label="שפה"
+      options={LANGUAGE_OPTIONS}
+      selected={selected}
+      onChange={onChange}
+    />
   );
 }
 
@@ -237,39 +228,17 @@ function MineTab({
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <LanguageFilter
-              selected={languages}
-              onToggle={(l) => setLanguages((prev) => toggleInSet(prev, l))}
-            />
+            <LanguageFilter selected={languages} onChange={setLanguages} />
             {classes.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <span className="text-sm font-medium text-[var(--heading)]">
-                  כיתה משויכת
-                </span>
-                <div
-                  role="group"
-                  aria-label="סינון לפי כיתה"
-                  className="flex flex-wrap gap-2"
-                >
-                  {classes.map((c) => (
-                    <Pill
-                      key={c.id}
-                      active={classFilter.has(c.id)}
-                      onClick={() => setClassFilter((prev) => toggleInSet(prev, c.id))}
-                    >
-                      {c.name}
-                    </Pill>
-                  ))}
-                  <Pill
-                    active={classFilter.has(UNASSIGNED_CLASS)}
-                    onClick={() =>
-                      setClassFilter((prev) => toggleInSet(prev, UNASSIGNED_CLASS))
-                    }
-                  >
-                    לא משויך
-                  </Pill>
-                </div>
-              </div>
+              <MultiSelectDropdown
+                label="כיתה משויכת"
+                options={[
+                  ...classes.map((c) => ({ value: c.id, label: c.name })),
+                  { value: UNASSIGNED_CLASS, label: "לא משויך" },
+                ]}
+                selected={classFilter}
+                onChange={setClassFilter}
+              />
             )}
             <SortSelect value={sort} onChange={setSort} name="mine-sort" />
           </GlassCard>
@@ -383,10 +352,7 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <LanguageFilter
-          selected={languages}
-          onToggle={(l) => setLanguages((prev) => toggleInSet(prev, l))}
-        />
+        <LanguageFilter selected={languages} onChange={setLanguages} />
         <SortSelect value={sort} onChange={setSort} name="school-sort" />
       </GlassCard>
       {visibleQuizzes.length === 0 ? (

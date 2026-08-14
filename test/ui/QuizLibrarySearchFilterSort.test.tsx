@@ -134,6 +134,11 @@ function headings(): string[] {
   return screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent ?? "");
 }
 
+/** Open a `MultiSelectDropdown` by its label (the trigger button's accessible name). */
+async function openFilter(label: string) {
+  await userEvent.click(screen.getByRole("button", { name: label }));
+}
+
 describe("QuizLibrary — My quizzes search/filter/sort", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
@@ -159,32 +164,37 @@ describe("QuizLibrary — My quizzes search/filter/sort", () => {
 
   it("filters by a single assigned class", async () => {
     renderLibrary();
-    await userEvent.click(screen.getByRole("button", { name: "כיתה א" }));
+    await openFilter("כיתה משויכת");
+    await userEvent.click(screen.getByRole("checkbox", { name: "כיתה א" }));
     expect(headings()).toEqual(["חידון אלגברה"]);
   });
 
   it("OR-matches across several selected classes", async () => {
     renderLibrary();
-    await userEvent.click(screen.getByRole("button", { name: "כיתה א" }));
-    await userEvent.click(screen.getByRole("button", { name: "כיתה ב" }));
+    await openFilter("כיתה משויכת");
+    await userEvent.click(screen.getByRole("checkbox", { name: "כיתה א" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "כיתה ב" }));
     expect(headings().sort()).toEqual(["היסטוריה של רומא", "חידון אלגברה"].sort());
   });
 
   it("'לא משויך' shows only quizzes with no allocation at all", async () => {
     renderLibrary();
-    await userEvent.click(screen.getByRole("button", { name: "לא משויך" }));
+    await openFilter("כיתה משויכת");
+    await userEvent.click(screen.getByRole("checkbox", { name: "לא משויך" }));
     expect(headings()).toEqual(["חידון גיאומטריה"]);
   });
 
   it("filters by language", async () => {
     renderLibrary();
-    await userEvent.click(screen.getByRole("button", { name: "אנגלית" }));
+    await openFilter("שפה");
+    await userEvent.click(screen.getByRole("checkbox", { name: "אנגלית" }));
     expect(headings()).toEqual(["היסטוריה של רומא"]);
   });
 
   it("combines a class filter and search (AND across axes)", async () => {
     renderLibrary();
-    await userEvent.click(screen.getByRole("button", { name: "כיתה א" }));
+    await openFilter("כיתה משויכת");
+    await userEvent.click(screen.getByRole("checkbox", { name: "כיתה א" }));
     await userEvent.type(screen.getByLabelText("חיפוש"), "רומא");
     expect(
       screen.getByText("אין חידונים התואמים את החיפוש.")
@@ -193,7 +203,8 @@ describe("QuizLibrary — My quizzes search/filter/sort", () => {
 
   it("clears all filters and restores the full list", async () => {
     renderLibrary();
-    await userEvent.click(screen.getByRole("button", { name: "כיתה א" }));
+    await openFilter("כיתה משויכת");
+    await userEvent.click(screen.getByRole("checkbox", { name: "כיתה א" }));
     await userEvent.type(screen.getByLabelText("חיפוש"), "רומא");
     await userEvent.click(screen.getByRole("button", { name: "נקה מסננים" }));
     expect(headings().sort()).toEqual(
@@ -256,7 +267,8 @@ describe("QuizLibrary — School catalog search/filter/sort", () => {
   it("filters by language", async () => {
     renderLibrary();
     await openSchoolTab();
-    await userEvent.click(screen.getByRole("button", { name: "אנגלית" }));
+    await openFilter("שפה");
+    await userEvent.click(screen.getByRole("checkbox", { name: "אנגלית" }));
     expect(headings()).toEqual(["מבוא לכימיה"]);
   });
 
