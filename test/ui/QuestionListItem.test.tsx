@@ -19,6 +19,7 @@ const QUESTION: AuthorQuestion = {
   order_index: 0,
   prompt: "מה נכון?",
   explanation: "כי ככה זה עובד.",
+  source: "authored",
   options: [
     { id: "o1", is_correct: true, order_index: 0, text: "אלף" },
     { id: "o2", is_correct: false, order_index: 1, text: "בית" },

@@ -117,9 +117,17 @@ describe("matchesClassFilter", () => {
     expect(matchesClassFilter(new Set(["c2", "c1"]), tagsWithLive)).toBe(true);
   });
 
-  it("UNASSIGNED_CLASS matches only a quiz with no allocation tags at all", () => {
+  it("UNASSIGNED_CLASS matches a quiz with no allocation tags at all", () => {
     expect(matchesClassFilter(new Set([UNASSIGNED_CLASS]), undefined)).toBe(true);
     expect(matchesClassFilter(new Set([UNASSIGNED_CLASS]), tagsWithLive)).toBe(false);
+  });
+
+  it("UNASSIGNED_CLASS also matches a quiz whose only allocations are draft/closed (tags present, both buckets empty)", () => {
+    // list_my_quiz_allocation_tags still returns a row for these — a
+    // draft/closed-only quiz must not be unreachable under every filter.
+    const draftOrClosedOnly = { quiz_id: "q3", live: [], scheduled: [] };
+    expect(matchesClassFilter(new Set([UNASSIGNED_CLASS]), draftOrClosedOnly)).toBe(true);
+    expect(matchesClassFilter(new Set(["c1"]), draftOrClosedOnly)).toBe(false);
   });
 
   it("combining UNASSIGNED_CLASS with a real class OR-matches both", () => {

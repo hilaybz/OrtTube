@@ -69,10 +69,16 @@ export function matchesText(
 export const UNASSIGNED_CLASS = "__unassigned__";
 
 /**
- * `tags` is `undefined` exactly when the quiz has no allocation at all
- * (`list_my_quiz_allocation_tags` omits quizzes with zero allocations rather
- * than returning empty buckets for them) — that's the signal `UNASSIGNED_CLASS`
- * matches on. Otherwise a quiz matches if ANY selected class id appears in
+ * A quiz counts as "not assigned to any class" (matches `UNASSIGNED_CLASS`)
+ * whenever it has no LIVE or SCHEDULED class — which covers both `tags`
+ * being `undefined` (no allocation at all — `list_my_quiz_allocation_tags`
+ * omits those quizzes entirely) AND `tags` being present with both buckets
+ * empty (a quiz whose only allocations are drafts or closed windows; the
+ * RPC deliberately still returns a row for those, per its own doc comment —
+ * see `QuizCard.tsx`'s `AllocationTagsRow`, which renders "לא פעיל" for the
+ * exact same case). Treating only `undefined` as unassigned left a
+ * draft/closed-only quiz unreachable under EVERY filter selection, "לא משויך"
+ * included. Otherwise a quiz matches if ANY selected class id appears in
  * either its `live` or `scheduled` bucket (OR within the axis).
  */
 export function matchesClassFilter(
@@ -80,10 +86,12 @@ export function matchesClassFilter(
   tags: QuizAllocationTags | undefined
 ): boolean {
   if (selected.size === 0) return true;
-  if (tags === undefined) return selected.has(UNASSIGNED_CLASS);
-  const assignedIds = new Set([...tags.live, ...tags.scheduled].map((c) => c.class_id));
+  const assignedIds = new Set(
+    [...(tags?.live ?? []), ...(tags?.scheduled ?? [])].map((c) => c.class_id)
+  );
+  const unassigned = assignedIds.size === 0;
   for (const s of selected) {
-    if (s !== UNASSIGNED_CLASS && assignedIds.has(s)) return true;
+    if (s === UNASSIGNED_CLASS ? unassigned : assignedIds.has(s)) return true;
   }
   return false;
 }

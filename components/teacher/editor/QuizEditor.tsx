@@ -414,6 +414,12 @@ export function QuizEditor({
    * succeeded; callers use that to decide whether the timeline's optimistic
    * drag position should stay pinned (until `refresh()`'s new data confirms
    * it) or snap back immediately.
+   *
+   * Passes the question's own `source` through so a drag can't silently flip
+   * an AI-generated question to `authored` — the upsert endpoint has no
+   * "leave unchanged" option, it defaults to `authored` when the field is
+   * omitted, which is exactly what repositioning a `generated` question used
+   * to do by accident.
    */
   async function saveQuestionPosition(
     q: AuthorQuestion,
@@ -432,6 +438,7 @@ export function QuizEditor({
           orderIndex: q.order_index,
           basePrompt: q.prompt,
           baseExplanation: q.explanation,
+          source: q.source === "generated" ? "generated" : "authored",
           options: q.options.map((o) => ({
             option_id: o.id,
             is_correct: o.is_correct,

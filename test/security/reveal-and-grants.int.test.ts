@@ -244,6 +244,17 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     for (const [rpcName, args] of securityDefinerRpcs) {
       const { error } = await anon.rpc(rpcName, args);
       expect(error, `anon should not execute ${rpcName}`).not.toBeNull();
+      // `42501` (insufficient_privilege) is Postgres's OWN code for a denied
+      // EXECUTE grant — distinct from this codebase's app-raised business
+      // codes (`P0001`/`P0002`, matched via `error.message` elsewhere, e.g.
+      // `not_authorized`). Asserting just "any error" can't tell a genuinely
+      // revoked grant apart from a grant that's present but whose function
+      // body happened to reject the call for its own reason — which would
+      // silently mask a `grant execute ... to anon` typo landing in a future
+      // migration. This asserts the rejection is specifically the grant.
+      expect(error?.code, `anon's ${rpcName} rejection should be a grant denial`).toBe(
+        "42501"
+      );
     }
   });
 });

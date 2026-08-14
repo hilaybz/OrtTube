@@ -131,7 +131,7 @@ begin
             and o.deleted_at is null
         )
       )
-      order by q.order_index, q.position_seconds, q.id
+      order by q.position_seconds, q.order_index, q.id
     ),
     '[]'::jsonb
   )

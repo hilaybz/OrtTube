@@ -89,6 +89,38 @@ describe.skipIf(!online)("get_quiz_for_preview", () => {
     });
   }
 
+  it("returns questions in VIDEO-TIME order, not authoring order", async () => {
+    // Authored in the "wrong" order on purpose (order_index 0 → 1:30,
+    // order_index 1 → 0:30) — matching get_quiz_for_author's own ordering
+    // (position_seconds, order_index, id) is the point of this test.
+    const quiz = await teacher.authorQuiz({
+      baseLanguage: "he",
+      title: "Order Test",
+      questions: [
+        singleChoice({
+          prompt: "Authored first, appears later",
+          at: 90,
+          order: 0,
+          correct: "yes",
+          distractors: ["no"],
+        }),
+        singleChoice({
+          prompt: "Authored second, appears earlier",
+          at: 30,
+          order: 1,
+          correct: "yes",
+          distractors: ["no"],
+        }),
+      ],
+    });
+
+    const preview = await previewAs(teacher, quiz.id);
+    expect(preview.questions.map((q) => q.prompt)).toEqual([
+      "Authored second, appears earlier",
+      "Authored first, appears later",
+    ]);
+  });
+
   it("the owner can preview their own quiz (private or shared), full content included", async () => {
     const quiz = await authorQuizWithQuestion(teacher); // stays private
     const preview = await previewAs(teacher, quiz.id);
