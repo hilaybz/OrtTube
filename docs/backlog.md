@@ -142,6 +142,7 @@ against.
 | 1.5 | ~~**Show which classes a quiz is assigned to**, as tags on the card.~~ **Done** — `components/teacher/QuizCard.tsx` (`list_my_quiz_allocation_tags`), shared by the library and the new dashboard landing section (see 6.1). | ✅ |
 | 1.6 | General UI pass on the library. | 🎨 |
 | 1.8 | ~~**Small video thumbnail** on a "my quizzes" card.~~ **Done** — `components/teacher/QuizCard.tsx`, derived client-side from `youtube_video_id` (already returned by `list_my_quizzes`), no migration. Not extended to the school catalog tab (`SchoolTab` in `QuizLibrary.tsx` has its own separate card markup) — a natural follow-up alongside 1.1. | ✅ |
+| 1.9 | ~~**Show the video's creator/channel name** under the title on a "my quizzes" card.~~ **Done** — migration `132_video_channel_name.sql` adds `videos.channel_name`, fetched via the same oEmbed call `title` already uses (no extra request, and unaffected by Epic 0's blocked egress), following 125's "never downgrade, backfill on conflict" pattern. `components/teacher/QuizCard.tsx`. Existing videos backfill only the next time a quiz is created on them. | 🗄️✅ |
 
 ### 1.3 · Why previewing a shared quiz is not UI-only
 

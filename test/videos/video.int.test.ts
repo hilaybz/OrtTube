@@ -43,23 +43,28 @@ describe.skipIf(!online)("ensureVideo", () => {
   });
 
   it("creates the canonical row with fetched metadata", async () => {
-    mockMeta.mockResolvedValue({ title: "Intro to Algebra", durationSeconds: 615 });
+    mockMeta.mockResolvedValue({
+      title: "Intro to Algebra",
+      durationSeconds: 615,
+      channelName: "Khan Academy",
+    });
 
     const row = await ensureVideo(getServiceClient(), "vid00000001");
 
     expect(row.youtube_video_id).toBe("vid00000001");
     expect(row.title).toBe("Intro to Algebra");
     expect(row.duration_seconds).toBe(615);
+    expect(row.channel_name).toBe("Khan Academy");
     expect(row.transcript_status).toBe("pending");
     expect(await countRows("vid00000001")).toBe(1);
   });
 
   it("is idempotent: a second call returns the same row without duplicating", async () => {
-    mockMeta.mockResolvedValue({ title: "First", durationSeconds: 100 });
+    mockMeta.mockResolvedValue({ title: "First", durationSeconds: 100, channelName: "Ch A" });
     const first = await ensureVideo(getServiceClient(), "dedup0000001");
 
     // A concurrent/later caller may see different (or missing) metadata.
-    mockMeta.mockResolvedValue({ title: "Second", durationSeconds: 999 });
+    mockMeta.mockResolvedValue({ title: "Second", durationSeconds: 999, channelName: "Ch B" });
     const second = await ensureVideo(getServiceClient(), "dedup0000001");
 
     expect(second.id).toBe(first.id);
@@ -67,6 +72,7 @@ describe.skipIf(!online)("ensureVideo", () => {
     // Never downgrade/overwrite the existing shared row.
     expect(second.title).toBe("First");
     expect(second.duration_seconds).toBe(100);
+    expect(second.channel_name).toBe("Ch A");
   });
 
   it("never downgrades an already-ready video's status", async () => {
@@ -75,7 +81,7 @@ describe.skipIf(!online)("ensureVideo", () => {
        VALUES ($1, $2, 'ready', now())`,
       ["ready0000001", "Existing"]
     );
-    mockMeta.mockResolvedValue({ title: "Different", durationSeconds: 42 });
+    mockMeta.mockResolvedValue({ title: "Different", durationSeconds: 42, channelName: "Ch" });
 
     const row = await ensureVideo(getServiceClient(), "ready0000001");
 
@@ -85,12 +91,13 @@ describe.skipIf(!online)("ensureVideo", () => {
   });
 
   it("tolerates null metadata (row still created)", async () => {
-    mockMeta.mockResolvedValue({ title: null, durationSeconds: null });
+    mockMeta.mockResolvedValue({ title: null, durationSeconds: null, channelName: null });
 
     const row = await ensureVideo(getServiceClient(), "nullmeta0001");
 
     expect(row.title).toBeNull();
     expect(row.duration_seconds).toBeNull();
+    expect(row.channel_name).toBeNull();
     expect(row.transcript_status).toBe("pending");
   });
 });

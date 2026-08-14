@@ -18,23 +18,35 @@ export function extractVideoId(url: string): string | null {
 /** Alias matching the backend-plan naming; extractVideoId is the original name. */
 export const parseYouTubeId = extractVideoId;
 
-export async function fetchYouTubeTitle(videoId: string): Promise<string | null> {
+export interface OEmbedInfo {
+  title: string | null;
+  /** The uploading channel's display name (oEmbed's `author_name`) — shown
+   * as the video's creator on quiz cards. */
+  channelName: string | null;
+}
+
+/** Fetches title + channel name in one oEmbed call. */
+export async function fetchYouTubeOEmbed(videoId: string): Promise<OEmbedInfo> {
   try {
     const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&format=json`;
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0" },
     });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { title?: string };
-    return data.title?.trim() || null;
+    if (!res.ok) return { title: null, channelName: null };
+    const data = (await res.json()) as { title?: string; author_name?: string };
+    return {
+      title: data.title?.trim() || null,
+      channelName: data.author_name?.trim() || null,
+    };
   } catch {
-    return null;
+    return { title: null, channelName: null };
   }
 }
 
 export interface VideoMetadata {
   title: string | null;
   durationSeconds: number | null;
+  channelName: string | null;
 }
 
 /**
@@ -66,15 +78,16 @@ async function fetchDurationSeconds(videoId: string): Promise<number | null> {
 }
 
 /**
- * Fetches real metadata for a YouTube video: `title` via oEmbed and
- * `durationSeconds` via a watch-page scrape. Node/server only. Either field may
- * be null if YouTube is unreachable or changes its page shape — callers must
- * tolerate nulls (the row is still created; metadata can be backfilled later).
+ * Fetches real metadata for a YouTube video: `title` + `channelName` via
+ * oEmbed (one call) and `durationSeconds` via a watch-page scrape. Node/server
+ * only. Any field may be null if YouTube is unreachable or changes its page
+ * shape — callers must tolerate nulls (the row is still created; metadata can
+ * be backfilled later).
  */
 export async function fetchVideoMetadata(videoId: string): Promise<VideoMetadata> {
-  const [title, durationSeconds] = await Promise.all([
-    fetchYouTubeTitle(videoId),
+  const [oembed, durationSeconds] = await Promise.all([
+    fetchYouTubeOEmbed(videoId),
     fetchDurationSeconds(videoId),
   ]);
-  return { title, durationSeconds };
+  return { title: oembed.title, channelName: oembed.channelName, durationSeconds };
 }

@@ -88,6 +88,7 @@ erDiagram
         uuid id PK
         text youtube_video_id "unique dedup key"
         text title
+        text channel_name "uploading channel, via oEmbed"
         int duration_seconds
         text transcript_status "pending | ready | unavailable"
         timestamptz transcript_fetch_started_at "single-flight claim"

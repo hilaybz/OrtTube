@@ -12,6 +12,7 @@ export interface VideoRow {
   youtube_video_id: string;
   title: string | null;
   duration_seconds: number | null;
+  channel_name: string | null;
   transcript_status: "pending" | "ready" | "unavailable";
   fetched_at: string | null;
   transcript_fetch_started_at: string | null;
@@ -41,6 +42,7 @@ export async function ensureVideo(
       youtube_video_id: youtubeId,
       title: meta.title,
       duration_seconds: meta.durationSeconds,
+      channel_name: meta.channelName,
     },
     { onConflict: "youtube_video_id", ignoreDuplicates: true }
   );
@@ -51,7 +53,7 @@ export async function ensureVideo(
   const { data, error } = await client
     .from("videos")
     .select(
-      "id, youtube_video_id, title, duration_seconds, transcript_status, fetched_at, transcript_fetch_started_at, created_at"
+      "id, youtube_video_id, title, duration_seconds, channel_name, transcript_status, fetched_at, transcript_fetch_started_at, created_at"
     )
     .eq("youtube_video_id", youtubeId)
     .single();

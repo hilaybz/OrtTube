@@ -46,6 +46,22 @@ export function VideoLine({
   );
 }
 
+/**
+ * The video's uploading channel, shown under the heading/video-title lines —
+ * independent of `VideoLine`'s title-repeat guard, since this is new
+ * information regardless of whether the card's heading already shows the
+ * video's own title. Absent for videos added before this field existed, or
+ * when the oEmbed fetch that supplies it failed.
+ */
+function ChannelLine({ channelName }: { channelName: string | null }) {
+  if (!channelName) return null;
+  return (
+    <p className="truncate text-xs text-[var(--body-subtle)]" title={channelName}>
+      {channelName}
+    </p>
+  );
+}
+
 export function QuizMeta({
   baseLanguage,
   questionCount,
@@ -158,6 +174,7 @@ export function QuizCard({
         </div>
       </div>
       <VideoLine quiz={quiz} />
+      <ChannelLine channelName={quiz.channel_name} />
       <QuizMeta baseLanguage={quiz.base_language} questionCount={quiz.question_count} />
       {tags !== undefined && <AllocationTagsRow tags={tags} />}
       {/* This row must sit ABOVE the stretched link, or the link swallows the
