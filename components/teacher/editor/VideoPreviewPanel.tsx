@@ -9,13 +9,21 @@ export interface VideoPreviewPanelHandle {
   seekTo(seconds: number): void;
 }
 
+/** `false` reverts the drag immediately; `true`/`void` leaves it pinned at
+ * the dropped spot until `questions` reports the new position (see
+ * `CheckpointTimeline`'s own pending-move contract) — never a flicker back
+ * to the old spot while the save + refresh is still in flight. */
+type MoveResult = boolean | void | Promise<boolean | void>;
+
 export interface VideoPreviewPanelProps {
   youtubeVideoId: string;
   /** Already time-sorted (`get_quiz_for_author`'s own order). */
   questions: AuthorQuestion[];
   activeQuestionId: string | null;
   onMarkerSelect: (question: AuthorQuestion) => void;
-  onMarkerMove: (questionId: string, seconds: number) => void;
+  onMarkerMove: (questionId: string, seconds: number) => MoveResult;
+  /** A whole cluster (2+ questions sharing a timestamp) dragged together — every id moves to the same new instant. */
+  onClusterMove: (questionIds: string[], seconds: number) => MoveResult;
   /** Bubbled up so the editor can also drive the "current time" prefill in `QuestionModal`. */
   onProgress?: (current: number, duration: number) => void;
 }
@@ -31,7 +39,15 @@ export interface VideoPreviewPanelProps {
  */
 export const VideoPreviewPanel = forwardRef<VideoPreviewPanelHandle, VideoPreviewPanelProps>(
   function VideoPreviewPanel(
-    { youtubeVideoId, questions, activeQuestionId, onMarkerSelect, onMarkerMove, onProgress },
+    {
+      youtubeVideoId,
+      questions,
+      activeQuestionId,
+      onMarkerSelect,
+      onMarkerMove,
+      onClusterMove,
+      onProgress,
+    },
     ref
   ) {
     const stageRef = useRef<VideoStageHandle>(null);
@@ -91,6 +107,7 @@ export const VideoPreviewPanel = forwardRef<VideoPreviewPanelHandle, VideoPrevie
             if (q) onMarkerSelect(q);
           }}
           onMarkerMove={onMarkerMove}
+          onClusterMove={onClusterMove}
           draggableIds={draggableIds}
         />
       </GlassCard>

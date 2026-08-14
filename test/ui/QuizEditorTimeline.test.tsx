@@ -91,6 +91,21 @@ function renderEditor() {
   render(<QuizEditor initial={QUIZ} classes={[]} allocations={[]} />);
 }
 
+// A second fixture with two questions sharing a timestamp, for the
+// whole-cluster-drag test — kept separate so the other tests' marker
+// counts/positions stay simple and unambiguous.
+const CLUSTERED_QUIZ: AuthorQuiz = {
+  ...QUIZ,
+  questions: [
+    { ...QUIZ.questions[0], position_seconds: 30 },
+    { ...QUIZ.questions[1], id: "q2", position_seconds: 30 },
+  ],
+};
+
+function renderClusteredEditor() {
+  render(<QuizEditor initial={CLUSTERED_QUIZ} classes={[]} allocations={[]} />);
+}
+
 describe("QuizEditor — checkpoint timeline wiring", () => {
   beforeEach(() => {
     refresh.mockClear();
@@ -196,5 +211,37 @@ describe("QuizEditor — checkpoint timeline wiring", () => {
     expect(prefill).toHaveTextContent("0:45");
     await userEvent.click(prefill);
     expect(screen.getByLabelText("נקודת עצירה")).toHaveValue("0:45");
+  });
+
+  it("dragging a whole cluster saves every clustered question to the new position and refreshes once", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ questionId: "q" }) }))
+    );
+    renderClusteredEditor();
+    await userEvent.click(screen.getByRole("button", { name: "report-ready" }));
+
+    const stack = screen.getByTestId("timeline-cluster");
+    const track = screen.getByTestId("timeline-track");
+    vi.spyOn(track, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      width: 300,
+    } as DOMRect);
+
+    fireEvent.pointerDown(stack, { clientX: 30, pointerId: 1 });
+    fireEvent.pointerMove(stack, { clientX: 130, pointerId: 1 }); // -> 130s
+    fireEvent.pointerUp(stack, { clientX: 130, pointerId: 1 });
+
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+
+    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([url]) => url === "/api/quizzes/quiz-1/questions"
+    );
+    expect(calls).toHaveLength(2);
+    const questionIds = calls.map(([, init]) => JSON.parse(init.body).questionId).sort();
+    expect(questionIds).toEqual(["q1", "q2"]);
+    for (const [, init] of calls) {
+      expect(JSON.parse(init.body).positionSeconds).toBe(130);
+    }
   });
 });

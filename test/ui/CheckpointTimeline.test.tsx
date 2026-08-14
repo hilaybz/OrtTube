@@ -374,4 +374,254 @@ describe("CheckpointTimeline", () => {
     const playhead = container.querySelector('[aria-hidden="true"]') as HTMLElement;
     expect(playhead.style.left).toBe("100%");
   });
+
+  describe("no flicker on drop — pinned until markers confirms, or reverts on failure", () => {
+    function markerLeft(): string {
+      return (screen.getByTestId("timeline-marker").parentElement as HTMLElement).style.left;
+    }
+
+    it("stays at the dropped position after release, before markers has caught up", () => {
+      const onMarkerMove = vi.fn();
+      render(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={[{ id: "q1", seconds: 100, label: "שאלה 1" }]}
+          onSeek={vi.fn()}
+          onMarkerMove={onMarkerMove}
+          draggableIds={new Set(["q1"])}
+        />
+      );
+      stubTrackRect();
+      const m = screen.getByTestId("timeline-marker");
+
+      fireEvent.pointerDown(m, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(m, { clientX: 160, pointerId: 1 }); // -> 160s
+      fireEvent.pointerUp(m, { clientX: 160, pointerId: 1 });
+
+      expect(onMarkerMove).toHaveBeenCalledWith("q1", 160);
+      // The `markers` prop is still the OLD position (100s / 33%) — a naive
+      // "clear drag state on drop" implementation would snap back here.
+      expect(markerLeft()).toBe(`${(160 / 300) * 100}%`);
+    });
+
+    it("stays pinned once markers re-renders with the same old position (still in flight)", () => {
+      const onMarkerMove = vi.fn();
+      const { rerender } = render(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={[{ id: "q1", seconds: 100, label: "שאלה 1" }]}
+          onSeek={vi.fn()}
+          onMarkerMove={onMarkerMove}
+          draggableIds={new Set(["q1"])}
+        />
+      );
+      stubTrackRect();
+      const m = screen.getByTestId("timeline-marker");
+      fireEvent.pointerDown(m, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(m, { clientX: 160, pointerId: 1 });
+      fireEvent.pointerUp(m, { clientX: 160, pointerId: 1 });
+
+      // A re-render with an unrelated prop change but the same (old, 100s)
+      // marker position — e.g. a currentTime tick — must not un-pin it.
+      rerender(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={5}
+          markers={[{ id: "q1", seconds: 100, label: "שאלה 1" }]}
+          onSeek={vi.fn()}
+          onMarkerMove={onMarkerMove}
+          draggableIds={new Set(["q1"])}
+        />
+      );
+      expect(markerLeft()).toBe(`${(160 / 300) * 100}%`);
+    });
+
+    it("clears the pin once markers reports the dropped position", () => {
+      const onMarkerMove = vi.fn();
+      const { rerender } = render(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={[{ id: "q1", seconds: 100, label: "שאלה 1" }]}
+          onSeek={vi.fn()}
+          onMarkerMove={onMarkerMove}
+          draggableIds={new Set(["q1"])}
+        />
+      );
+      stubTrackRect();
+      const m = screen.getByTestId("timeline-marker");
+      fireEvent.pointerDown(m, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(m, { clientX: 160, pointerId: 1 });
+      fireEvent.pointerUp(m, { clientX: 160, pointerId: 1 });
+
+      // The save's refresh landed — markers now reports the new position.
+      rerender(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={[{ id: "q1", seconds: 160, label: "שאלה 1" }]}
+          onSeek={vi.fn()}
+          onMarkerMove={onMarkerMove}
+          draggableIds={new Set(["q1"])}
+        />
+      );
+      expect(markerLeft()).toBe(`${(160 / 300) * 100}%`);
+    });
+
+    it("reverts to the old position when onMarkerMove reports failure", async () => {
+      const onMarkerMove = vi.fn().mockResolvedValue(false);
+      render(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={[{ id: "q1", seconds: 100, label: "שאלה 1" }]}
+          onSeek={vi.fn()}
+          onMarkerMove={onMarkerMove}
+          draggableIds={new Set(["q1"])}
+        />
+      );
+      stubTrackRect();
+      const m = screen.getByTestId("timeline-marker");
+      fireEvent.pointerDown(m, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(m, { clientX: 160, pointerId: 1 });
+      fireEvent.pointerUp(m, { clientX: 160, pointerId: 1 });
+      expect(markerLeft()).toBe(`${(160 / 300) * 100}%`); // pinned immediately
+
+      await vi.waitFor(() => expect(markerLeft()).toBe(`${(100 / 300) * 100}%`));
+    });
+  });
+
+  describe("dragging a whole cluster together", () => {
+    const two: TimelineMarker[] = [
+      { id: "q1", seconds: 100, label: "שאלה 1" },
+      { id: "q2", seconds: 100, label: "שאלה 2" },
+    ];
+
+    it("commits both ids to the same new position when the cluster is fully draggable", () => {
+      const onClusterMove = vi.fn();
+      render(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={two}
+          onSeek={vi.fn()}
+          onClusterMove={onClusterMove}
+          draggableIds={new Set(["q1", "q2"])}
+        />
+      );
+      stubTrackRect();
+      const stack = screen.getByTestId("timeline-cluster");
+
+      fireEvent.pointerDown(stack, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(stack, { clientX: 160, pointerId: 1 });
+      fireEvent.pointerUp(stack, { clientX: 160, pointerId: 1 });
+
+      expect(onClusterMove).toHaveBeenCalledTimes(1);
+      const [ids, seconds] = onClusterMove.mock.calls[0];
+      expect(new Set(ids)).toEqual(new Set(["q1", "q2"]));
+      expect(seconds).toBe(160);
+    });
+
+    it("is not draggable when only some members are in draggableIds — click still opens the popover", async () => {
+      const onClusterMove = vi.fn();
+      render(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={two}
+          onSeek={vi.fn()}
+          onClusterMove={onClusterMove}
+          draggableIds={new Set(["q1"])} // q2 missing
+        />
+      );
+      const stack = screen.getByTestId("timeline-cluster");
+
+      fireEvent.pointerDown(stack, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(stack, { clientX: 160, pointerId: 1 });
+      fireEvent.pointerUp(stack, { clientX: 160, pointerId: 1 });
+      expect(onClusterMove).not.toHaveBeenCalled();
+
+      await userEvent.click(stack);
+      expect(screen.getByRole("menu")).toBeInTheDocument();
+    });
+
+    it("a short press (below the drag threshold) still opens the popover instead of committing a move", async () => {
+      const onClusterMove = vi.fn();
+      render(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={two}
+          onSeek={vi.fn()}
+          onClusterMove={onClusterMove}
+          draggableIds={new Set(["q1", "q2"])}
+        />
+      );
+      const stack = screen.getByTestId("timeline-cluster");
+
+      fireEvent.pointerDown(stack, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(stack, { clientX: 102, pointerId: 1 }); // 2px, below threshold
+      fireEvent.pointerUp(stack, { clientX: 102, pointerId: 1 });
+
+      expect(onClusterMove).not.toHaveBeenCalled();
+      expect(screen.getByRole("menu")).toBeInTheDocument();
+    });
+  });
+
+  describe("edge-aware popover/bubble positioning", () => {
+    it("anchors the cluster popover to the start edge when the cluster is near the beginning of the track", async () => {
+      render(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={[
+            { id: "q1", seconds: 5, label: "שאלה 1" }, // ~1.7% — near the start
+            { id: "q2", seconds: 5, label: "שאלה 2" },
+          ]}
+          onSeek={vi.fn()}
+        />
+      );
+      await userEvent.click(screen.getByTestId("timeline-cluster"));
+      const menu = screen.getByRole("menu");
+      expect(menu.className).toContain("start-0");
+      expect(menu.className).not.toContain("start-1/2");
+    });
+
+    it("anchors the cluster popover to the end edge when the cluster is near the end of the track", async () => {
+      render(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={[
+            { id: "q1", seconds: 298, label: "שאלה 1" }, // ~99% — near the end
+            { id: "q2", seconds: 298, label: "שאלה 2" },
+          ]}
+          onSeek={vi.fn()}
+        />
+      );
+      await userEvent.click(screen.getByTestId("timeline-cluster"));
+      const menu = screen.getByRole("menu");
+      expect(menu.className).toContain("end-0");
+    });
+
+    it("centers the cluster popover for a cluster in the middle of the track", async () => {
+      render(
+        <CheckpointTimeline
+          durationSeconds={300}
+          currentSeconds={0}
+          markers={[
+            { id: "q1", seconds: 150, label: "שאלה 1" },
+            { id: "q2", seconds: 150, label: "שאלה 2" },
+          ]}
+          onSeek={vi.fn()}
+        />
+      );
+      await userEvent.click(screen.getByTestId("timeline-cluster"));
+      const menu = screen.getByRole("menu");
+      expect(menu.className).toContain("start-1/2");
+      expect(menu.className).toContain("-translate-x-1/2");
+    });
+  });
 });

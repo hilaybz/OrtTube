@@ -9,6 +9,16 @@ export interface TimelineMarker {
   label: string;
 }
 
+/**
+ * Return `false` (or a promise resolving to `false`) to signal the move
+ * failed — the dragged marker/cluster snaps back to its old position
+ * immediately. Returning `true`/`void` (or a promise thereof) leaves it
+ * pinned exactly where it was dropped until the `markers` prop reports the
+ * new position, so a save-then-refresh round trip never flickers back to
+ * the old spot first.
+ */
+type MoveResult = boolean | void | Promise<boolean | void>;
+
 export interface CheckpointTimelineProps {
   /** `null` = duration not known yet (player hasn't reported one) → skeleton, clicks inert. */
   durationSeconds: number | null;
@@ -19,9 +29,11 @@ export interface CheckpointTimelineProps {
   onSeek: (seconds: number) => void;
   /** Click on a marker, or an item picked from a cluster popover. Falls back to `onSeek` when omitted. */
   onMarkerClick?: (id: string, seconds: number) => void;
-  /** Drag committed on drop. Omitted entirely (or an id absent from `draggableIds`) disables dragging for that marker. */
-  onMarkerMove?: (id: string, seconds: number) => void;
-  /** Markers eligible to drag — a marker sharing its position with another is never individually draggable regardless of this set. */
+  /** Drag committed on drop for a single (non-clustered) marker. Omitted entirely (or an id absent from `draggableIds`) disables dragging for that marker. */
+  onMarkerMove?: (id: string, seconds: number) => MoveResult;
+  /** Drag committed on drop for an entire cluster — every clustered question moves to the same new instant together. Omitted (or any member missing from `draggableIds`) disables dragging for that cluster; it stays click-to-open-popover only. */
+  onClusterMove?: (ids: string[], seconds: number) => MoveResult;
+  /** Markers eligible to drag. A cluster is draggable only when every one of its members is in this set. */
   draggableIds?: Set<string>;
   className?: string;
 }
@@ -38,11 +50,24 @@ function formatSeconds(totalSeconds: number): string {
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+// A floating element (time bubble / popover) centers on its anchor by
+// default, but that overflows the track near either edge — flip to a
+// flush edge anchor once the anchor is close enough to one.
+function edgeAnchorClasses(posPct: number): string {
+  if (posPct < 15) return "start-0";
+  if (posPct > 85) return "end-0";
+  return "start-1/2 -translate-x-1/2";
+}
+
 // Pointer must travel this many px before a press counts as a drag, not a click.
 const DRAG_THRESHOLD_PX = 5;
 // Approximate on-screen footprint of a marker, used to cluster near-duplicate
 // timestamps that would otherwise render as overlapping, hard-to-hit targets.
 const MARKER_FOOTPRINT_PX = 24;
+// Safety net: if a committed move's `markers` prop never converges on the
+// dropped position (an unexpected caller contract mismatch, not the normal
+// path), stop pinning the optimistic position after this long.
+const PENDING_MOVE_TIMEOUT_MS = 5000;
 
 interface Cluster {
   key: string;
@@ -51,26 +76,43 @@ interface Cluster {
 }
 
 interface DragState {
-  id: string;
+  ids: string[];
   pointerId: number;
   startX: number;
   moved: boolean;
   seconds: number;
 }
 
+/** A drag just dropped: hold its ids at `seconds` until the `markers` prop
+ * confirms the move landed (or the caller reports failure), so the marker
+ * never visibly snaps back to the old position while the save is in flight. */
+interface PendingMove {
+  seq: number;
+  ids: string[];
+  seconds: number;
+}
+
+function overlapsIds(ids: string[], items: TimelineMarker[]): boolean {
+  return items.some((it) => ids.includes(it.id));
+}
+
+function idsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const setA = new Set(a);
+  return b.every((id) => setA.has(id));
+}
+
 /**
  * A proportional, clickable, draggable video-time timeline — markers at
  * each checkpoint's position, click-to-seek anywhere on the track, drag a
- * marker to reposition it. Generic on purpose (plain seconds/callbacks, no
- * quiz/question shape) so other video-time UI (e.g. a future AI-generation
- * time-range picker) can reuse it without an API break.
+ * marker (or a whole cluster) to reposition it. Generic on purpose (plain
+ * seconds/callbacks, no quiz/question shape) so other video-time UI (e.g. a
+ * future AI-generation time-range picker) can reuse it without an API break.
  *
  * Markers sharing (or nearly sharing) a position collapse into one "stack"
  * marker with a count badge rather than rendering N overlapping, unclickable
- * dots — clicking it opens a small popover to pick which one. A stack's
- * items are not individually draggable (there's no single pixel target to
- * grab); give one a distinct timestamp elsewhere first, and it becomes an
- * ordinary draggable marker.
+ * dots — clicking it opens a small popover to pick which one, dragging it
+ * moves every clustered question to the same new instant together.
  */
 export function CheckpointTimeline({
   durationSeconds,
@@ -80,6 +122,7 @@ export function CheckpointTimeline({
   onSeek,
   onMarkerClick,
   onMarkerMove,
+  onClusterMove,
   draggableIds,
   className,
 }: CheckpointTimelineProps) {
@@ -87,9 +130,25 @@ export function CheckpointTimeline({
   const clusterRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [trackWidth, setTrackWidth] = useState(0);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
   const [openCluster, setOpenCluster] = useState<string | null>(null);
+  const commitSeq = useRef(0);
 
   const ready = durationSeconds != null && durationSeconds > 0;
+
+  // Clear a pending move once the incoming `markers` prop actually shows
+  // every dragged id at the dropped position — i.e. the save + refresh
+  // landed. Adjusted during render rather than in an effect (same pattern
+  // QuestionModal uses to re-seed on a prop change): the check is cheap,
+  // idempotent, and converges in the same render (once cleared, the
+  // condition is false), so it never loops.
+  if (pendingMove) {
+    const confirmed = pendingMove.ids.every((id) => {
+      const m = markers.find((mk) => mk.id === id);
+      return m != null && Math.round(m.seconds) === Math.round(pendingMove.seconds);
+    });
+    if (confirmed) setPendingMove(null);
+  }
 
   useEffect(() => {
     const el = trackRef.current;
@@ -123,6 +182,14 @@ export function CheckpointTimeline({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [openCluster]);
+
+  // Safety net matching VideoStage's own "never hang forever" convention —
+  // covers a caller whose `markers` prop never converges as expected.
+  useEffect(() => {
+    if (!pendingMove) return;
+    const t = setTimeout(() => setPendingMove(null), PENDING_MOVE_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [pendingMove]);
 
   function secondsFromClientX(clientX: number): number {
     const rect = trackRef.current?.getBoundingClientRect();
@@ -167,26 +234,52 @@ export function CheckpointTimeline({
     onSeek(secondsFromClientX(e.clientX));
   }
 
-  function handleMarkerPointerDown(e: React.PointerEvent<HTMLButtonElement>, m: TimelineMarker) {
+  function handleDragPointerDown(
+    e: React.PointerEvent<HTMLButtonElement>,
+    ids: string[],
+    seconds: number
+  ) {
     e.stopPropagation();
     if (!ready) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    setDrag({ id: m.id, pointerId: e.pointerId, startX: e.clientX, moved: false, seconds: m.seconds });
+    setDrag({ ids, pointerId: e.pointerId, startX: e.clientX, moved: false, seconds });
   }
 
-  function handleMarkerPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+  function handleDragPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
     if (!drag || e.pointerId !== drag.pointerId) return;
     const movedPast = drag.moved || Math.abs(e.clientX - drag.startX) > DRAG_THRESHOLD_PX;
     if (!movedPast) return;
     setDrag({ ...drag, moved: true, seconds: secondsFromClientX(e.clientX) });
   }
 
-  function handleMarkerPointerUp(e: React.PointerEvent<HTMLButtonElement>, m: TimelineMarker) {
+  /** Drop: pin the optimistic position (see `pendingMove` above) rather than
+   * clearing immediately, so the marker doesn't jump back to its old spot
+   * for the moment before the save's refresh actually lands. */
+  function commitDrag(ids: string[], seconds: number) {
+    const seq = ++commitSeq.current;
+    setPendingMove({ seq, ids, seconds });
+    const result =
+      ids.length === 1 ? onMarkerMove?.(ids[0], seconds) : onClusterMove?.(ids, seconds);
+    Promise.resolve(result).then((ok) => {
+      if (ok === false) {
+        // Explicit failure — revert now rather than waiting for a prop
+        // update that will never come. Guarded by `seq` so a stale
+        // resolution can't clobber a newer drag on the same marker(s).
+        setPendingMove((p) => (p && p.seq === seq ? null : p));
+      }
+    });
+  }
+
+  function handleDragPointerUp(
+    e: React.PointerEvent<HTMLButtonElement>,
+    ids: string[],
+    onClickInstead: () => void
+  ) {
     if (!drag || e.pointerId !== drag.pointerId) return;
     if (drag.moved) {
-      onMarkerMove?.(m.id, drag.seconds);
+      commitDrag(ids, drag.seconds);
     } else {
-      fireClick(m.id, m.seconds);
+      onClickInstead();
     }
     setDrag(null);
   }
@@ -223,22 +316,38 @@ export function CheckpointTimeline({
         {ready &&
           clusters.map((cluster) => {
             const isCluster = cluster.items.length > 1;
+            const ids = cluster.items.map((i) => i.id);
             const clusterHasActive = cluster.items.some((i) => i.id === activeMarkerId);
+
+            const activeDrag = drag && idsEqual(drag.ids, ids) ? drag : null;
+            const dragging = !!activeDrag?.moved;
+            const pending = !dragging && pendingMove && overlapsIds(pendingMove.ids, cluster.items)
+              ? pendingMove
+              : null;
+            const seconds = dragging
+              ? (activeDrag as DragState).seconds
+              : pending
+                ? pending.seconds
+                : cluster.seconds;
+            const posPct = pct(seconds);
 
             if (!isCluster) {
               const m = cluster.items[0];
-              const dragging = drag?.id === m.id && drag.moved;
-              const seconds = dragging ? drag.seconds : m.seconds;
               const canDrag = ready && !!(draggableIds?.has(m.id) && onMarkerMove);
               const active = activeMarkerId === m.id;
               return (
                 <div
                   key={cluster.key}
                   className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-                  style={{ left: `${pct(seconds)}%` }}
+                  style={{ left: `${posPct}%` }}
                 >
                   {dragging && (
-                    <div className="pointer-events-none absolute bottom-full start-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-[var(--radius-d)] bg-[var(--heading)] px-2 py-0.5 font-mono text-xs text-white">
+                    <div
+                      className={cn(
+                        "pointer-events-none absolute bottom-full mb-2 whitespace-nowrap rounded-[var(--radius-d)] bg-[var(--heading)] px-2 py-0.5 font-mono text-xs text-white",
+                        edgeAnchorClasses(posPct)
+                      )}
+                    >
                       {formatSeconds(seconds)}
                     </div>
                   )}
@@ -254,10 +363,14 @@ export function CheckpointTimeline({
                       // the press doesn't bubble to the track's own
                       // pointerdown and fire a second, spurious `onSeek`.
                       e.stopPropagation();
-                      if (canDrag) handleMarkerPointerDown(e, m);
+                      if (canDrag) handleDragPointerDown(e, [m.id], m.seconds);
                     }}
-                    onPointerMove={canDrag ? handleMarkerPointerMove : undefined}
-                    onPointerUp={canDrag ? (e) => handleMarkerPointerUp(e, m) : undefined}
+                    onPointerMove={canDrag ? handleDragPointerMove : undefined}
+                    onPointerUp={
+                      canDrag
+                        ? (e) => handleDragPointerUp(e, [m.id], () => fireClick(m.id, m.seconds))
+                        : undefined
+                    }
                     onPointerCancel={canDrag ? () => setDrag(null) : undefined}
                     onClick={canDrag ? undefined : () => fireClick(m.id, m.seconds)}
                     className={cn(
@@ -274,6 +387,9 @@ export function CheckpointTimeline({
               );
             }
 
+            const canDragCluster =
+              ready && !!(onClusterMove && ids.every((id) => draggableIds?.has(id)));
+
             return (
               <div
                 key={cluster.key}
@@ -286,19 +402,47 @@ export function CheckpointTimeline({
                 // repeated on each one.
                 onPointerDown={(e) => e.stopPropagation()}
                 className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-                style={{ left: `${pct(cluster.seconds)}%` }}
+                style={{ left: `${posPct}%` }}
               >
+                {dragging && (
+                  <div
+                    className={cn(
+                      "pointer-events-none absolute bottom-full mb-2 whitespace-nowrap rounded-[var(--radius-d)] bg-[var(--heading)] px-2 py-0.5 font-mono text-xs text-white",
+                      edgeAnchorClasses(posPct)
+                    )}
+                  >
+                    {formatSeconds(seconds)}
+                  </div>
+                )}
                 <button
                   type="button"
                   data-testid="timeline-cluster"
-                  title={`${cluster.items.length} שאלות · ${formatSeconds(cluster.seconds)}`}
+                  title={`${cluster.items.length} שאלות · ${formatSeconds(cluster.seconds)}${canDragCluster ? " · גררו כדי להזיז יחד" : ""}`}
                   aria-label={`${cluster.items.length} שאלות ב-${formatSeconds(cluster.seconds)}`}
                   aria-expanded={openCluster === cluster.key}
-                  onClick={() =>
-                    setOpenCluster((k) => (k === cluster.key ? null : cluster.key))
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    if (canDragCluster) handleDragPointerDown(e, ids, cluster.seconds);
+                  }}
+                  onPointerMove={canDragCluster ? handleDragPointerMove : undefined}
+                  onPointerUp={
+                    canDragCluster
+                      ? (e) =>
+                          handleDragPointerUp(e, ids, () =>
+                            setOpenCluster((k) => (k === cluster.key ? null : cluster.key))
+                          )
+                      : undefined
+                  }
+                  onPointerCancel={canDragCluster ? () => setDrag(null) : undefined}
+                  onClick={
+                    canDragCluster
+                      ? undefined
+                      : () => setOpenCluster((k) => (k === cluster.key ? null : cluster.key))
                   }
                   className={cn(
                     "relative grid h-6 w-6 place-items-center rounded-full border-2 bg-[var(--brand)] text-white",
+                    canDragCluster ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                     clusterHasActive
                       ? "border-white ring-4 ring-[var(--brand-softer)]"
                       : "border-[var(--glass-bg)]"
@@ -317,7 +461,10 @@ export function CheckpointTimeline({
                   <div
                     role="menu"
                     aria-label={`שאלות ב-${formatSeconds(cluster.seconds)}`}
-                    className="absolute bottom-full start-1/2 z-20 mb-2 max-h-64 w-40 -translate-x-1/2 overflow-y-auto rounded-[var(--radius-d)] border border-[var(--glass-border)] bg-white p-1 shadow-[var(--shadow-md)]"
+                    className={cn(
+                      "absolute bottom-full z-20 mb-2 max-h-64 w-40 overflow-y-auto rounded-[var(--radius-d)] border border-[var(--glass-border)] bg-white p-1 shadow-[var(--shadow-md)]",
+                      edgeAnchorClasses(posPct)
+                    )}
                   >
                     {cluster.items.map((item) => (
                       <button

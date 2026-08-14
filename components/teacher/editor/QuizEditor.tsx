@@ -408,18 +408,20 @@ export function QuizEditor({
   }
 
   /**
-   * A marker was dragged to a new position. Reuses the same full-question
-   * upsert `QuestionModal` already sends — there's no lightweight
-   * position-only endpoint — resending the cached question's other fields
-   * unchanged. On success, `refresh()` re-fetches the server-sorted tree so
-   * the timeline and the list below agree afterward (mirrors 2.11).
+   * Resends one cached question through the same full-question upsert
+   * `QuestionModal` already sends — there's no lightweight position-only
+   * endpoint — with only `positionSeconds` changed. Returns whether it
+   * succeeded; callers use that to decide whether the timeline's optimistic
+   * drag position should stay pinned (until `refresh()`'s new data confirms
+   * it) or snap back immediately.
    */
-  async function handleMarkerMove(questionId: string, positionSeconds: number) {
-    const q = questions.find((x) => x.id === questionId);
+  async function saveQuestionPosition(
+    q: AuthorQuestion,
+    positionSeconds: number
+  ): Promise<boolean> {
     // Draggable markers already exclude a null-prompt question; this is a
     // defensive backstop, not the primary guard.
-    if (!q || q.prompt == null) return;
-    setBanner(null);
+    if (q.prompt == null) return false;
     try {
       await apiFetch(`/api/quizzes/${quizId}/questions`, {
         method: "POST",
@@ -438,13 +440,62 @@ export function QuizEditor({
           })),
         }),
       });
-      refresh();
+      return true;
     } catch (e) {
       setBanner({
         kind: "danger",
         msg: e instanceof ApiError ? e.message : "לא ניתן היה לעדכן את מיקום השאלה.",
       });
+      return false;
     }
+  }
+
+  /** A single marker was dragged to a new position. */
+  async function handleMarkerMove(questionId: string, positionSeconds: number): Promise<boolean> {
+    const q = questions.find((x) => x.id === questionId);
+    if (!q) return false;
+    setBanner(null);
+    const ok = await saveQuestionPosition(q, positionSeconds);
+    // `refresh()` re-fetches the server-sorted tree so the timeline and the
+    // list below agree afterward (mirrors 2.11) — and, via the new
+    // `questions` it hands back down, confirms the timeline's pinned drag
+    // position so it doesn't flicker back to the old spot first.
+    if (ok) refresh();
+    return ok;
+  }
+
+  /**
+   * An entire cluster (2+ questions sharing a timestamp) was dragged
+   * together — every member moves to the same new instant. All-or-nothing:
+   * if any save fails, the whole cluster's optimistic position reverts
+   * rather than leaving some questions moved and others not, since the
+   * cluster's very premise is that they stay simultaneous.
+   */
+  async function handleClusterMove(
+    questionIds: string[],
+    positionSeconds: number
+  ): Promise<boolean> {
+    const targets = questionIds
+      .map((id) => questions.find((x) => x.id === id))
+      .filter((q): q is AuthorQuestion => q != null);
+    if (targets.length === 0) return false;
+    setBanner(null);
+    const results = await Promise.all(
+      targets.map((q) => saveQuestionPosition(q, positionSeconds))
+    );
+    const ok = results.every(Boolean);
+    if (ok) {
+      refresh();
+    } else if (results.some(Boolean)) {
+      // Partial failure: some already saved at the new position, others
+      // didn't — surface that explicitly rather than the generic message
+      // saveQuestionPosition already set for the failed one(s).
+      setBanner({
+        kind: "danger",
+        msg: "עדכון המיקום הצליח לחלק מהשאלות בלבד. נסו שוב.",
+      });
+    }
+    return ok;
   }
 
   return (
@@ -553,6 +604,7 @@ export function QuizEditor({
         activeQuestionId={activeQuestionId}
         onMarkerSelect={handleMarkerSelect}
         onMarkerMove={handleMarkerMove}
+        onClusterMove={handleClusterMove}
         onProgress={(current) => setCurrentTime(current)}
       />
 
