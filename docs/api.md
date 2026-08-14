@@ -39,6 +39,7 @@ correctness) live in the database, not the handler.
 | --- | --- | --- |
 | GET | `/api/quizzes/share` | Browse the same-school shared-quiz catalog. |
 | POST | `/api/quizzes/share` | Deep-clone a readable quiz into a new private copy. |
+| GET | `/api/quizzes/[id]/preview` | Full read (answer key + explanations included) of a readable quiz — owner or same-school shared — for the catalog's preview-before-cloning flow. |
 
 ### Classes, roster, assignment
 | Method | Path | Purpose |
@@ -117,7 +118,7 @@ The wrappers in `@/lib/*` call these Postgres functions. Grouped by area:
   `submit_answer`, `complete_attempt`, `get_attempt_review`,
   `list_my_attempts_for_quiz`.
 - **Tutor** — `get_tutor_mode`.
-- **Sharing** — `list_shared_quizzes`, `clone_quiz`, `list_my_quizzes`.
+- **Sharing** — `list_shared_quizzes`, `clone_quiz`, `get_quiz_for_preview`, `list_my_quizzes`.
 - **Analytics** — `quiz_stats`, `question_stats`, `class_stats`, `tutor_stats`.
 - **Lifecycle** — `deactivate_teacher`, `reassign_ownership`, and the delete-user
   flow.

@@ -237,6 +237,7 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
       ["complete_attempt", { p_attempt_id: anyId }],
       ["get_tutor_mode", { p_class_id: anyId, p_quiz_id: anyId }],
       ["list_shared_quizzes", {}],
+      ["get_quiz_for_preview", { p_quiz_id: anyId }],
       ["list_my_quizzes", {}],
       ["list_assigned_for_student", {}],
     ];
