@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/Button";
@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
+import { cn } from "@/components/ui/cn";
 import { SegmentedToggle, type Segment } from "@/components/ui/SegmentedToggle";
 import type {
   GenerationDifficulty,
@@ -22,8 +23,12 @@ import type { ClassRow } from "@/lib/classes";
 import type { QuizAllocation } from "@/lib/allocations";
 import { QuestionModal } from "./QuestionModal";
 import { AllocationsSection } from "./AllocationsSection";
+import { VideoPreviewPanel, type VideoPreviewPanelHandle } from "./VideoPreviewPanel";
 import { updateQuizMeta, deleteQuestion, MutationError } from "./mutations";
 import { formatTime, LANGUAGE_LABELS } from "./format";
+
+// How long a marker-click highlight lingers on the matching question card.
+const HIGHLIGHT_MS = 1600;
 
 // `unavailable` records that the last attempt found no usable captions — which
 // may mean the video has none, or that the fetch was blocked. The label must not
@@ -244,6 +249,21 @@ export function QuizEditor({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Preview-player position, and which question the timeline/list should
+  // point at — driven by VideoPreviewPanel's onProgress and marker clicks.
+  // `null` until the player's first progress tick, so the "current time"
+  // prefill button never claims a fabricated 0:00 before playback starts.
+  const [currentTime, setCurrentTime] = useState<number | null>(null);
+  const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
+  const videoPanelRef = useRef<VideoPreviewPanelHandle>(null);
+  const cardRefs = useRef<Map<string, HTMLLIElement>>(new Map());
+  const highlightTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (highlightTimeout.current) clearTimeout(highlightTimeout.current);
+    };
+  }, []);
+
   const questions = initial.questions;
   const nextOrderIndex =
     questions.reduce((max, q) => Math.max(max, q.order_index), -1) + 1;
@@ -372,6 +392,59 @@ export function QuizEditor({
   function openEdit(q: AuthorQuestion) {
     setEditing(q);
     setModalOpen(true);
+    // Follow the preview to whatever the teacher is about to edit.
+    setActiveQuestionId(q.id);
+    videoPanelRef.current?.seekTo(q.position_seconds);
+  }
+
+  /** A timeline marker (or a cluster popover item) was picked: point the
+   * question list at it with a transient highlight. Seeking the player
+   * itself is VideoPreviewPanel's own responsibility. */
+  function handleMarkerSelect(q: AuthorQuestion) {
+    setActiveQuestionId(q.id);
+    cardRefs.current.get(q.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (highlightTimeout.current) clearTimeout(highlightTimeout.current);
+    highlightTimeout.current = setTimeout(() => setActiveQuestionId(null), HIGHLIGHT_MS);
+  }
+
+  /**
+   * A marker was dragged to a new position. Reuses the same full-question
+   * upsert `QuestionModal` already sends — there's no lightweight
+   * position-only endpoint — resending the cached question's other fields
+   * unchanged. On success, `refresh()` re-fetches the server-sorted tree so
+   * the timeline and the list below agree afterward (mirrors 2.11).
+   */
+  async function handleMarkerMove(questionId: string, positionSeconds: number) {
+    const q = questions.find((x) => x.id === questionId);
+    // Draggable markers already exclude a null-prompt question; this is a
+    // defensive backstop, not the primary guard.
+    if (!q || q.prompt == null) return;
+    setBanner(null);
+    try {
+      await apiFetch(`/api/quizzes/${quizId}/questions`, {
+        method: "POST",
+        body: JSON.stringify({
+          questionId: q.id,
+          kind: q.kind,
+          positionSeconds,
+          orderIndex: q.order_index,
+          basePrompt: q.prompt,
+          baseExplanation: q.explanation,
+          options: q.options.map((o) => ({
+            option_id: o.id,
+            is_correct: o.is_correct,
+            order_index: o.order_index,
+            base_text: o.text ?? "",
+          })),
+        }),
+      });
+      refresh();
+    } catch (e) {
+      setBanner({
+        kind: "danger",
+        msg: e instanceof ApiError ? e.message : "לא ניתן היה לעדכן את מיקום השאלה.",
+      });
+    }
   }
 
   return (
@@ -473,6 +546,16 @@ export function QuizEditor({
         </GlassCard>
       )}
 
+      <VideoPreviewPanel
+        ref={videoPanelRef}
+        youtubeVideoId={initial.video.youtube_video_id}
+        questions={questions}
+        activeQuestionId={activeQuestionId}
+        onMarkerSelect={handleMarkerSelect}
+        onMarkerMove={handleMarkerMove}
+        onProgress={(current) => setCurrentTime(current)}
+      />
+
       {/* Questions */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold text-[var(--heading)]">
@@ -501,8 +584,19 @@ export function QuizEditor({
           {questions.map((q) => {
             const correct = q.options.filter((o) => o.is_correct).length;
             return (
-              <li key={q.id}>
-                <GlassCard className="flex flex-col gap-3">
+              <li
+                key={q.id}
+                ref={(el) => {
+                  if (el) cardRefs.current.set(q.id, el);
+                  else cardRefs.current.delete(q.id);
+                }}
+              >
+                <GlassCard
+                  className={cn(
+                    "flex flex-col gap-3 transition-shadow",
+                    activeQuestionId === q.id && "ring-2 ring-[var(--brand)] ring-offset-2"
+                  )}
+                >
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="gray" pill>
                       <Icon name="clock" size={12} />
@@ -579,6 +673,7 @@ export function QuizEditor({
         quizId={quizId}
         question={editing}
         nextOrderIndex={nextOrderIndex}
+        currentPlayerSeconds={currentTime}
         onClose={() => setModalOpen(false)}
         onSaved={refresh}
       />

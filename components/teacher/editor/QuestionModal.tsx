@@ -72,6 +72,7 @@ export function QuestionModal({
   quizId,
   question,
   nextOrderIndex,
+  currentPlayerSeconds = null,
   onClose,
   onSaved,
 }: {
@@ -79,6 +80,10 @@ export function QuestionModal({
   quizId: string;
   question: AuthorQuestion | null;
   nextOrderIndex: number;
+  /** The editor's preview-player position, if known yet — powers the "use
+   * current time" shortcut below. `null` while the player hasn't reported a
+   * position yet, so the button never claims a fabricated 0:00. */
+  currentPlayerSeconds?: number | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -248,6 +253,18 @@ export function QuestionModal({
             />
           </div>
         </div>
+
+        {currentPlayerSeconds != null && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-start"
+            onClick={() => setPosition(formatTime(currentPlayerSeconds))}
+          >
+            <Icon name="clock" size={14} />
+            מהזמן הנוכחי בנגן ({formatTime(currentPlayerSeconds)})
+          </Button>
+        )}
 
         <div>
           <label htmlFor="q-prompt" className={labelCls}>
