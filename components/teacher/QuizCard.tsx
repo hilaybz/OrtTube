@@ -51,9 +51,10 @@ export function VideoLine({
  * independent of `VideoLine`'s title-repeat guard, since this is new
  * information regardless of whether the card's heading already shows the
  * video's own title. Absent for videos added before this field existed, or
- * when the oEmbed fetch that supplies it failed.
+ * when the oEmbed fetch that supplies it failed. Exported so `QuizLibrary.tsx`'s
+ * `SchoolTab` (own separate card markup, no `QuizCard`) can render it too.
  */
-function ChannelLine({ channelName }: { channelName: string | null }) {
+export function ChannelLine({ channelName }: { channelName: string | null }) {
   if (!channelName) return null;
   return (
     <p className="truncate text-xs text-[var(--body-subtle)]" title={channelName}>

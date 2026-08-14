@@ -38,6 +38,9 @@ export interface SharedQuiz {
   video_id: string;
   youtube_video_id: string;
   video_title: string | null;
+  /** The uploading channel's display name, or `null` if never fetched (a
+   * video added before this field existed) or the oEmbed fetch failed. */
+  channel_name: string | null;
   transcript_status: "pending" | "ready" | "unavailable";
   question_count: number;
   author_id: string;

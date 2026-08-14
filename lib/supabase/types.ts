@@ -725,6 +725,7 @@ export type Database = {
       }
       videos: {
         Row: {
+          channel_name: string | null
           created_at: string
           duration_seconds: number | null
           fetched_at: string | null
@@ -735,6 +736,7 @@ export type Database = {
           youtube_video_id: string
         }
         Insert: {
+          channel_name?: string | null
           created_at?: string
           duration_seconds?: number | null
           fetched_at?: string | null
@@ -745,6 +747,7 @@ export type Database = {
           youtube_video_id: string
         }
         Update: {
+          channel_name?: string | null
           created_at?: string
           duration_seconds?: number | null
           fetched_at?: string | null
@@ -839,6 +842,7 @@ export type Database = {
       create_quiz_for_video: {
         Args: {
           p_base_language: string
+          p_channel_name?: string
           p_duration_seconds: number
           p_quiz_title: string
           p_video_title: string
@@ -881,6 +885,7 @@ export type Database = {
         Args: never
         Returns: {
           base_language: string
+          channel_name: string
           created_at: string
           question_count: number
           quiz_id: string
