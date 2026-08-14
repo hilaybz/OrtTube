@@ -160,8 +160,8 @@ export const VideoStage = forwardRef<
   }, []);
 
   return (
-    <div className="relative overflow-hidden rounded-[var(--radius)] border border-[var(--glass-border)] bg-black shadow-[0_20px_50px_-24px_rgba(15,23,42,0.55)]">
-      <div className="aspect-video">
+    <div className="relative w-full overflow-hidden rounded-[var(--radius)] border border-[var(--glass-border)] bg-black shadow-[0_20px_50px_-24px_rgba(15,23,42,0.55)]">
+      <div className="aspect-video w-full">
         <YouTube
           videoId={videoId}
           className="h-full w-full"
