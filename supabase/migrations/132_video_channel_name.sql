@@ -81,6 +81,11 @@ end;
 $$;
 
 -- ── list_my_quizzes: gains channel_name ─────────────────────────────────────
+-- `create or replace` cannot change a RETURNS TABLE(...) shape in place
+-- (Postgres error 42P13) — must drop first, same as any other RPC whose
+-- output/signature changes (see e.g. 128's assign_quiz_to_class).
+drop function if exists public.list_my_quizzes();
+
 create or replace function public.list_my_quizzes()
 returns table (
   quiz_id           uuid,
