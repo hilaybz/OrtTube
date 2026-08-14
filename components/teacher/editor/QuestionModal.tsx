@@ -196,6 +196,11 @@ export function QuestionModal({
           orderIndex: question?.order_index ?? nextOrderIndex,
           basePrompt: prompt.trim(),
           baseExplanation: explanation.trim() || null,
+          // Preserve an AI-generated question's provenance — otherwise the
+          // upsert endpoint's default silently flips it to "authored" the
+          // moment a teacher edits anything about it, same bug the drag-drop
+          // save (QuizEditor.tsx's saveQuestionPosition) already guards against.
+          source: question?.source === "generated" ? "generated" : "authored",
           options: filled.map((o, i) => ({
             option_id: o.option_id,
             is_correct: o.is_correct,
