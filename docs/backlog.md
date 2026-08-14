@@ -141,6 +141,7 @@ against.
 | 1.4 | **Search, filter and sort** in both the library and the catalog. Agree the axes first (video title, question count, language, date, author). | 🎨 |
 | 1.5 | ~~**Show which classes a quiz is assigned to**, as tags on the card.~~ **Done** — `components/teacher/QuizCard.tsx` (`list_my_quiz_allocation_tags`), shared by the library and the new dashboard landing section (see 6.1). | ✅ |
 | 1.6 | General UI pass on the library. | 🎨 |
+| 1.8 | ~~**Small video thumbnail** on a "my quizzes" card.~~ **Done** — `components/teacher/QuizCard.tsx`, derived client-side from `youtube_video_id` (already returned by `list_my_quizzes`), no migration. Not extended to the school catalog tab (`SchoolTab` in `QuizLibrary.tsx` has its own separate card markup) — a natural follow-up alongside 1.1. | ✅ |
 
 ### 1.3 · Why previewing a shared quiz is not UI-only
 
@@ -174,7 +175,7 @@ that model is specified.
 
 | # | Task | Flag |
 | --- | --- | --- |
-| 2.1 | **Video player with a checkpoint timeline** — clickable markers showing where each question sits, as in the previous version. Also unblocks the deferred time-range picker in the AI-generation spec. Fix **2.11 first**: a timeline drawn from today's ordering would disagree with the list beside it. | 🎨 |
+| 2.1 | ~~**Video player with a checkpoint timeline**~~ **Done** — `components/video/CheckpointTimeline.tsx` (generic, no quiz-shaped props — reusable for the deferred AI-generation time-range picker) + `components/teacher/editor/VideoPreviewPanel.tsx`. Duration is read from the player itself (`onProgress`), never from `videos.duration_seconds` — that column is null for most quizzes in production today (Epic 0's blocked scrape fetches it too). Markers are click-to-seek and click-to-select (highlights the matching question card below); a marker is draggable to reposition, reusing the existing question-upsert endpoint (no new API); questions sharing a timestamp collapse into one marker with a count badge and a picker popover instead of overlapping. `QuestionModal` also gained a "מהזמן הנוכחי בנגן" button that prefills the position field from the live preview. | ✅ |
 | 2.2 | Delete a quiz from the editor. | 🎨 |
 | 2.3 | UI pass on question editing — colour, and possibly a video preview alongside. | 🎨 |
 | 2.4 | **Quiz analytics button** from the editor. | 🎨 |
@@ -621,8 +622,11 @@ future "cloned from" credit) is expected to want it.
 ### 7.2 · Finish the AI-generation spec — step 5, topic-hint focus
 
 The last unbuilt step of `docs/superpowers/specs/2026-07-30-ai-generation-options.md`.
-Steps 1–4 shipped. The time-range half is deliberately deferred until the
-checkpoint timeline (2.1) exists; only the topic hint is in scope.
+Steps 1–4 shipped. The time-range half was deliberately deferred until the
+checkpoint timeline existed — **2.1 has now shipped** (`components/video/
+CheckpointTimeline.tsx` is generic on purpose, built with this picker in
+mind), so the time-range half is unblocked; still not built. Only the topic
+hint has shipped so far.
 
 ### 7.3 · `422 generation_failed` when appending to a covered quiz 🐛
 
