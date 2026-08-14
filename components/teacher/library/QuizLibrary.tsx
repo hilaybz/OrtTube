@@ -36,6 +36,7 @@ import {
   ChannelLine,
   LANG_LABEL,
 } from "@/components/teacher/QuizCard";
+import { QuizPreviewModal } from "@/components/teacher/library/QuizPreviewModal";
 
 type TabKey = "mine" | "school";
 
@@ -295,6 +296,7 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
   const router = useRouter();
   const [cloningId, setCloningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [previewQuizId, setPreviewQuizId] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [languages, setLanguages] = useState<Set<Language>>(new Set());
@@ -363,11 +365,19 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
             const busy = cloningId === q.quiz_id;
             return (
               <GlassCard key={q.quiz_id} className="flex h-full flex-col gap-3">
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-semibold text-[var(--heading)]">
-                    {cardHeading(q)}
-                  </h3>
-                  {q.is_own && <Badge variant="brand">שלי</Badge>}
+                <div className="flex items-start gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`https://i.ytimg.com/vi/${q.youtube_video_id}/mqdefault.jpg`}
+                    alt=""
+                    className="h-10 w-16 flex-none rounded-[var(--radius-sm)] object-cover"
+                  />
+                  <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
+                    <h3 className="min-w-0 truncate font-semibold text-[var(--heading)]">
+                      {cardHeading(q)}
+                    </h3>
+                    {q.is_own && <Badge variant="brand">שלי</Badge>}
+                  </div>
                 </div>
                 <VideoLine quiz={q} />
                 <ChannelLine channelName={q.channel_name} />
@@ -380,7 +390,15 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
                   baseLanguage={q.base_language}
                   questionCount={q.question_count}
                 />
-                <div className="mt-auto pt-1">
+                <div className="mt-auto flex items-center gap-2 pt-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPreviewQuizId(q.quiz_id)}
+                  >
+                    <Icon name="play" size={16} />
+                    תצוגה מקדימה
+                  </Button>
                   <Button
                     variant="secondary"
                     size="sm"
@@ -396,6 +414,14 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
           })}
         </div>
       )}
+
+      <QuizPreviewModal
+        open={previewQuizId != null}
+        quizId={previewQuizId ?? ""}
+        onClose={() => setPreviewQuizId(null)}
+        onClone={clone}
+        cloning={cloningId !== null}
+      />
     </div>
   );
 }

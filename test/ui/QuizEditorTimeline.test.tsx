@@ -67,6 +67,7 @@ const QUIZ: AuthorQuiz = {
       order_index: 0,
       prompt: "שאלה ראשונה",
       explanation: null,
+      source: "authored",
       options: [
         { id: "q1-o1", order_index: 0, text: "אלף", is_correct: true },
         { id: "q1-o2", order_index: 1, text: "בית", is_correct: false },
@@ -79,6 +80,7 @@ const QUIZ: AuthorQuiz = {
       order_index: 1,
       prompt: "שאלה שנייה",
       explanation: null,
+      source: "authored",
       options: [
         { id: "q2-o1", order_index: 0, text: "גימל", is_correct: true },
         { id: "q2-o2", order_index: 1, text: "דלת", is_correct: false },
@@ -167,7 +169,39 @@ describe("QuizEditor — checkpoint timeline wiring", () => {
       orderIndex: 0,
       basePrompt: "שאלה ראשונה",
       positionSeconds: 130,
+      source: "authored",
     });
+  });
+
+  it("dragging a marker preserves an AI-generated question's source instead of flipping it to 'authored'", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ questionId: "q1" }) }))
+    );
+    render(
+      <QuizEditor
+        initial={{ ...QUIZ, questions: [{ ...QUIZ.questions[0], source: "generated" }] }}
+        classes={[]}
+        allocations={[]}
+      />
+    );
+    await userEvent.click(screen.getByRole("button", { name: "report-ready" }));
+
+    const [marker] = screen.getAllByTestId("timeline-marker");
+    const track = screen.getByTestId("timeline-track");
+    vi.spyOn(track, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      width: 300,
+    } as DOMRect);
+
+    fireEvent.pointerDown(marker, { clientX: 30, pointerId: 1 });
+    fireEvent.pointerMove(marker, { clientX: 130, pointerId: 1 });
+    fireEvent.pointerUp(marker, { clientX: 130, pointerId: 1 });
+
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalled());
+
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body).toMatchObject({ questionId: "q1", source: "generated" });
   });
 
   it("surfaces an error and does not refresh when the drag-drop save fails", async () => {

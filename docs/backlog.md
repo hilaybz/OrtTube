@@ -137,29 +137,46 @@ against.
 | --- | --- | --- |
 | 1.1 | Show the **YouTube video title** on quiz cards — in both "my quizzes" and the school catalog. | 🎨 |
 | 1.2 | ~~**Delete a quiz** from the library.~~ **Done** — `bdb0903`. | ✅ |
-| 1.3 | **Preview a catalog quiz before cloning** — open it read-only to see the questions, rather than cloning blind. Needs a new correctness-free read; see below. | 🗄️ |
+| 1.3 | ~~**Preview a catalog quiz before cloning** — open it read-only to see the questions, rather than cloning blind.~~ **Done** — migration `134_quiz_preview.sql` (`get_quiz_for_preview`, gated exactly like `clone_quiz`: owner, or `shared` and same school) + `components/teacher/library/QuizPreviewModal.tsx`. Reverses this item's original note: the preview shows the **full quiz, correct answers and explanations included** — see the note below. | 🗄️✅ |
 | 1.4 | ~~**Search, filter and sort** in both the library and the catalog.~~ **Done** — `lib/libraryFilters.ts` (pure, dependency-free) + `components/teacher/library/QuizLibrary.tsx`, entirely client-side (neither `list_my_quizzes` nor `list_shared_quizzes` paginates). Each tab keeps independent state. Search: "My quizzes" matches quiz/video title + the video's channel name (`channel_name`, now also selected by `list_shared_quizzes` — migration `133_shared_quiz_channel_name.sql` — so the catalog can search AND display it); "School catalog" additionally matches the authoring teacher's name. Filters: language (both tabs, multi-select OR), plus a class-assignment filter on **"My quizzes" only** (multi-select OR over `list_my_quiz_allocation_tags`, including an explicit "not assigned" option) — the catalog tab has no visibility into other teachers' allocations, a real RLS boundary, not a gap. Sort: created date and question count, each ascending/descending. | 🗄️✅ |
 | 1.5 | ~~**Show which classes a quiz is assigned to**, as tags on the card.~~ **Done** — `components/teacher/QuizCard.tsx` (`list_my_quiz_allocation_tags`), shared by the library and the new dashboard landing section (see 6.1). | ✅ |
 | 1.6 | General UI pass on the library. | 🎨 |
-| 1.8 | ~~**Small video thumbnail** on a "my quizzes" card.~~ **Done** — `components/teacher/QuizCard.tsx`, derived client-side from `youtube_video_id` (already returned by `list_my_quizzes`), no migration. Not extended to the school catalog tab (`SchoolTab` in `QuizLibrary.tsx` has its own separate card markup) — a natural follow-up alongside 1.1. | ✅ |
+| 1.8 | ~~**Small video thumbnail** on a "my quizzes" card.~~ **Done** — `components/teacher/QuizCard.tsx`, derived client-side from `youtube_video_id` (already returned by `list_my_quizzes`), no migration. Extended to the school catalog tab too (`QuizLibrary.tsx`'s `SchoolTab`) alongside 1.3, since that card markup was already being touched for the preview button. | ✅ |
 | 1.9 | ~~**Show the video's creator/channel name** under the title on a "my quizzes" card.~~ **Done** — migration `132_video_channel_name.sql` adds `videos.channel_name`, fetched via the same oEmbed call `title` already uses (no extra request, and unaffected by Epic 0's blocked egress), following 125's "never downgrade, backfill on conflict" pattern. `components/teacher/QuizCard.tsx`. Existing videos backfill only the next time a quiz is created on them. | 🗄️✅ |
 
-### 1.3 · Why previewing a shared quiz is not UI-only
+### 1.3 · Why previewing a shared quiz was not UI-only, and why the answer key is shown after all
 
-There is no read a non-owner can use. `get_quiz_for_author` is strictly
+There was no read a non-owner could use. `get_quiz_for_author` is strictly
 owner-gated and raises `not_owner`
 (`supabase/migrations/123_get_quiz_for_author.sql`); `list_shared_quizzes`
-returns card metadata only, with no questions.
+returns card metadata only, with no questions. The fix is a separate
+`get_quiz_for_preview` RPC (`134_quiz_preview.sql`), gated exactly like
+`clone_quiz` (owner, or `shared` and same school) rather than widening
+`get_quiz_for_author`'s own gate — the editor page assumes "if I can fetch
+this, I own it" throughout (edit/delete/drag controls render
+unconditionally), so widening that RPC without rebuilding the page would let
+a non-owner load a UI full of controls that silently fail ownership checks.
 
-**Do not widen the gate on `get_quiz_for_author`.** It deliberately exposes the
-answer key (`question_options.is_correct`) and the base-language explanations,
-because it exists for an owner editing their own quiz. Opening it to every
-same-school teacher would circulate the answer key, one leak away from students.
+**Revised from this item's original note**: the preview was first specified
+as correctness-free (no `is_correct`, no `explanation`), reasoning that
+exposing the answer key to any same-school teacher is "one leak away from
+students." That doesn't hold up — **cloning already hands a same-school
+teacher the full answer key immediately** (a deep copy, editable in their
+own editor from then on), so hiding it in the preview only adds friction
+(clone-to-see-answers) without adding any real protection. The preview
+therefore shows the **full quiz** — correct answers and explanations
+included — so a teacher can actually judge it before deciding to duplicate
+it. What's still enforced is the real trust boundary: a different-school
+teacher, a student, or a same-school teacher previewing someone's private
+(non-shared) quiz all get `not_authorized`, same as `clone_quiz`.
 
-The right shape is a separate correctness-free preview read — questions, options
-and prompts, never `is_correct` and never explanations — reusing the read gate
-from `clone_quiz` (owner, or `shared` and same school) rather than inventing a
-second rule.
+The preview UI itself reuses the editor's own building blocks rather than a
+separately-designed summary — `VideoPreviewPanel` (its
+`onMarkerMove`/`onClusterMove` loosened to optional, so it's read-only
+automatically without a new "mode" flag) and a newly-extracted
+`QuestionListItem` (pulled out of `QuizEditor.tsx`'s inline question `<li>`,
+with `onEdit`/`onDelete` now optional) — so the preview and the real editor
+render through the identical code path and can't visually drift apart.
 
 ### 1.7 · Show school-sharing state distinctly from student visibility 🎨
 

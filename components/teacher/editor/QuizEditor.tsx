@@ -9,7 +9,6 @@ import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
-import { cn } from "@/components/ui/cn";
 import { SegmentedToggle, type Segment } from "@/components/ui/SegmentedToggle";
 import type {
   GenerationDifficulty,
@@ -24,8 +23,9 @@ import type { QuizAllocation } from "@/lib/allocations";
 import { QuestionModal } from "./QuestionModal";
 import { AllocationsSection } from "./AllocationsSection";
 import { VideoPreviewPanel, type VideoPreviewPanelHandle } from "./VideoPreviewPanel";
+import { QuestionListItem } from "./QuestionListItem";
 import { updateQuizMeta, deleteQuestion, MutationError } from "./mutations";
-import { formatTime, LANGUAGE_LABELS } from "./format";
+import { LANGUAGE_LABELS } from "./format";
 
 // How long a marker-click highlight lingers on the matching question card.
 const HIGHLIGHT_MS = 1600;
@@ -414,6 +414,12 @@ export function QuizEditor({
    * succeeded; callers use that to decide whether the timeline's optimistic
    * drag position should stay pinned (until `refresh()`'s new data confirms
    * it) or snap back immediately.
+   *
+   * Passes the question's own `source` through so a drag can't silently flip
+   * an AI-generated question to `authored` — the upsert endpoint has no
+   * "leave unchanged" option, it defaults to `authored` when the field is
+   * omitted, which is exactly what repositioning a `generated` question used
+   * to do by accident.
    */
   async function saveQuestionPosition(
     q: AuthorQuestion,
@@ -432,6 +438,7 @@ export function QuizEditor({
           orderIndex: q.order_index,
           basePrompt: q.prompt,
           baseExplanation: q.explanation,
+          source: q.source === "generated" ? "generated" : "authored",
           options: q.options.map((o) => ({
             option_id: o.id,
             is_correct: o.is_correct,
@@ -633,73 +640,19 @@ export function QuizEditor({
         </GlassCard>
       ) : (
         <ul className="flex flex-col gap-3">
-          {questions.map((q) => {
-            const correct = q.options.filter((o) => o.is_correct).length;
-            return (
-              <li
-                key={q.id}
-                ref={(el) => {
-                  if (el) cardRefs.current.set(q.id, el);
-                  else cardRefs.current.delete(q.id);
-                }}
-              >
-                <GlassCard
-                  className={cn(
-                    "flex flex-col gap-3 transition-shadow",
-                    activeQuestionId === q.id && "ring-2 ring-[var(--brand)] ring-offset-2"
-                  )}
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="gray" pill>
-                      <Icon name="clock" size={12} />
-                      {formatTime(q.position_seconds)}
-                    </Badge>
-                    <Badge variant="brand">
-                      {q.kind === "single" ? "תשובה אחת" : "מספר תשובות"}
-                    </Badge>
-                    <span className="text-xs text-[var(--body-subtle)]">
-                      {q.options.length} אפשרויות · {correct} נכונות
-                    </span>
-                    <div className="ms-auto flex items-center gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(q)}>
-                        עריכה
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeQuestion(q)}
-                        className="text-[var(--fg-danger)]"
-                      >
-                        מחיקה
-                      </Button>
-                    </div>
-                  </div>
-                  <p className="font-medium text-[var(--heading)]">
-                    {q.prompt ?? "(ללא ניסוח)"}
-                  </p>
-                  <ul className="flex flex-col gap-1">
-                    {q.options.map((o) => (
-                      <li
-                        key={o.id}
-                        className="flex items-center gap-2 text-sm text-[var(--body)]"
-                      >
-                        <Icon
-                          name={o.is_correct ? "check" : "close"}
-                          size={14}
-                          className={
-                            o.is_correct
-                              ? "text-[var(--fg-success)]"
-                              : "text-[var(--body-subtle)]"
-                          }
-                        />
-                        {o.text ?? "(ללא טקסט)"}
-                      </li>
-                    ))}
-                  </ul>
-                </GlassCard>
-              </li>
-            );
-          })}
+          {questions.map((q) => (
+            <QuestionListItem
+              key={q.id}
+              question={q}
+              active={activeQuestionId === q.id}
+              cardRef={(el) => {
+                if (el) cardRefs.current.set(q.id, el);
+                else cardRefs.current.delete(q.id);
+              }}
+              onEdit={() => openEdit(q)}
+              onDelete={() => removeQuestion(q)}
+            />
+          ))}
         </ul>
       )}
 

@@ -21,9 +21,11 @@ export interface VideoPreviewPanelProps {
   questions: AuthorQuestion[];
   activeQuestionId: string | null;
   onMarkerSelect: (question: AuthorQuestion) => void;
-  onMarkerMove: (questionId: string, seconds: number) => MoveResult;
-  /** A whole cluster (2+ questions sharing a timestamp) dragged together — every id moves to the same new instant. */
-  onClusterMove: (questionIds: string[], seconds: number) => MoveResult;
+  /** Omit for a read-only panel (e.g. the quiz preview, backlog 1.3) — dragging
+   * is then disabled entirely, same as `CheckpointTimeline`'s own contract. */
+  onMarkerMove?: (questionId: string, seconds: number) => MoveResult;
+  /** A whole cluster (2+ questions sharing a timestamp) dragged together — every id moves to the same new instant. Omit alongside `onMarkerMove` for read-only. */
+  onClusterMove?: (questionIds: string[], seconds: number) => MoveResult;
   /** Bubbled up so the editor can also drive the "current time" prefill in `QuestionModal`. */
   onProgress?: (current: number, duration: number) => void;
 }

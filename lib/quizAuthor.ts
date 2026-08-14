@@ -33,6 +33,9 @@ export interface AuthorOption {
   text: string | null;
 }
 
+/** How a question's base-language text was produced. */
+export type QuestionSource = "authored" | "generated" | "translated";
+
 /** An editable question with its base-language text and option set. */
 export interface AuthorQuestion {
   id: string;
@@ -43,6 +46,8 @@ export interface AuthorQuestion {
   prompt: string | null;
   /** Base-language explanation (`null` when unset). */
   explanation: string | null;
+  /** `null` alongside `prompt` when no base-language translation row exists yet. */
+  source: QuestionSource | null;
   options: AuthorOption[];
 }
 

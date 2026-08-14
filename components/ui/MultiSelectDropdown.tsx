@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "./Icon";
 import { cn } from "./cn";
@@ -51,7 +51,15 @@ export function MultiSelectDropdown<T extends string>({
   // nothing. Repositions (not closes) on scroll/resize so it stays anchored;
   // "closes on scroll" would also fire while scrolling the panel's own
   // internal option list, which is exactly the wrong behaviour here.
-  useEffect(() => {
+  //
+  // useLayoutEffect (not useEffect): `panelStyle` starts as `{}`, and on the
+  // FIRST open of an instance a plain effect wouldn't compute real
+  // coordinates until after the browser had already painted the portaled div
+  // at its default flow position (the very bottom of <body>) for one frame.
+  // On a second open, it would paint at whatever stale position was left
+  // over from the previous close. Running synchronously before paint avoids
+  // both.
+  useLayoutEffect(() => {
     if (!open) return;
     function place() {
       const rect = triggerRef.current?.getBoundingClientRect();
