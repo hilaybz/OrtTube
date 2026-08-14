@@ -911,6 +911,7 @@ export type Database = {
           author_id: string
           author_name: string
           base_language: string
+          channel_name: string
           created_at: string
           is_own: boolean
           question_count: number
