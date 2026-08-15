@@ -874,7 +874,6 @@ export type Database = {
       is_member_of_class: { Args: { cid: string }; Returns: boolean }
       is_teacher_of_class: { Args: { cid: string }; Returns: boolean }
       lifecycle_lock_key: { Args: { p_teacher_id: string }; Returns: number }
-      list_assigned_for_student: { Args: never; Returns: Json }
       list_class_quizzes: { Args: { p_class_id: string }; Returns: Json }
       list_class_roster: { Args: { p_class_id: string }; Returns: Json }
       list_my_attempts_for_quiz: {
@@ -925,6 +924,7 @@ export type Database = {
           youtube_video_id: string
         }[]
       }
+      list_student_feed: { Args: never; Returns: Json }
       purge_soft_deleted_quizzes: {
         Args: { p_retention_days: number }
         Returns: Json

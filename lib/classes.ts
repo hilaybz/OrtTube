@@ -401,31 +401,53 @@ export async function listClassQuizzes(
   return (data as unknown as AssignedQuiz[]) ?? [];
 }
 
-export interface StudentFeedQuiz {
-  quiz_id: string;
-  title: string | null;
-  base_language: Language;
-  video_id: string;
-  youtube_video_id: string;
-  video_title: string | null;
-  tutor_mode: TutorMode;
-  max_attempts: number | null;
-  /** Due date, when the allocation has one — shown in the feed, not the player. */
-  available_from: string | null;
-  available_until: string | null;
-  assigned_at: string;
-}
-export interface StudentFeedClass {
+/**
+ * `not_started`/`in_progress` — no completed attempt yet (an unfinished one,
+ * if any, puts it in `in_progress`). `completed` — at least one completed
+ * attempt; the RPC reports the LATEST one's score, never the best of several.
+ * `missed` — the allocation's window has closed and the student never
+ * started it at all (issue #69's student-side gap: this used to just vanish
+ * from the feed instead of showing as missed).
+ */
+export type StudentFeedStatus = "not_started" | "in_progress" | "completed" | "missed";
+
+export interface StudentFeedItem {
   class_id: string;
   class_name: string;
-  language: Language;
-  quizzes: StudentFeedQuiz[];
+  /** The class owner's display name — the assigning teacher, which is NOT
+   *  necessarily the quiz's author (a shared quiz can be assigned by any
+   *  same-school teacher). Null if the teacher has no display_name set. */
+  teacher_name: string | null;
+  quiz_id: string;
+  title: string | null;
+  youtube_video_id: string;
+  video_title: string | null;
+  max_attempts: number | null;
+  /** Null = no deadline. Past = the window has closed (see `status`). */
+  available_until: string | null;
+  assigned_at: string;
+  /** Whether the allocation is currently open (`_allocation_is_live`) —
+   *  drives the CTA on a `completed` card ("ניסיון נוסף" only while live). */
+  is_live: boolean;
+  status: StudentFeedStatus;
+  /** Null = unlimited. */
+  attempts_left: number | null;
+  last_num_correct: number | null;
+  last_num_questions: number | null;
+  last_completed_at: string | null;
+  /** The unfinished attempt to resume, when `status === "in_progress"`. */
+  resume_attempt_id: string | null;
 }
 
-/** The signed-in student's class-tabbed feed of assigned, non-deleted quizzes. */
-export async function listAssignedForStudent(
+/**
+ * The signed-in student's flat feed of assigned quizzes — live ones plus
+ * recently-closed ones the student either completed or missed entirely.
+ * Replaces the old per-class-tabbed `list_assigned_for_student` +
+ * per-quiz `list_my_attempts_for_quiz` fan-out with one query.
+ */
+export async function listStudentFeed(
   client: SupabaseClient
-): Promise<StudentFeedClass[]> {
-  const data = unwrap(await client.rpc("list_assigned_for_student", {}));
-  return (data as unknown as StudentFeedClass[]) ?? [];
+): Promise<StudentFeedItem[]> {
+  const data = unwrap(await client.rpc("list_student_feed", {}));
+  return (data as unknown as StudentFeedItem[]) ?? [];
 }

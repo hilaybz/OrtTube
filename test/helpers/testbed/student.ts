@@ -10,7 +10,7 @@ import {
   startOrResumeAttempt,
   type StudentQuiz,
 } from "@/lib/attempts";
-import { listAssignedForStudent, type StudentFeedClass, type TutorMode } from "@/lib/classes";
+import { listStudentFeed, type StudentFeedItem, type TutorMode } from "@/lib/classes";
 import { getPool } from "../db";
 import type { Actor } from "./internal";
 import type { Quiz } from "./quiz";
@@ -47,9 +47,9 @@ export class Student implements Actor {
     readonly client: SupabaseClient
   ) {}
 
-  /** This student's class-tabbed feed of assigned, non-deleted quizzes. */
-  assignedFeed(): Promise<StudentFeedClass[]> {
-    return listAssignedForStudent(this.client);
+  /** This student's flat feed of live + recently-closed assigned quizzes. */
+  feed(): Promise<StudentFeedItem[]> {
+    return listStudentFeed(this.client);
   }
 
   /** Set the student's `preferred_language` (drives language resolution). */

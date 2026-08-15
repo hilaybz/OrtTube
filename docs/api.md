@@ -53,7 +53,7 @@ correctness) live in the database, not the handler.
 | GET / POST | `/api/classes/[id]/quizzes` | List assignments / assign a quiz (`tutorMode`, `maxAttempts`, `published` — defaults `true`, `availableFrom`/`availableUntil` — default no window) with best-effort eager translation. |
 | PATCH | `/api/classes/[id]/quizzes/[quizId]` | Flip an assignment's `published` state and/or replace its scheduling window (`availableFrom`/`availableUntil` must be sent together — the window is replaced as a whole, not merged). |
 | DELETE | `/api/classes/[id]/quizzes/[quizId]` | Unassign a quiz. |
-| GET | `/api/classes/assigned` | A student's class-tabbed feed of assigned quizzes. |
+| GET | `/api/classes/assigned` | A student's flat feed of assigned quizzes — live ones plus recently-closed ones the student completed or missed (`status`: not_started/in_progress/completed/missed). |
 | GET / POST | `/api/quizzes/[id]/allocations` | The quiz-side mirror of the above: every allocation of this quiz, any state / bulk-assign to several classes at once with one shared settings object (`classIds[]` + the same fields as the class-side POST). Response reports `{ assigned, failed }` — one bad class id fails only that entry. |
 | GET | `/api/quizzes/allocations` | The caller's own quizzes with ≥1 allocation, each split into `live`/`scheduled` class tags — feeds the library-card and dashboard-landing chips. |
 

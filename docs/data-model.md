@@ -224,12 +224,16 @@ erDiagram
   `available_from` / `available_until` (either or both nullable — no window
   means "visible for as long as `published` stays true"). An allocation that
   is unpublished, not yet inside its window, or past it is invisible to
-  students in every read (`get_quiz_for_student`, `start_or_resume_attempt`,
-  `list_assigned_for_student`, `list_my_attempts_for_quiz`, the tutor route) —
+  students in every read that ACTS on an assignment (`get_quiz_for_student`,
+  `start_or_resume_attempt`, `list_my_attempts_for_quiz`, the tutor route) —
   same `not_assigned` a missing assignment would raise, via the shared SQL
   predicate `_allocation_is_live(cq)` every one of those reads calls. The
   owning teacher always sees every state via `list_class_quizzes` /
-  `list_quiz_allocations` — nothing is hidden from the owner.
+  `list_quiz_allocations` — nothing is hidden from the owner. The student
+  FEED (`list_student_feed`) is the one deliberate exception: it also
+  surfaces a closed allocation the student completed or never attempted
+  (`missed`), rather than letting it silently disappear once its window
+  closes.
 
   **Hard cutoff at `available_until`.** A student mid-attempt when the window
   closes is treated as having submitted right then: `submit_answer` and
