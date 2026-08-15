@@ -416,6 +416,10 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
       )}
 
       <QuizPreviewModal
+        // A fresh instance per quiz, so switching preview targets can never
+        // paint a frame of the PREVIOUS quiz's content (answer key included)
+        // under a modal opened for a different one.
+        key={previewQuizId ?? "none"}
         open={previewQuizId != null}
         quizId={previewQuizId ?? ""}
         onClose={() => setPreviewQuizId(null)}

@@ -153,6 +153,26 @@ describe("QuizLibrary — preview before cloning", () => {
     expect(inDialog.getByText(/דנה כהן/)).toBeInTheDocument();
   });
 
+  it("is read-only — no edit/delete buttons, and the marker isn't draggable", async () => {
+    stubFetch();
+    renderLibrary();
+    await openSchoolTabAndPreview();
+
+    const dialog = await screen.findByRole("dialog");
+    await screen.findByText("מה מהירות האור?");
+    const inDialog = within(dialog);
+    expect(inDialog.queryByRole("button", { name: "עריכה" })).not.toBeInTheDocument();
+    expect(inDialog.queryByRole("button", { name: "מחיקה" })).not.toBeInTheDocument();
+
+    // Markers only render once the (stubbed) player reports a duration.
+    await userEvent.click(screen.getByRole("button", { name: "report-ready" }));
+    const [marker] = screen.getAllByTestId("timeline-marker");
+    // A draggable marker's own aria-label carries the drag hint (see
+    // CheckpointTimeline.tsx) — a future change that wires onMarkerMove/
+    // onEdit/onDelete through this read-only surface should fail here.
+    expect(marker.getAttribute("aria-label")).not.toContain("גררו כדי להזיז");
+  });
+
   it("clicking a timeline marker seeks the player and highlights the matching question", async () => {
     stubFetch();
     renderLibrary();

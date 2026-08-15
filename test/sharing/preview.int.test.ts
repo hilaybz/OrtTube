@@ -40,6 +40,7 @@ interface PreviewRow {
     id: string;
     prompt: string | null;
     explanation: string | null;
+    source: string | null;
     options: Array<{ id: string; is_correct: boolean; text: string | null }>;
   }>;
 }
@@ -192,5 +193,56 @@ describe.skipIf(!online)("get_quiz_for_preview", () => {
     const quiz = await authorQuizWithQuestion(teacher);
     await quiz.softDelete();
     await expect(previewAs(teacher, quiz.id)).rejects.toThrow("quiz_deleted");
+  });
+
+  it("a deactivated teacher cannot preview even their own quiz (not_authorized, before the read gate)", async () => {
+    const quiz = await authorQuizWithQuestion(teacher);
+    await testbed.admin.deactivateTeacher(teacher);
+
+    await expect(previewAs(teacher, quiz.id)).rejects.toThrow("not_authorized");
+  });
+
+  it("does not leak whether a DIFFERENT school's quiz was deleted — a non-reader gets not_authorized, never quiz_deleted", async () => {
+    // The gate must run BEFORE the deleted check: otherwise a caller with no
+    // read right on this quiz at all could distinguish quiz_not_found /
+    // quiz_deleted / not_authorized and confirm a quiz exists (and was
+    // deleted) in a school they can't read from.
+    const quiz = await authorQuizWithQuestion(teacher);
+    await quiz.makeShared();
+    await quiz.softDelete();
+
+    const otherSchool = await testbed.createSchool("School B");
+    const otherTeacher = await otherSchool.enrollTeacher({ name: "Rhea" });
+
+    await expect(previewAs(otherTeacher, quiz.id)).rejects.toThrow("not_authorized");
+  });
+
+  it("excludes a soft-deleted question from the preview", async () => {
+    const quiz = await teacher.authorQuiz({
+      baseLanguage: "he",
+      title: "Two Questions",
+      questions: [
+        singleChoice({ prompt: "Keep me", at: 10, correct: "yes", distractors: ["no"] }),
+        singleChoice({ prompt: "Delete me", at: 20, correct: "yes", distractors: ["no"] }),
+      ],
+    });
+    await teacher.removeQuestion(quiz.questions[1]);
+
+    const preview = await previewAs(teacher, quiz.id);
+    expect(preview.questions.map((q) => q.prompt)).toEqual(["Keep me"]);
+  });
+
+  it("returns an empty array, not null, for a quiz with no questions", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he", title: "No Questions" });
+
+    const preview = await previewAs(teacher, quiz.id);
+    expect(preview.questions).toEqual([]);
+  });
+
+  it("includes each question's authoring source", async () => {
+    const quiz = await authorQuizWithQuestion(teacher);
+
+    const preview = await previewAs(teacher, quiz.id);
+    expect(preview.questions[0].source).toBe("authored");
   });
 });
