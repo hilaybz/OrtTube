@@ -20,6 +20,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { closePool } from "../helpers/db";
 import {
   freshTestbed,
+  singleChoice,
   type Testbed,
   type School,
   type Teacher,
@@ -237,7 +238,7 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
 
   // ── Student feed ────────────────────────────────────────────────────────────
 
-  it("list_assigned_for_student lists only assigned, non-deleted quizzes", async () => {
+  it("list_student_feed lists only assigned, non-deleted quizzes", async () => {
     const assigned = await teacher.authorQuiz({ baseLanguage: "he", title: "Assigned" });
     const unassigned = await teacher.authorQuiz({ baseLanguage: "he", title: "Unassigned" });
     const removed = await teacher.authorQuiz({ baseLanguage: "he", title: "Removed" });
@@ -247,10 +248,8 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     await teacher.assignQuiz(removed, { to: biology });
     await removed.softDelete();
 
-    const feed = await student.assignedFeed();
-    const biologyFeed = feed.find((c) => c.class_id === biology.id);
-    expect(biologyFeed).toBeTruthy();
-    const quizIds = biologyFeed!.quizzes.map((q) => q.quiz_id);
+    const feed = await student.feed();
+    const quizIds = feed.filter((i) => i.class_id === biology.id).map((i) => i.quiz_id);
     expect(quizIds).toContain(assigned.id);
     expect(quizIds).not.toContain(unassigned.id);
     expect(quizIds).not.toContain(removed.id);
@@ -260,8 +259,144 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
     await teacher.assignQuiz(quiz, { to: biology });
     // `student` is NOT enrolled in `biology` here.
-    const feed = await student.assignedFeed();
-    expect(feed.find((c) => c.class_id === biology.id)).toBeUndefined();
+    const feed = await student.feed();
+    expect(feed.some((i) => i.class_id === biology.id)).toBe(false);
+  });
+
+  it("reports the class-owning teacher's name, not a shared quiz's author", async () => {
+    const peerTeacher = await lincoln.enrollTeacher({ name: "Grace" });
+    const quiz = await peerTeacher.authorQuiz({ baseLanguage: "he", visibility: "shared" });
+    await biology.enroll(student);
+    await teacher.assignQuiz(quiz, { to: biology });
+
+    const feed = await student.feed();
+    const item = feed.find((i) => i.quiz_id === quiz.id);
+    expect(item!.teacher_name).toBe(teacher.name);
+  });
+
+  it("marks an unstarted live allocation as not_started", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    await biology.enroll(student);
+    await teacher.assignQuiz(quiz, { to: biology });
+
+    const feed = await student.feed();
+    expect(feed.find((i) => i.quiz_id === quiz.id)!.status).toBe("not_started");
+  });
+
+  it("marks an in-progress attempt as in_progress, even with a prior completed attempt", async () => {
+    const quiz = await teacher.authorQuiz({
+      baseLanguage: "he",
+      questions: [singleChoice({ prompt: "Q", at: 5, correct: "yes", distractors: ["no"] })],
+    });
+    await biology.enroll(student);
+    await teacher.assignQuiz(quiz, { to: biology, maxAttempts: null });
+
+    const attempt1 = await student.startAttempt(quiz, { in: biology });
+    await attempt1.answerAllCorrectly();
+    await attempt1.complete();
+    await student.startAttempt(quiz, { in: biology }); // attempt 2, left unfinished
+
+    const feed = await student.feed();
+    const item = feed.find((i) => i.quiz_id === quiz.id);
+    expect(item!.status).toBe("in_progress");
+    expect(item!.resume_attempt_id).toBeTruthy();
+  });
+
+  it("reports the LATEST completed attempt's score, not the best of several", async () => {
+    const quiz = await teacher.authorQuiz({
+      baseLanguage: "he",
+      questions: [
+        singleChoice({ prompt: "Q1", at: 5, correct: "yes", distractors: ["no"] }),
+        singleChoice({ prompt: "Q2", at: 10, correct: "yes", distractors: ["no"] }),
+      ],
+    });
+    await biology.enroll(student);
+    await teacher.assignQuiz(quiz, { to: biology, maxAttempts: null });
+
+    // Attempt 1: both correct (2/2).
+    const attempt1 = await student.startAttempt(quiz, { in: biology });
+    await attempt1.answerAllCorrectly();
+    await attempt1.complete();
+
+    // Attempt 2 (the latest): one wrong (1/2) — this is the score that must win.
+    const attempt2 = await student.startAttempt(quiz, { in: biology });
+    await attempt2.answerCorrectly(quiz.questions[0]);
+    await attempt2.answer(quiz.questions[1], []);
+    await attempt2.complete();
+
+    const feed = await student.feed();
+    const item = feed.find((i) => i.quiz_id === quiz.id);
+    expect(item!.status).toBe("completed");
+    expect(item!.last_num_correct).toBe(1);
+    expect(item!.last_num_questions).toBe(2);
+  });
+
+  it("marks a closed allocation with zero attempts as missed", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    await biology.enroll(student);
+    await teacher.assignQuiz(quiz, {
+      to: biology,
+      availableUntil: new Date(Date.now() - 60_000).toISOString(),
+    });
+
+    const feed = await student.feed();
+    const item = feed.find((i) => i.quiz_id === quiz.id);
+    expect(item).toBeTruthy();
+    expect(item!.status).toBe("missed");
+    expect(item!.last_num_correct).toBeNull();
+  });
+
+  it("issue #69: keeps a completed attempt visible as completed (not missed, not gone) after its window later closes", async () => {
+    const quiz = await teacher.authorQuiz({
+      baseLanguage: "he",
+      questions: [singleChoice({ prompt: "Q", at: 5, correct: "yes", distractors: ["no"] })],
+    });
+    await biology.enroll(student);
+    await teacher.assignQuiz(quiz, { to: biology });
+
+    const attempt = await student.startAttempt(quiz, { in: biology });
+    await attempt.answerAllCorrectly();
+    await attempt.complete();
+
+    // Close the window AFTER completion — before this fix, the allocation
+    // would simply vanish from the feed the instant it closed.
+    await teacher.setSchedule(quiz, {
+      in: biology,
+      availableFrom: null,
+      availableUntil: new Date(Date.now() - 60_000).toISOString(),
+    });
+
+    const feed = await student.feed();
+    const item = feed.find((i) => i.quiz_id === quiz.id);
+    expect(item).toBeTruthy();
+    expect(item!.status).toBe("completed");
+    expect(item!.last_num_correct).toBe(1);
+    expect(item!.last_num_questions).toBe(1);
+  });
+
+  it("omits a published-but-not-yet-open allocation entirely", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    await biology.enroll(student);
+    await teacher.assignQuiz(quiz, {
+      to: biology,
+      availableFrom: new Date(Date.now() + 3600_000).toISOString(),
+    });
+
+    const feed = await student.feed();
+    expect(feed.some((i) => i.quiz_id === quiz.id)).toBe(false);
+  });
+
+  it("omits an unpublished (draft) allocation, and a draft never counts as missed even past its would-be window", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
+    await biology.enroll(student);
+    await teacher.assignQuiz(quiz, {
+      to: biology,
+      published: false,
+      availableUntil: new Date(Date.now() - 60_000).toISOString(),
+    });
+
+    const feed = await student.feed();
+    expect(feed.some((i) => i.quiz_id === quiz.id)).toBe(false);
   });
 
   // ── Publish/draft (2A.1) ────────────────────────────────────────────────────
@@ -279,9 +414,8 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     const tutor = await student.tutorContext(quiz, { in: biology });
     expect(tutor.tutor_mode).toBeDefined();
 
-    const feed = await student.assignedFeed();
-    const biologyFeed = feed.find((c) => c.class_id === biology.id);
-    expect(biologyFeed!.quizzes.map((q) => q.quiz_id)).toContain(quiz.id);
+    const feed = await student.feed();
+    expect(feed.some((i) => i.class_id === biology.id && i.quiz_id === quiz.id)).toBe(true);
   });
 
   it("an unpublished assignment is invisible to students everywhere, but not to the owner", async () => {
@@ -299,9 +433,8 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
       student.tutorContext(quiz, { in: biology })
     ).rejects.toMatchObject({ code: "not_assigned" });
 
-    const feed = await student.assignedFeed();
-    const biologyFeed = feed.find((c) => c.class_id === biology.id);
-    expect(biologyFeed!.quizzes.map((q) => q.quiz_id)).not.toContain(quiz.id);
+    const feed = await student.feed();
+    expect(feed.some((i) => i.class_id === biology.id && i.quiz_id === quiz.id)).toBe(false);
 
     // The owner still sees the draft assignment.
     const listed = await biology.assignedQuizzes();
