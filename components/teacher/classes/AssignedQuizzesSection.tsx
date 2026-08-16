@@ -474,41 +474,49 @@ function AssignedQuizRow({
         />
       )}
       <div className="pointer-events-none relative z-20 flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-2">
-          <h4 className="truncate font-semibold text-[var(--heading)]">
-            {heading}
-          </h4>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
-            <Badge variant="gray">
-              <span className="tabular-nums">{a.question_count}</span> שאלות
-            </Badge>
-            <Badge variant="brand">
-              מורה־AI: {TUTOR_MODE_LABELS[a.tutor_mode]}
-            </Badge>
-            <Badge variant="gray">
-              {a.max_attempts == null ? (
-                "ניסיונות ללא הגבלה"
-              ) : (
-                <>
-                  <span className="tabular-nums">{a.max_attempts}</span>{" "}
-                  ניסיונות
-                </>
-              )}
-            </Badge>
-            {!a.is_own && (
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`https://i.ytimg.com/vi/${a.youtube_video_id}/mqdefault.jpg`}
+            alt=""
+            className="aspect-video w-24 shrink-0 rounded-[var(--radius-sm)] bg-black object-cover"
+          />
+          <div className="flex min-w-0 flex-col gap-2">
+            <h4 className="truncate font-semibold text-[var(--heading)]">
+              {heading}
+            </h4>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
               <Badge variant="gray">
-                {a.author_name ? `מאת ${a.author_name}` : "משותף"}
+                <span className="tabular-nums">{a.question_count}</span> שאלות
               </Badge>
+              <Badge variant="brand">
+                מורה־AI: {TUTOR_MODE_LABELS[a.tutor_mode]}
+              </Badge>
+              <Badge variant="gray">
+                {a.max_attempts == null ? (
+                  "ניסיונות ללא הגבלה"
+                ) : (
+                  <>
+                    <span className="tabular-nums">{a.max_attempts}</span>{" "}
+                    ניסיונות
+                  </>
+                )}
+              </Badge>
+              {!a.is_own && (
+                <Badge variant="gray">
+                  {a.author_name ? `מאת ${a.author_name}` : "משותף"}
+                </Badge>
+              )}
+            </div>
+            {(a.available_from || a.available_until) && (
+              <p className="text-xs text-[var(--body-subtle)]">
+                {a.available_from && `מ־${formatWindowPart(a.available_from)}`}
+                {a.available_from && a.available_until && " · "}
+                {a.available_until && `עד ${formatWindowPart(a.available_until)}`}
+              </p>
             )}
           </div>
-          {(a.available_from || a.available_until) && (
-            <p className="text-xs text-[var(--body-subtle)]">
-              {a.available_from && `מ־${formatWindowPart(a.available_from)}`}
-              {a.available_from && a.available_until && " · "}
-              {a.available_until && `עד ${formatWindowPart(a.available_until)}`}
-            </p>
-          )}
         </div>
         <div className="flex items-center gap-2">
           {showAnalytics && (
