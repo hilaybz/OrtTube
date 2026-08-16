@@ -76,6 +76,7 @@ correctness) live in the database, not the handler.
 | --- | --- | --- |
 | GET | `/api/analytics/quiz/[quizId]` | Completion / attempt / score summary for a quiz. |
 | GET | `/api/analytics/class/[classId]` | Per-assigned-quiz stats for a class. |
+| GET | `/api/analytics/class/[classId]/quiz/[quizId]` | One quiz's stats within one class — score distribution and per-question/per-option breakdown, scored from each student's latest completed attempt. |
 | GET | `/api/analytics/tutor` | Tutor-interaction stats for a quiz or class. |
 
 ## Admin endpoints (`ADMIN_SECRET`)

@@ -149,6 +149,80 @@ export interface ClassStats {
   quizzes: ClassQuizStat[];
 }
 
+/** One 20%-wide score band in a `ClassQuizAnalytics.score_distribution`. */
+export interface ScoreBucket {
+  /** Inclusive lower bound, 0..1 (e.g. `0.4`). */
+  bucket_min: number;
+  /** Exclusive upper bound, 0..1 (e.g. `0.6`) — except the top bucket, which
+   * includes a perfect score. */
+  bucket_max: number;
+  /** Students whose latest completed attempt scored in this band. */
+  count: number;
+}
+
+/** One option's row in `ClassQuizAnalyticsQuestion.options`. */
+export interface ClassQuizOptionStat {
+  option_id: string;
+  order_index: number;
+  /** Class-language option text, falling back to the quiz's base language. */
+  text: string | null;
+  /** The answer key — safe here: owner-facing analytics only. */
+  is_correct: boolean;
+  /** True when the option was soft-deleted; still reported for history. */
+  deleted: boolean;
+  /**
+   * How many students (by their latest completed attempt) chose this option —
+   * never inflated by retakes or by another class running the same quiz.
+   */
+  selection_count: number;
+}
+
+/** Per-question statistics within one class's assignment of a quiz. */
+export interface ClassQuizQuestionStat {
+  question_id: string;
+  order_index: number;
+  position_seconds: number;
+  kind: QuestionKind;
+  /** True when the question was soft-deleted; still reported for history. */
+  deleted: boolean;
+  /** Class-language prompt, falling back to the quiz's base language. */
+  prompt: string | null;
+  /** Students (latest attempt) who answered this question at all. */
+  answered_count: number;
+  /** Of those, how many answered correctly. */
+  correct_count: number;
+  /** `correct_count / answered_count` (0..1), or `null` when never answered. */
+  correct_pct: number | null;
+  options: ClassQuizOptionStat[];
+}
+
+/**
+ * `class_quiz_analytics(class_id, quiz_id)` result — the per-(class, quiz)
+ * view `class_stats`/`question_stats` don't provide (those are class-wide-all-
+ * quizzes and quiz-wide-all-classes respectively). Scored from each student's
+ * LATEST completed attempt only, matching the grade they're shown themselves —
+ * never best-of, never every retake.
+ */
+export interface ClassQuizAnalytics {
+  class_id: string;
+  quiz_id: string;
+  title: string | null;
+  question_count: number;
+  /** Current roster size. */
+  member_count: number;
+  /** Distinct students counted in `average_score`/`score_distribution`. */
+  students_completed: number;
+  /** All attempt rows for (class, quiz), any state — includes retakes. */
+  attempt_count: number;
+  /** All completed attempt rows for (class, quiz) — includes retakes. */
+  completion_count: number;
+  /** Mean fraction correct (0..1) over each student's latest attempt, or `null`. */
+  average_score: number | null;
+  /** Always 5 bands, 0 counts included. */
+  score_distribution: ScoreBucket[];
+  questions: ClassQuizQuestionStat[];
+}
+
 /** A single flagged tutor interaction (likely answer-extraction attempt). */
 export interface TutorExtractionAttempt {
   id: string;
@@ -254,6 +328,23 @@ export async function getClassStats(
   classId: string
 ): Promise<ClassStats> {
   return callRpc<ClassStats>(client, "class_stats", { p_class_id: classId });
+}
+
+/**
+ * Per-question, per-option, and score-distribution stats for one quiz WITHIN
+ * one class — the view `class_stats`/`question_stats` can't give alone.
+ * Caller must own the class; the quiz must be currently assigned to it
+ * (`not_owner` / `not_assigned`, in that check order).
+ */
+export async function getClassQuizAnalytics(
+  client: AnyClient,
+  classId: string,
+  quizId: string
+): Promise<ClassQuizAnalytics> {
+  return callRpc<ClassQuizAnalytics>(client, "class_quiz_analytics", {
+    p_class_id: classId,
+    p_quiz_id: quizId,
+  });
 }
 
 /**

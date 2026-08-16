@@ -388,6 +388,17 @@ export interface AssignedQuiz {
   available_until: string | null;
   assigned_at: string;
   question_count: number;
+  author_id: string;
+  /** The quiz author's display name — `null` if never set. */
+  author_name: string | null;
+  /**
+   * Whether the viewing teacher authored this quiz. `false` means it's a
+   * `shared` quiz assigned into this class by its owner (any same-school
+   * teacher may assign a shared quiz — see `assign_quiz_to_class`) — the
+   * quiz editor is off-limits (`not_owner`), so such rows route to a
+   * read-only preview instead.
+   */
+  is_own: boolean;
 }
 
 /** Owner-facing list of a class's assigned (non-deleted) quizzes. */

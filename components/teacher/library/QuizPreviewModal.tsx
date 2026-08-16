@@ -26,6 +26,11 @@ const HIGHLIGHT_MS = 1600;
  * teacher sees exactly what they'd get, correct answers and explanations
  * included, with a "שכפול" action right here instead of committing blind.
  *
+ * `onClone` is optional: the class page's assigned-quiz rows reuse this same
+ * surface for a shared quiz the viewing teacher didn't author, purely to look
+ * at it (the editor is off-limits for a quiz they don't own) — no clone
+ * button renders when it's omitted.
+ *
  * `getQuizForPreview` fetched client-side (not passed down from the server
  * page) since this opens from a modal on the already-rendered library page,
  * not from a route transition.
@@ -41,8 +46,8 @@ export function QuizPreviewModal({
   /** Empty string when nothing is open yet — the fetch effect no-ops on it. */
   quizId: string;
   onClose: () => void;
-  onClone: (quizId: string) => void | Promise<void>;
-  cloning: boolean;
+  onClone?: (quizId: string) => void | Promise<void>;
+  cloning?: boolean;
 }) {
   const [quiz, setQuiz] = useState<PreviewQuiz | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,6 +103,7 @@ export function QuizPreviewModal({
   // is moot; on failure it surfaces the library page's own error Alert,
   // which the modal would otherwise sit on top of and hide.
   async function handleClone() {
+    if (!onClone) return;
     await onClone(quizId);
     onClose();
   }
@@ -157,13 +163,16 @@ export function QuizPreviewModal({
         )}
 
         {/* Modal's own header already has a close (X) button — no need to
-            duplicate it here, only the action this surface adds. */}
-        <div className="flex justify-end pt-2">
-          <Button onClick={handleClone} disabled={cloning || !quiz}>
-            {cloning ? <Spinner size={16} /> : <Icon name="grid" size={16} />}
-            שכפול
-          </Button>
-        </div>
+            duplicate it here, only the action this surface adds. Omitted
+            entirely for a read-only preview (no `onClone`). */}
+        {onClone && (
+          <div className="flex justify-end pt-2">
+            <Button onClick={handleClone} disabled={cloning || !quiz}>
+              {cloning ? <Spinner size={16} /> : <Icon name="grid" size={16} />}
+              שכפול
+            </Button>
+          </div>
+        )}
       </div>
     </Modal>
   );
