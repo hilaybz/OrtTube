@@ -240,6 +240,7 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
       ["get_quiz_for_preview", { p_quiz_id: anyId }],
       ["list_my_quizzes", {}],
       ["list_student_feed", {}],
+      ["class_quiz_analytics", { p_class_id: anyId, p_quiz_id: anyId }],
     ];
     for (const [rpcName, args] of securityDefinerRpcs) {
       const { error } = await anon.rpc(rpcName, args);

@@ -21,6 +21,8 @@ export function statusForCode(code: string): number {
   switch (code) {
     case "not_owner":
       return 403;
+    case "not_assigned":
+      return 404;
     case "invalid_args":
       return 400;
     default:

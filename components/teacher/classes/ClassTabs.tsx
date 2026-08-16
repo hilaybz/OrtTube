@@ -24,7 +24,7 @@ export function ClassTabs({
   assigned: AssignedQuiz[];
   myQuizzes: MyQuiz[];
 }) {
-  const [active, setActive] = useState<TabValue>("roster");
+  const [active, setActive] = useState<TabValue>("quizzes");
 
   const rosterCount = roster.members.length + roster.invites.length;
 
@@ -35,26 +35,26 @@ export function ClassTabs({
         value={active}
         onChange={setActive}
         tabs={[
-          { value: "roster", label: `תלמידים (${rosterCount})`, icon: "users" },
           {
             value: "quizzes",
             label: `חידונים (${assigned.length})`,
             icon: "book",
           },
+          { value: "roster", label: `תלמידים (${rosterCount})`, icon: "users" },
         ]}
       />
 
-      {active === "roster" ? (
-        <div role="tabpanel">
-          <RosterSection classId={classId} roster={roster} />
-        </div>
-      ) : (
+      {active === "quizzes" ? (
         <div role="tabpanel">
           <AssignedQuizzesSection
             classId={classId}
             assigned={assigned}
             myQuizzes={myQuizzes}
           />
+        </div>
+      ) : (
+        <div role="tabpanel">
+          <RosterSection classId={classId} roster={roster} />
         </div>
       )}
     </div>

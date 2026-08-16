@@ -831,6 +831,10 @@ export type Database = {
         Args: { p_language: string; p_quiz_id: string; p_ttl_seconds?: number }
         Returns: boolean
       }
+      class_quiz_analytics: {
+        Args: { p_class_id: string; p_quiz_id: string }
+        Returns: Json
+      }
       class_roster_progress: { Args: { p_class_id: string }; Returns: Json }
       class_stats: { Args: { p_class_id: string }; Returns: Json }
       clone_quiz: { Args: { p_source_quiz_id: string }; Returns: string }

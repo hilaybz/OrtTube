@@ -40,10 +40,12 @@ import {
   getQuestionStats,
   getClassStats,
   getTutorStats,
+  getClassQuizAnalytics,
   type QuizStats,
   type QuestionStatsResult,
   type ClassStats,
   type TutorStats,
+  type ClassQuizAnalytics,
 } from "@/lib/analytics";
 import {
   getClassRosterProgress,
@@ -342,6 +344,15 @@ export class Teacher implements Actor {
     return "quiz" in scope
       ? getTutorStats(this.client, { quizId: scope.quiz.id })
       : getTutorStats(this.client, { classId: scope.class.id });
+  }
+
+  /**
+   * One quiz's stats WITHIN one class (must own the class; the quiz must be
+   * currently assigned to it) — score distribution and per-question/per-option
+   * breakdown, scored from each student's latest completed attempt.
+   */
+  classQuizAnalytics(classroom: Classroom, quiz: Quiz): Promise<ClassQuizAnalytics> {
+    return getClassQuizAnalytics(this.client, classroom.id, quiz.id);
   }
 
   /** Per-current-member roster progress for a class (must own the class). */

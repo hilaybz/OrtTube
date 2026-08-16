@@ -233,7 +233,11 @@ erDiagram
   FEED (`list_student_feed`) is the one deliberate exception: it also
   surfaces a closed allocation the student completed or never attempted
   (`missed`), rather than letting it silently disappear once its window
-  closes.
+  closes. `list_class_quizzes` also reports `author_id`/`author_name`/`is_own`
+  per row — a `shared` quiz can be assigned into a class by any same-school
+  teacher, not just its author (see `assign_quiz_to_class` below), so the
+  class page uses `is_own` to route a row to the quiz editor (own quizzes) or
+  a read-only preview (assigned quizzes the viewer didn't author).
 
   **Hard cutoff at `available_until`.** A student mid-attempt when the window
   closes is treated as having submitted right then: `submit_answer` and
@@ -249,10 +253,16 @@ erDiagram
   treats a closed window as "no retake remains," the same as an exhausted
   `max_attempts` — otherwise a windowed quiz with attempts left could never
   reveal per-question detail. **`attempts` deliberately has no "how it was
-  completed" column** — none of `quiz_stats`/`class_stats`/`question_stats`
+  completed" column** — none of
+  `quiz_stats`/`class_stats`/`question_stats`/`class_quiz_analytics`
   read anything beyond `completed_at`/`num_correct`/`num_questions`, so a
   force-completed attempt is already indistinguishable from a normal one
-  everywhere that matters.
+  everywhere that matters. `class_quiz_analytics(class_id, quiz_id)` is the
+  one quiz-within-one-class view — `class_stats` covers every quiz in a
+  class, `question_stats` covers every class that ran a quiz, and neither
+  alone answers "how did *this* class do on *this* quiz." It scores strictly
+  from each student's **latest** completed attempt (never best, never every
+  retake), matching the grade the student is shown on their own results page.
 - **`attempts`** — one row per student run of an assigned quiz. `student_id` goes
   `NULL` when a student is anonymized (right-to-be-forgotten), and such rows still
   count toward class statistics.

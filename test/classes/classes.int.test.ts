@@ -229,6 +229,29 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     expect(listed.some((q) => q.quiz_id === quiz.id)).toBe(false);
   });
 
+  it("list_class_quizzes reports is_own/author_name for the caller's own quiz vs. an assigned shared quiz", async () => {
+    const ownQuiz = await teacher.authorQuiz({ baseLanguage: "he", title: "Mine" });
+    await teacher.assignQuiz(ownQuiz, { to: biology });
+
+    const peerTeacher = await lincoln.enrollTeacher({ name: "Grace" });
+    const sharedQuiz = await peerTeacher.authorQuiz({
+      baseLanguage: "he",
+      title: "Grace's Quiz",
+      visibility: "shared",
+    });
+    await teacher.assignQuiz(sharedQuiz, { to: biology });
+
+    const listed = await biology.assignedQuizzes();
+    const ownRow = listed.find((q) => q.quiz_id === ownQuiz.id)!;
+    expect(ownRow.is_own).toBe(true);
+    expect(ownRow.author_id).toBe(teacher.id);
+
+    const sharedRow = listed.find((q) => q.quiz_id === sharedQuiz.id)!;
+    expect(sharedRow.is_own).toBe(false);
+    expect(sharedRow.author_id).toBe(peerTeacher.id);
+    expect(sharedRow.author_name).toBe("Grace");
+  });
+
   it("unassign_quiz removes the assignment", async () => {
     const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
     await teacher.assignQuiz(quiz, { to: biology });

@@ -12,9 +12,10 @@ import { Icon } from "@/components/ui/Icon";
 import { Spinner } from "@/components/ui/Spinner";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { AssignedQuiz, TutorMode } from "@/lib/classes";
-import { allocationState } from "@/lib/allocationState";
+import { allocationState, type AllocationState } from "@/lib/allocationState";
 import type { MyQuiz } from "@/lib/quiz";
 import { TUTOR_MODE_LABELS } from "./labels";
+import { QuizPreviewModal } from "@/components/teacher/library/QuizPreviewModal";
 import {
   STATE_LABEL,
   STATE_VARIANT,
@@ -22,15 +23,76 @@ import {
   fromDatetimeLocalValue,
 } from "@/components/teacher/scheduleFormat";
 
+/** One lifecycle section, in display order — matches `AllocationState`. */
+const SECTION_ORDER: AllocationState[] = ["draft", "live", "scheduled", "done"];
+
+const SECTION_LABEL: Record<AllocationState, string> = {
+  draft: "מוסתרים",
+  live: "פעילים",
+  scheduled: "מתוזמנים",
+  done: "הסתיימו",
+};
+
 /**
- * Assigned-quizzes management for a class: list assignments with their delivery
- * settings (tutor mode + attempt cap + allocation state + window), an unassign
- * action and a publish/draft toggle, plus an "assign" modal that picks from the
- * teacher's own quizzes and sets `tutorMode` + `maxAttempts` + `published` +
- * an optional scheduling window. Mutations round-trip through `apiFetch` +
- * `router.refresh()`. Editing an existing allocation's settings (beyond the
- * quick publish toggle) is the quiz editor's job (`AllocationsSection`) — this
- * class-side view is for assigning and for the fast publish/unassign actions.
+ * Sort key per section — soonest-relevant-date first, so a teacher scanning
+ * the list sees what needs attention soonest at the top of each group.
+ * No-date items sink to the end rather than sorting arbitrarily.
+ */
+function sectionSortValue(state: AllocationState, a: AssignedQuiz): number {
+  switch (state) {
+    case "live":
+      return a.available_until ? new Date(a.available_until).getTime() : Infinity;
+    case "scheduled":
+      return a.available_from ? new Date(a.available_from).getTime() : Infinity;
+    case "done":
+      // Most-recently-closed first.
+      return a.available_until ? -new Date(a.available_until).getTime() : Infinity;
+    case "draft":
+      // Newest-assigned first.
+      return -new Date(a.assigned_at).getTime();
+  }
+}
+
+/**
+ * Buckets assigned quizzes into their four lifecycle sections and sorts each
+ * — pure, so it's unit-testable without a DOM (mirrors
+ * `sortNotYetAttempted`/`sortFinished` in `components/student/StudentFeed.tsx`).
+ * Does not mutate `assigned`.
+ */
+export function groupAssignedByState(
+  assigned: AssignedQuiz[],
+  now: Date = new Date()
+): Record<AllocationState, AssignedQuiz[]> {
+  const groups: Record<AllocationState, AssignedQuiz[]> = {
+    draft: [],
+    live: [],
+    scheduled: [],
+    done: [],
+  };
+  for (const a of assigned) {
+    groups[allocationState(a, now)].push(a);
+  }
+  for (const state of SECTION_ORDER) {
+    groups[state] = [...groups[state]].sort(
+      (a, b) => sectionSortValue(state, a) - sectionSortValue(state, b)
+    );
+  }
+  return groups;
+}
+
+/**
+ * Assigned-quizzes management for a class: four lifecycle sections (hidden /
+ * live / scheduled / ended), an unassign action and a publish/draft toggle
+ * per row, plus an "assign" modal that picks from the teacher's own quizzes
+ * and sets `tutorMode` + `maxAttempts` + `published` + an optional scheduling
+ * window. Mutations round-trip through `apiFetch` + `router.refresh()`.
+ * Editing an existing allocation's settings (beyond the quick publish toggle)
+ * is the quiz editor's job (`AllocationsSection`) — this class-side view is
+ * for assigning and for the fast publish/unassign/analytics actions.
+ *
+ * Each row is itself a stretched link: it opens the quiz editor for a quiz
+ * this teacher authored, or a read-only preview for an assigned `shared` quiz
+ * someone else wrote (the editor would just reject them as `not_owner`).
  */
 export function AssignedQuizzesSection({
   classId,
@@ -49,6 +111,8 @@ export function AssignedQuizzesSection({
     return myQuizzes.filter((q) => !taken.has(q.quiz_id));
   }, [assigned, myQuizzes]);
 
+  const sections = useMemo(() => groupAssignedByState(assigned), [assigned]);
+
   const [open, setOpen] = useState(false);
   const [quizId, setQuizId] = useState("");
   const [tutorMode, setTutorMode] = useState<TutorMode>("hints");
@@ -62,6 +126,9 @@ export function AssignedQuizzesSection({
 
   const [pending, setPending] = useState<string | null>(null);
   const [rowError, setRowError] = useState("");
+
+  // Read-only preview for an assigned shared quiz this teacher didn't author.
+  const [previewQuizId, setPreviewQuizId] = useState<string | null>(null);
 
   function openAssign() {
     setQuizId(available[0]?.quiz_id ?? "");
@@ -202,78 +269,46 @@ export function AssignedQuizzesSection({
           )}
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {assigned.map((a) => {
-            const busyRow = pending === a.quiz_id;
-            const state = allocationState(a);
+        <div className="flex flex-col gap-6">
+          {SECTION_ORDER.map((state) => {
+            const rows = sections[state];
+            if (rows.length === 0) return null;
             return (
-              <li key={a.quiz_id} className="glass p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex min-w-0 flex-col gap-2">
-                    <h4 className="truncate font-semibold text-[var(--heading)]">
-                      {a.title ?? a.video_title ?? "חידון"}
-                    </h4>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
-                      <Badge variant="gray">
-                        <span className="tabular-nums">{a.question_count}</span>{" "}
-                        שאלות
-                      </Badge>
-                      <Badge variant="brand">
-                        מורה־AI: {TUTOR_MODE_LABELS[a.tutor_mode]}
-                      </Badge>
-                      <Badge variant="gray">
-                        {a.max_attempts == null ? (
-                          "ניסיונות ללא הגבלה"
-                        ) : (
-                          <>
-                            <span className="tabular-nums">
-                              {a.max_attempts}
-                            </span>{" "}
-                            ניסיונות
-                          </>
-                        )}
-                      </Badge>
-                    </div>
-                    {(a.available_from || a.available_until) && (
-                      <p className="text-xs text-[var(--body-subtle)]">
-                        {a.available_from && `מ־${formatWindowPart(a.available_from)}`}
-                        {a.available_from && a.available_until && " · "}
-                        {a.available_until && `עד ${formatWindowPart(a.available_until)}`}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busyRow}
-                      onClick={() => togglePublished(a.quiz_id, !a.published)}
-                    >
-                      {busyRow ? (
-                        <Spinner size={16} />
-                      ) : a.published ? (
-                        "הסתרה מתלמידים"
-                      ) : (
-                        "הצגה לתלמידים"
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-[var(--fg-danger)]"
-                      disabled={busyRow}
-                      onClick={() => unassign(a.quiz_id)}
-                    >
-                      {busyRow ? <Spinner size={16} /> : "ביטול הקצאה"}
-                    </Button>
-                  </div>
+              <div key={state} className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-semibold text-[var(--body)]">
+                    {SECTION_LABEL[state]}
+                  </h4>
+                  <Badge variant="gray">
+                    <span className="tabular-nums">{rows.length}</span>
+                  </Badge>
                 </div>
-              </li>
+                <ul className="flex flex-col gap-3">
+                  {rows.map((a) => (
+                    <AssignedQuizRow
+                      key={a.quiz_id}
+                      classId={classId}
+                      allocation={a}
+                      state={state}
+                      busy={pending === a.quiz_id}
+                      onTogglePublished={() => togglePublished(a.quiz_id, !a.published)}
+                      onUnassign={() => unassign(a.quiz_id)}
+                      onPreview={() => setPreviewQuizId(a.quiz_id)}
+                    />
+                  ))}
+                </ul>
+              </div>
             );
           })}
-        </ul>
+        </div>
       )}
+
+      <QuizPreviewModal
+        key={previewQuizId ?? "none"}
+        open={previewQuizId !== null}
+        quizId={previewQuizId ?? ""}
+        onClose={() => setPreviewQuizId(null)}
+      />
 
       <Modal
         open={open}
@@ -386,5 +421,131 @@ export function AssignedQuizzesSection({
         </form>
       </Modal>
     </div>
+  );
+}
+
+/**
+ * One assignment row. Clickable via the stretched-link pattern (precedent:
+ * `components/teacher/QuizCard.tsx`): a `Link`/button absolutely fills the
+ * row, the visible content sits above it lifted to `z-20 pointer-events-none`
+ * (the whole wrapper, not just a button — `.glass > *` in globals.css pins
+ * every direct child to `z-index: 2`, so a lower z-index on one control alone
+ * would stay trapped beneath that stacking context), and each real control
+ * opts back in with `pointer-events-auto`.
+ *
+ * `allocation.is_own` decides the destination: your own quiz opens the
+ * editor; an assigned shared quiz someone else authored opens the read-only
+ * preview instead of dead-ending on the editor's "not yours" page.
+ */
+function AssignedQuizRow({
+  classId,
+  allocation: a,
+  state,
+  busy,
+  onTogglePublished,
+  onUnassign,
+  onPreview,
+}: {
+  classId: string;
+  allocation: AssignedQuiz;
+  state: AllocationState;
+  busy: boolean;
+  onTogglePublished: () => void;
+  onUnassign: () => void;
+  onPreview: () => void;
+}) {
+  const heading = a.title ?? a.video_title ?? "חידון";
+  const showAnalytics = state === "live" || state === "done";
+
+  return (
+    <li className="glass relative p-4">
+      {a.is_own ? (
+        <Link
+          href={`/dashboard/quizzes/${a.quiz_id}/edit`}
+          aria-label={`עריכת ${heading}`}
+          className="absolute inset-0 z-10 rounded-[inherit]"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onPreview}
+          aria-label={`תצוגה מקדימה של ${heading}`}
+          className="absolute inset-0 z-10 rounded-[inherit]"
+        />
+      )}
+      <div className="pointer-events-none relative z-20 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-2">
+          <h4 className="truncate font-semibold text-[var(--heading)]">
+            {heading}
+          </h4>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
+            <Badge variant="gray">
+              <span className="tabular-nums">{a.question_count}</span> שאלות
+            </Badge>
+            <Badge variant="brand">
+              מורה־AI: {TUTOR_MODE_LABELS[a.tutor_mode]}
+            </Badge>
+            <Badge variant="gray">
+              {a.max_attempts == null ? (
+                "ניסיונות ללא הגבלה"
+              ) : (
+                <>
+                  <span className="tabular-nums">{a.max_attempts}</span>{" "}
+                  ניסיונות
+                </>
+              )}
+            </Badge>
+            {!a.is_own && (
+              <Badge variant="gray">
+                {a.author_name ? `מאת ${a.author_name}` : "משותף"}
+              </Badge>
+            )}
+          </div>
+          {(a.available_from || a.available_until) && (
+            <p className="text-xs text-[var(--body-subtle)]">
+              {a.available_from && `מ־${formatWindowPart(a.available_from)}`}
+              {a.available_from && a.available_until && " · "}
+              {a.available_until && `עד ${formatWindowPart(a.available_until)}`}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {showAnalytics && (
+            <Link
+              href={`/dashboard/classes/${classId}/analytics/${a.quiz_id}`}
+              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1 text-sm font-medium text-[var(--fg-brand)] hover:bg-[var(--neutral-quaternary)]"
+            >
+              <Icon name="chart" size={16} />
+              אנליטיקה
+            </Link>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="pointer-events-auto"
+            disabled={busy}
+            onClick={onTogglePublished}
+          >
+            {busy ? (
+              <Spinner size={16} />
+            ) : a.published ? (
+              "הסתרה מתלמידים"
+            ) : (
+              "הצגה לתלמידים"
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="pointer-events-auto text-[var(--fg-danger)]"
+            disabled={busy}
+            onClick={onUnassign}
+          >
+            {busy ? <Spinner size={16} /> : "ביטול הקצאה"}
+          </Button>
+        </div>
+      </div>
+    </li>
   );
 }
