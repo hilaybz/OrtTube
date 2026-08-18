@@ -14,7 +14,7 @@
     "e2e": "playwright test",
     "seed": "node --env-file=.env.local scripts/seed-fixture.mjs",
     "smoke": "node test/e2e/smoke.mjs",
-    "gen:types": "npx supabase gen types typescript --linked > lib/supabase/types.ts"
+    "gen:types": "sh scripts/gen-types.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",
