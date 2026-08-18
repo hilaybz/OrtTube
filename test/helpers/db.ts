@@ -22,6 +22,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Pool } from "pg";
 import type { Database } from "@/lib/supabase/types";
 import type { Language } from "@/lib/lang";
+import type { Subject } from "@/lib/subjects";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -137,6 +138,7 @@ export interface SeededSchool {
 export interface SeededClass {
   id: string;
   name: string;
+  subject: Subject;
   language: Language;
 }
 
@@ -161,6 +163,7 @@ export const FIXTURE = {
     displayName: "Test Student",
   },
   className: "Test Class",
+  classSubject: "biology" as Subject,
   classLanguage: "he" as Language,
 } as const;
 
@@ -225,9 +228,15 @@ export async function seedFixture(): Promise<Fixture> {
 
   // 4. Class owned by the teacher
   const classRes = await pool.query<{ id: string }>(
-    `INSERT INTO public.classes (teacher_id, school_id, name, language)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
-    [teacherId, schoolId, FIXTURE.className, FIXTURE.classLanguage]
+    `INSERT INTO public.classes (teacher_id, school_id, name, subject, language)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [
+      teacherId,
+      schoolId,
+      FIXTURE.className,
+      FIXTURE.classSubject,
+      FIXTURE.classLanguage,
+    ]
   );
   const classId = classRes.rows[0].id;
 
@@ -248,6 +257,7 @@ export async function seedFixture(): Promise<Fixture> {
     klass: {
       id: classId,
       name: FIXTURE.className,
+      subject: FIXTURE.classSubject,
       language: FIXTURE.classLanguage,
     },
   };

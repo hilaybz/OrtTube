@@ -7,10 +7,14 @@ import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { CreateClassButton } from "@/components/teacher/classes/CreateClassButton";
-import { LANGUAGE_LABELS } from "@/components/teacher/classes/labels";
+import {
+  LANGUAGE_LABELS,
+  SUBJECT_LABELS,
+} from "@/components/teacher/classes/labels";
 
 /**
- * Teacher's classes index: a grid of the classes they own, each linking to its
+ * Teacher's classes index: a grid of the classes they own — each card shows the
+ * subject the group studies alongside its content language — linking to the
  * detail page, plus a "כיתה חדשה" create action. Reads run through the caller's
  * session so RLS scopes the list to the signed-in teacher; a read failure
  * degrades to a friendly Alert.
@@ -65,10 +69,13 @@ export default async function ClassesPage() {
                   <h2 className="truncate text-lg font-semibold text-[var(--heading)]">
                     {c.name}
                   </h2>
-                  <Badge variant="gray">
-                    <Icon name="class" size={12} />
-                    {LANGUAGE_LABELS[c.language]}
-                  </Badge>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="brand">{SUBJECT_LABELS[c.subject]}</Badge>
+                    <Badge variant="gray">
+                      <Icon name="class" size={12} />
+                      {LANGUAGE_LABELS[c.language]}
+                    </Badge>
+                  </div>
                 </div>
                 <Icon
                   name="arrow"

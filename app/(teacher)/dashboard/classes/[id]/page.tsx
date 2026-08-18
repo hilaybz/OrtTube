@@ -15,10 +15,13 @@ import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { ClassHeaderActions } from "@/components/teacher/classes/ClassHeaderActions";
 import { ClassTabs } from "@/components/teacher/classes/ClassTabs";
-import { LANGUAGE_LABELS } from "@/components/teacher/classes/labels";
+import {
+  LANGUAGE_LABELS,
+  SUBJECT_LABELS,
+} from "@/components/teacher/classes/labels";
 
 /**
- * Class detail: header (name + language) with owner rename/delete controls, then
+ * Class detail: header (name + subject + language) with owner edit/delete controls, then
  * tabbed roster + assigned-quizzes management. `listMyClasses` doubles as the
  * ownership/existence check (a class the caller doesn't own is simply absent).
  * Each read is isolated so a transient failure degrades to a friendly Alert
@@ -96,14 +99,18 @@ export default async function ClassDetailPage({
           <h1 className="truncate text-3xl font-bold tracking-tight">
             {klass.name}
           </h1>
-          <Badge variant="gray">
-            <Icon name="class" size={12} />
-            {LANGUAGE_LABELS[klass.language]}
-          </Badge>
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="brand">{SUBJECT_LABELS[klass.subject]}</Badge>
+            <Badge variant="gray">
+              <Icon name="class" size={12} />
+              {LANGUAGE_LABELS[klass.language]}
+            </Badge>
+          </div>
         </div>
         <ClassHeaderActions
           classId={klass.id}
           name={klass.name}
+          subject={klass.subject}
           language={klass.language}
         />
       </div>

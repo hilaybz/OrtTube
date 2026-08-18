@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Language } from "@/lib/lang";
+import type { Subject } from "@/lib/subjects";
 import {
   ensureTranslation as defaultEnsureTranslation,
   type EnsureTranslationResult,
@@ -51,9 +52,13 @@ export interface ClassRow {
   teacher_id: string;
   school_id: string;
   name: string;
+  subject: Subject;
   language: Language;
   created_at: string;
 }
+
+/** The `classes` columns every class read and write returns, as one string. */
+const CLASS_COLUMNS = "id, teacher_id, school_id, name, subject, language, created_at";
 
 /**
  * Create a class owned by the signed-in teacher. `school_id` is derived from the
@@ -62,7 +67,7 @@ export interface ClassRow {
  */
 export async function createClass(
   client: SupabaseClient,
-  params: { name: string; language?: Language }
+  params: { name: string; subject: Subject; language?: Language }
 ): Promise<ClassRow> {
   const userId = await requireUserId(client);
   const profile = unwrap(
@@ -76,22 +81,24 @@ export async function createClass(
         teacher_id: userId,
         school_id: profile.school_id,
         name: params.name,
+        subject: params.subject,
         ...(params.language ? { language: params.language } : {}),
       })
-      .select("id, teacher_id, school_id, name, language, created_at")
+      .select(CLASS_COLUMNS)
       .single()
   );
   return row as unknown as ClassRow;
 }
 
-/** Update a class's name and/or language (owner-only via RLS). */
+/** Update a class's name, subject and/or language (owner-only via RLS). */
 export async function updateClass(
   client: SupabaseClient,
   classId: string,
-  patch: { name?: string; language?: Language }
+  patch: { name?: string; subject?: Subject; language?: Language }
 ): Promise<ClassRow> {
   const update: Record<string, unknown> = {};
   if (patch.name !== undefined) update.name = patch.name;
+  if (patch.subject !== undefined) update.subject = patch.subject;
   if (patch.language !== undefined) update.language = patch.language;
 
   const row = unwrap(
@@ -99,7 +106,7 @@ export async function updateClass(
       .from("classes")
       .update(update)
       .eq("id", classId)
-      .select("id, teacher_id, school_id, name, language, created_at")
+      .select(CLASS_COLUMNS)
       .maybeSingle()
   );
   if (!row) throw new ClassError("class_not_found");
@@ -119,7 +126,7 @@ export async function listMyClasses(client: SupabaseClient): Promise<ClassRow[]>
   const rows = unwrap(
     await client
       .from("classes")
-      .select("id, teacher_id, school_id, name, language, created_at")
+      .select(CLASS_COLUMNS)
       .order("name")
   );
   return (rows as unknown as ClassRow[]) ?? [];

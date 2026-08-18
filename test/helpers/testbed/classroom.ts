@@ -5,6 +5,7 @@
  * `peer.tryEnrollByEmail(biology, …)`.
  */
 import type { Language } from "@/lib/lang";
+import type { Subject } from "@/lib/subjects";
 import {
   updateClass,
   deleteClass,
@@ -33,6 +34,9 @@ export class Classroom {
   }
   get name(): string {
     return this.row.name;
+  }
+  get subject(): Subject {
+    return this.row.subject;
   }
   get language(): Language {
     return this.row.language;
@@ -74,8 +78,15 @@ export class Classroom {
     return listClassQuizzes(this.owner.client, this.id);
   }
 
-  /** Rename / relanguage the class (owner-only). Updates this handle in place. */
-  async rename(patch: { name?: string; language?: Language }): Promise<ClassRow> {
+  /**
+   * Edit the class's name / subject / language (owner-only). Updates this handle
+   * in place.
+   */
+  async rename(patch: {
+    name?: string;
+    subject?: Subject;
+    language?: Language;
+  }): Promise<ClassRow> {
     this.row = await updateClass(this.owner.client, this.id, patch);
     return this.row;
   }

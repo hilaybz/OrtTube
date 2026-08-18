@@ -585,6 +585,7 @@ a teacher deliberately chooses unlimited. It is not the out-of-the-box path.
 | --- | --- | --- |
 | 5.1 | **Site language: Hebrew / English / Arabic.** Large — UI strings are currently hardcoded Hebrew, so this needs an i18n layer before any translation work. Estimate it separately from everything else here. | 🗄️ |
 | 5.2 | Show-password toggle on the sign-in form. | 🎨 |
+| 5.3 | ~~**A class studies a subject.**~~ **Done** — `classes.subject`, `NOT NULL` with no default, CHECK-constrained to a vocabulary of stable English keys mirrored in `lib/subjects.ts` (Hebrew labels in `components/teacher/classes/labels.ts`, drift between the two lists caught by `test/unit/subjects.test.ts`). A class is a group studying one subject rather than a homeroom, so a teacher owns one class per group they teach and a student belongs to one class per subject — already supported by the schema (`class_members` is keyed `(class_id, student_id)`, attempts by `(student, class, quiz)`), so this was the column plus the create/edit form plus the subject badge on the class cards. Existing classes were backfilled to `other`. | ✅ |
 
 ---
 
@@ -596,6 +597,13 @@ a teacher deliberately chooses unlimited. It is not the out-of-the-box path.
   allocation, as `QuizCard`s tagged `זמין:`/`מתוזמן:`, above the existing
   class-summary grid. Still open: whether "things needing attention" (see
   2A.7) belongs on this same page once it exists.
+- **6.3 — Should subject be a filter axis?** Now that `classes.subject`
+  exists and groups exactly, three places could cut by it: the student feed
+  (which already filters by class — 4.2), the teacher library/catalog (1.4,
+  where a quiz's subject would be derived from the classes it's assigned to),
+  and per-class analytics (comparing a teacher's several groups in the same
+  subject). Deliberately not built yet: worth doing once there are enough
+  classes per teacher for the current class filter to feel coarse.
 - **6.2 — Do teachers need to belong to more than one school?** See
   [`open-questions.md` §1](open-questions.md). Deferred pending evidence: the
   migration path (`profiles.school_id` → a `teacher_schools` join table) stays

@@ -136,10 +136,11 @@ async function main() {
   assert(tin.json.role === "teacher", `role === 'teacher'`);
   assert(teacher.jar.hasSession, `teacher session cookie captured`);
 
-  // 3. Teacher creates a class (language 'he').
-  step("Teacher creates a class (POST /api/classes, language 'he')");
-  const biology = await teacher.createClass({ name: `Smoke Class ${app.ts}`, language: "he" });
+  // 3. Teacher creates a class (subject 'biology', language 'he').
+  step("Teacher creates a class (POST /api/classes, subject 'biology', language 'he')");
+  const biology = await teacher.createClass({ name: `Smoke Class ${app.ts}`, subject: "biology", language: "he" });
   assert(biology.response.status === 201, `create class → 201 (got ${biology.response.status} ${biology.response.text.slice(0, 200)})`);
+  assert(biology.subject === "biology", `class subject === 'biology'`);
   assert(biology.language === "he", `class language === 'he'`);
   const classId = biology.id;
 

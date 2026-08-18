@@ -125,7 +125,7 @@ describe.skipIf(!online)("schema, constraints, triggers, RLS", () => {
     it("rejects a class owned by a student (role-checked FK)", async () => {
       await expect(
         getPool().query(
-          "INSERT INTO public.classes (teacher_id, school_id, name) VALUES ($1,$2,'bad')",
+          "INSERT INTO public.classes (teacher_id, school_id, name, subject) VALUES ($1,$2,'bad','other')",
           [student.id, school.id]
         )
       ).rejects.toThrow();
@@ -144,10 +144,51 @@ describe.skipIf(!online)("schema, constraints, triggers, RLS", () => {
       const rivalSchoolId = await createSchoolNamed("Other");
       await expect(
         getPool().query(
-          "INSERT INTO public.classes (teacher_id, school_id, name) VALUES ($1,$2,'bad')",
+          "INSERT INTO public.classes (teacher_id, school_id, name, subject) VALUES ($1,$2,'bad','other')",
           [teacher.id, rivalSchoolId]
         )
       ).rejects.toThrow();
+    });
+  });
+
+  // ── Class subject ──────────────────────────────────────────────────────────
+  describe("classes.subject", () => {
+    it("rejects a class with no subject (NOT NULL, no default)", async () => {
+      await expect(
+        getPool().query(
+          "INSERT INTO public.classes (teacher_id, school_id, name) VALUES ($1,$2,'no subject')",
+          [teacher.id, school.id]
+        )
+      ).rejects.toThrow();
+    });
+
+    it("rejects a subject outside the vocabulary (CHECK)", async () => {
+      await expect(
+        getPool().query(
+          "INSERT INTO public.classes (teacher_id, school_id, name, subject) VALUES ($1,$2,'bad','underwater basket weaving')",
+          [teacher.id, school.id]
+        )
+      ).rejects.toThrow();
+    });
+
+    it("rejects updating an existing class to an unsupported subject", async () => {
+      await expect(
+        getPool().query(
+          "UPDATE public.classes SET subject='mathematics' WHERE id=$1",
+          [classroom.id]
+        )
+      ).rejects.toThrow();
+    });
+
+    it("accepts a supported subject", async () => {
+      await getPool().query("UPDATE public.classes SET subject='physics' WHERE id=$1", [
+        classroom.id,
+      ]);
+      const { rows } = await getPool().query<{ subject: string }>(
+        "SELECT subject FROM public.classes WHERE id=$1",
+        [classroom.id]
+      );
+      expect(rows[0].subject).toBe("physics");
     });
   });
 
@@ -246,7 +287,7 @@ describe.skipIf(!online)("schema, constraints, triggers, RLS", () => {
         "ot@test.local"
       );
       const otherSchoolClass = await pool.query<{ id: string }>(
-        "INSERT INTO public.classes (teacher_id, school_id, name) VALUES ($1,$2,'OC') RETURNING id",
+        "INSERT INTO public.classes (teacher_id, school_id, name, subject) VALUES ($1,$2,'OC','other') RETURNING id",
         [otherSchoolTeacherId, rivalSchoolId]
       );
       const inviteeEmail = "xschool@test.local";

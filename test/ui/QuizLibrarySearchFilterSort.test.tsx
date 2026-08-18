@@ -64,8 +64,8 @@ const Q3 = myQuiz({
 });
 
 const CLASSES: ClassRow[] = [
-  { id: "c1", teacher_id: "t", school_id: "s", name: "כיתה א", language: "he", created_at: "2026-01-01T00:00:00.000Z" },
-  { id: "c2", teacher_id: "t", school_id: "s", name: "כיתה ב", language: "he", created_at: "2026-01-01T00:00:00.000Z" },
+  { id: "c1", teacher_id: "t", school_id: "s", name: "כיתה א", subject: "math", language: "he", created_at: "2026-01-01T00:00:00.000Z" },
+  { id: "c2", teacher_id: "t", school_id: "s", name: "כיתה ב", subject: "biology", language: "he", created_at: "2026-01-01T00:00:00.000Z" },
 ];
 
 // q3 is deliberately absent — "not assigned to any class."

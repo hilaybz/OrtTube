@@ -102,7 +102,7 @@ async function main() {
   });
 
   console.log("• creating class…");
-  const klass = await call("/api/classes", { body: { name: "כיתה ז׳-3", language: "he" } });
+  const klass = await call("/api/classes", { body: { name: "כיתה ז׳-3", subject: "biology", language: "he" } });
   const classId = klass.class.id;
 
   console.log("• inviting student (pending invite)…");

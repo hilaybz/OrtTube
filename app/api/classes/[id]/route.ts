@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateClass, deleteClass } from "@/lib/classes";
 import { isSupportedLanguage } from "@/lib/lang";
+import { isSupportedSubject, type Subject } from "@/lib/subjects";
 import { err, handleError, requireAuth } from "../http";
 
 /**
  * /api/classes/[id]  (class CRUD)
- *   PATCH  → update { name?, language? }.
+ *   PATCH  → update { name?, subject?, language? }.
  *   DELETE → delete the class (cascades members/invites/assignments).
  */
 
@@ -17,19 +18,29 @@ export async function PATCH(
   const auth = await requireAuth();
   if (auth.response) return auth.response;
 
-  let body: { name?: unknown; language?: unknown };
+  let body: { name?: unknown; subject?: unknown; language?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return err("invalid_request", "Body must be JSON", 400);
   }
 
-  const patch: { name?: string; language?: "he" | "ar" | "en" } = {};
+  const patch: {
+    name?: string;
+    subject?: Subject;
+    language?: "he" | "ar" | "en";
+  } = {};
   if (body.name !== undefined) {
     if (typeof body.name !== "string" || !body.name.trim()) {
       return err("invalid_request", "name must be a non-empty string", 400);
     }
     patch.name = body.name.trim();
+  }
+  if (body.subject !== undefined) {
+    if (!isSupportedSubject(body.subject)) {
+      return err("invalid_request", "subject must be a supported subject", 400);
+    }
+    patch.subject = body.subject;
   }
   if (body.language !== undefined) {
     if (!isSupportedLanguage(body.language)) {
@@ -37,7 +48,11 @@ export async function PATCH(
     }
     patch.language = body.language;
   }
-  if (patch.name === undefined && patch.language === undefined) {
+  if (
+    patch.name === undefined &&
+    patch.subject === undefined &&
+    patch.language === undefined
+  ) {
     return err("invalid_request", "Nothing to update", 400);
   }
 

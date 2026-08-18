@@ -44,8 +44,8 @@ correctness) live in the database, not the handler.
 ### Classes, roster, assignment
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET / POST | `/api/classes` | List the teacher's classes / create a class. |
-| PATCH / DELETE | `/api/classes/[id]` | Rename or re-language / delete a class. |
+| GET / POST | `/api/classes` | List the teacher's classes / create a class (`name`, `subject` — required, `language` — defaults `he`). |
+| PATCH / DELETE | `/api/classes/[id]` | Update `name` / `subject` / `language` (any subset) / delete a class. |
 | GET | `/api/classes/[id]/roster` | Members + pending invites. |
 | POST | `/api/classes/[id]/students` | Add a student by email (enroll or create a pending invite). |
 | DELETE | `/api/classes/[id]/students/[studentId]` | Remove a student. |

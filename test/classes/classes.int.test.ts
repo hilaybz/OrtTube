@@ -44,7 +44,11 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     lincoln = await testbed.createSchool("Lincoln High");
     teacher = await lincoln.enrollTeacher({ name: "Ada" });
     student = await lincoln.enrollStudent({ name: "Ben" });
-    biology = await teacher.openClass({ name: "Biology", language: "he" });
+    biology = await teacher.openClass({
+      name: "Biology",
+      subject: "biology",
+      language: "he",
+    });
   });
 
   afterAll(async () => {
@@ -54,8 +58,13 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
   // ── Class CRUD ──────────────────────────────────────────────────────────────
 
   it("createClass creates an owned class with the caller's school", async () => {
-    const created = await teacher.openClass({ name: "Bio 101", language: "en" });
+    const created = await teacher.openClass({
+      name: "Bio 101",
+      subject: "chemistry",
+      language: "en",
+    });
     expect(created.name).toBe("Bio 101");
+    expect(created.subject).toBe("chemistry");
     expect(created.language).toBe("en");
     expect(created.teacherId).toBe(teacher.id);
     expect(created.schoolId).toBe(lincoln.id);
@@ -66,13 +75,49 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
 
   it("updateClass and deleteClass work for the owner", async () => {
     const temp = await teacher.openClass({ name: "Temp" });
-    const updated = await temp.rename({ name: "Renamed", language: "ar" });
+    const updated = await temp.rename({
+      name: "Renamed",
+      subject: "history",
+      language: "ar",
+    });
     expect(updated.name).toBe("Renamed");
+    expect(updated.subject).toBe("history");
     expect(updated.language).toBe("ar");
 
     await temp.delete();
     const listed = await teacher.myClasses();
     expect(listed.some((c) => c.id === temp.id)).toBe(false);
+  });
+
+  it("a teacher's two groups in the same subject are distinct classes", async () => {
+    // The point of the subject column: a class is a group studying one subject,
+    // not a homeroom, so one teacher legitimately owns several math groups and
+    // each keeps its own roster and assignments.
+    const morning = await teacher.openClass({
+      name: "Math 10A",
+      subject: "math",
+    });
+    const afternoon = await teacher.openClass({
+      name: "Math 10B",
+      subject: "math",
+    });
+
+    expect(morning.id).not.toBe(afternoon.id);
+    expect([morning.subject, afternoon.subject]).toEqual(["math", "math"]);
+
+    await morning.enroll(student);
+    expect(await testbed.db.isMember(morning, student)).toBe(true);
+    expect(await testbed.db.isMember(afternoon, student)).toBe(false);
+  });
+
+  it("subject survives an edit that only changes the name", async () => {
+    const klass = await teacher.openClass({
+      name: "Physics",
+      subject: "physics",
+    });
+    const renamed = await klass.rename({ name: "Physics 11" });
+    expect(renamed.name).toBe("Physics 11");
+    expect(renamed.subject).toBe("physics");
   });
 
   // ── Add student by email ────────────────────────────────────────────────────
@@ -342,9 +387,14 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     await attempt1.complete();
 
     // Attempt 2 (the latest): one wrong (1/2) — this is the score that must win.
+    // Getting Q2 wrong means picking the distractor: `submit_answer` requires at
+    // least one option, so an empty selection is a rejected submission rather
+    // than a wrong answer.
     const attempt2 = await student.startAttempt(quiz, { in: biology });
     await attempt2.answerCorrectly(quiz.questions[0]);
-    await attempt2.answer(quiz.questions[1], []);
+    await attempt2.answer(quiz.questions[1], [
+      quiz.questions[1].distractorIds[0],
+    ]);
     await attempt2.complete();
 
     const feed = await student.feed();

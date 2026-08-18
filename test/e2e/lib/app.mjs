@@ -91,8 +91,9 @@ class App {
 // ── Handles (value objects) ───────────────────────────────────────────────────
 
 class Classroom {
-  constructor({ id, language, response }) {
+  constructor({ id, subject, language, response }) {
     this.id = id;
+    this.subject = subject;
     this.language = language;
     this.response = response;
   }
@@ -139,13 +140,18 @@ class Teacher {
   }
 
   /** Create a class. Returns a Classroom handle (raw response on `.response`). */
-  async createClass({ name, language }) {
+  async createClass({ name, subject, language }) {
     const res = await this.app.req(this.jar, "/api/classes", {
       method: "POST",
-      body: { name: name ?? `Smoke Class ${this.app.ts}`, language },
+      body: {
+        name: name ?? `Smoke Class ${this.app.ts}`,
+        subject: subject ?? "biology",
+        language,
+      },
     });
     return new Classroom({
       id: res.json?.class?.id,
+      subject: res.json?.class?.subject,
       language: res.json?.class?.language,
       response: res,
     });

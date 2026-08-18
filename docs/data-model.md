@@ -73,6 +73,7 @@ erDiagram
         uuid teacher_id FK
         uuid school_id FK
         text name
+        text subject "controlled vocabulary"
         text language "he | ar | en"
     }
     class_members {
@@ -182,9 +183,15 @@ erDiagram
 
 ### Classes, membership, invites
 
-- **`classes`** — owned by a teacher, scoped to the teacher's school, with a
-  content `language`. Composite foreign keys guarantee the owner is a `teacher`
-  and lives in the same `school` as the class.
+- **`classes`** — a group of students who study one **subject** together, owned
+  by a teacher and scoped to that teacher's school, with a content `language`.
+  Not a homeroom: one teacher owns as many classes as they teach groups, and a
+  student belongs to one class per subject. `subject` is `NOT NULL` with no
+  default, drawn from a CHECK-constrained vocabulary of stable English keys
+  (`math`, `biology`, `electronics`, …, `other`) mirrored in `lib/subjects.ts`,
+  with Hebrew display names in the UI — so classes studying the same subject
+  carry the same value and group exactly. Composite foreign keys guarantee the
+  owner is a `teacher` and lives in the same `school` as the class.
 - **`class_members`** — the roster. Composite FK guarantees each member is a
   `student`.
 - **`class_invites`** — a pending invite by email for a student who hasn't signed

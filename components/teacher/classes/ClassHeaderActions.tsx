@@ -9,20 +9,23 @@ import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import { apiFetch, ApiError } from "@/lib/http";
 import { SUPPORTED_LANGUAGES, type Language } from "@/lib/lang";
-import { LANGUAGE_LABELS } from "./labels";
+import { SUPPORTED_SUBJECTS, type Subject } from "@/lib/subjects";
+import { LANGUAGE_LABELS, SUBJECT_LABELS } from "./labels";
 
 /**
- * Owner controls on the class header: rename / re-language (PATCH) and delete
- * (DELETE, behind a confirmation). A successful edit refreshes the server page;
- * a successful delete returns to the classes index.
+ * Owner controls on the class header: edit name / subject / language (PATCH) and
+ * delete (DELETE, behind a confirmation). A successful edit refreshes the server
+ * page; a successful delete returns to the classes index.
  */
 export function ClassHeaderActions({
   classId,
   name,
+  subject,
   language,
 }: {
   classId: string;
   name: string;
+  subject: Subject;
   language: Language;
 }) {
   const router = useRouter();
@@ -30,12 +33,14 @@ export function ClassHeaderActions({
   const [confirming, setConfirming] = useState(false);
 
   const [draftName, setDraftName] = useState(name);
+  const [draftSubject, setDraftSubject] = useState<Subject>(subject);
   const [draftLang, setDraftLang] = useState<Language>(language);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   function openEdit() {
     setDraftName(name);
+    setDraftSubject(subject);
     setDraftLang(language);
     setError("");
     setEditing(true);
@@ -53,7 +58,11 @@ export function ClassHeaderActions({
     try {
       await apiFetch(`/api/classes/${classId}`, {
         method: "PATCH",
-        body: JSON.stringify({ name: trimmed, language: draftLang }),
+        body: JSON.stringify({
+          name: trimmed,
+          subject: draftSubject,
+          language: draftLang,
+        }),
       });
       setEditing(false);
       router.refresh();
@@ -114,6 +123,18 @@ export function ClassHeaderActions({
             autoFocus
             required
           />
+          <Select
+            label="מקצוע"
+            name="subject"
+            value={draftSubject}
+            onChange={(e) => setDraftSubject(e.target.value as Subject)}
+          >
+            {SUPPORTED_SUBJECTS.map((sub) => (
+              <option key={sub} value={sub}>
+                {SUBJECT_LABELS[sub]}
+              </option>
+            ))}
+          </Select>
           <Select
             label="שפת הכיתה"
             name="language"

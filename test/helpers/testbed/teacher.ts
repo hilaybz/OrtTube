@@ -5,6 +5,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Language } from "@/lib/lang";
+import type { Subject } from "@/lib/subjects";
 import {
   createClass,
   listMyClasses,
@@ -85,12 +86,17 @@ export class Teacher implements Actor {
     readonly client: SupabaseClient
   ) {}
 
-  /** Open (create) a class owned by this teacher, in this teacher's school. */
+  /**
+   * Open (create) a class owned by this teacher, in this teacher's school.
+   * `subject` is required by the schema but defaults to `other` here so tests
+   * that aren't about subject don't have to name one.
+   */
   async openClass(
-    opts: { name?: string; language?: Language } = {}
+    opts: { name?: string; subject?: Subject; language?: Language } = {}
   ): Promise<Classroom> {
     const row = await createClass(this.client, {
       name: opts.name ?? `${this.name}'s Class`,
+      subject: opts.subject ?? "other",
       language: opts.language,
     });
     return new Classroom(row, this);
