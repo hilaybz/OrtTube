@@ -1,8 +1,6 @@
 /**
  * Unit tests for the student feed's search/filter/sort helpers (backlog 4.2)
- * — no DB, no React. The section-default sorts they build on
- * (`sortNotYetAttempted`/`sortFinished`) are pinned separately in
- * `studentFeedSort.test.ts`.
+ * — no DB, no React.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -13,6 +11,7 @@ import {
   sectionSelected,
   feedClassOptions,
   feedHeading,
+  DEFAULT_FEED_SORT,
   EMPTY_FEED_FILTERS,
   type FeedFilters,
 } from "@/lib/studentFeedFilters";
@@ -135,74 +134,46 @@ describe("hasActiveFilters", () => {
 });
 
 describe("sortFeed", () => {
-  const early = item({
-    quiz_id: "early",
-    title: "אלף",
-    assigned_at: "2026-01-01T00:00:00.000Z",
-    available_until: "2026-03-01T00:00:00.000Z",
-  });
-  const late = item({
-    quiz_id: "late",
-    title: "בית",
-    assigned_at: "2026-02-01T00:00:00.000Z",
+  const soon = item({
+    quiz_id: "soon",
     available_until: "2026-02-01T00:00:00.000Z",
   });
-  const undated = item({
-    quiz_id: "undated",
-    title: "גימל",
-    assigned_at: "2026-01-15T00:00:00.000Z",
-    available_until: null,
+  const later = item({
+    quiz_id: "later",
+    available_until: "2026-03-01T00:00:00.000Z",
   });
-  const rows = [early, late, undated];
+  const undated = item({ quiz_id: "undated", available_until: null });
+  const rows = [later, undated, soon];
   const ids = (r: StudentFeedItem[]) => r.map((i) => i.quiz_id);
 
-  it("'smart' uses the section's own default ordering", () => {
-    expect(ids(sortFeed(rows, "smart", "not_yet"))).toEqual([
-      "late",
-      "early",
-      "undated",
-    ]);
-    const finished = [
-      item({ quiz_id: "older", status: "completed", last_completed_at: "2026-01-01T00:00:00.000Z" }),
-      item({ quiz_id: "newer", status: "completed", last_completed_at: "2026-02-01T00:00:00.000Z" }),
-    ];
-    expect(ids(sortFeed(finished, "smart", "finished"))).toEqual(["newer", "older"]);
+  it("sorts by soonest submission deadline first", () => {
+    expect(ids(sortFeed(rows, "deadline_asc"))).toEqual(["soon", "later", "undated"]);
   });
 
-  it("sorts by soonest deadline, sinking deadline-less items to the end", () => {
-    expect(ids(sortFeed(rows, "deadline_asc", "not_yet"))).toEqual([
-      "late",
-      "early",
-      "undated",
-    ]);
+  it("sorts by furthest submission deadline first", () => {
+    expect(ids(sortFeed(rows, "deadline_desc"))).toEqual(["later", "soon", "undated"]);
   });
 
-  it("sorts by assignment date, both directions", () => {
-    expect(ids(sortFeed(rows, "assigned_desc", "not_yet"))).toEqual([
-      "late",
-      "undated",
-      "early",
-    ]);
-    expect(ids(sortFeed(rows, "assigned_asc", "not_yet"))).toEqual([
-      "early",
-      "undated",
-      "late",
-    ]);
+  it("sinks a deadline-less quiz to the end under BOTH directions", () => {
+    expect(ids(sortFeed(rows, "deadline_asc")).at(-1)).toBe("undated");
+    expect(ids(sortFeed(rows, "deadline_desc")).at(-1)).toBe("undated");
   });
 
-  it("sorts by heading, falling back to the video title for an untitled quiz", () => {
-    const untitled = item({ quiz_id: "untitled", title: null, video_title: "אבג" });
-    expect(ids(sortFeed([late, untitled, early], "title_asc", "not_yet"))).toEqual([
-      "untitled",
-      "early",
-      "late",
-    ]);
+  it("keeps several deadline-less quizzes in their incoming order", () => {
+    const a = item({ quiz_id: "a", available_until: null });
+    const b = item({ quiz_id: "b", available_until: null });
+    expect(ids(sortFeed([a, b], "deadline_asc"))).toEqual(["a", "b"]);
+    expect(ids(sortFeed([a, b], "deadline_desc"))).toEqual(["a", "b"]);
   });
 
-  it("never mutates its input, under any sort", () => {
-    for (const sort of ["smart", "deadline_asc", "assigned_desc", "title_asc"] as const) {
+  it("defaults to soonest-first", () => {
+    expect(DEFAULT_FEED_SORT).toBe("deadline_asc");
+  });
+
+  it("never mutates its input, under either direction", () => {
+    for (const sort of ["deadline_asc", "deadline_desc"] as const) {
       const copy = [...rows];
-      sortFeed(rows, sort, "not_yet");
+      sortFeed(rows, sort);
       expect(rows).toEqual(copy);
     }
   });

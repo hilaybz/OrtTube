@@ -3,6 +3,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import type { StudentFeedItem } from "@/lib/classes";
+import { feedHeading } from "@/lib/studentFeedFilters";
 
 /**
  * "עד 18:00 · היום" for a deadline later today, otherwise "עד 18:00 · 14.3".
@@ -108,7 +109,7 @@ function Thumbnail({
  *    name, with the badge/CTA/attempts-note derived per status.
  */
 export function QuizCard({ item }: { item: StudentFeedItem }) {
-  const heading = item.title ?? item.video_title ?? "חידון";
+  const heading = feedHeading(item);
 
   if (item.status === "missed") {
     return (

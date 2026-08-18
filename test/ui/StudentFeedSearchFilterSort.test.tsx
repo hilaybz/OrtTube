@@ -33,7 +33,7 @@ function item(overrides: Partial<StudentFeedItem>): StudentFeedItem {
   };
 }
 
-/** Not yet attempted, class א, due last (so "smart" puts it second). */
+/** Not yet attempted, class א, due last. */
 const ALGEBRA = item({
   quiz_id: "algebra",
   title: "חידון אלגברה",
@@ -197,56 +197,43 @@ describe("StudentFeed — filters", () => {
 });
 
 describe("StudentFeed — sort", () => {
-  it("defaults to each section's own ordering: deadline first, then recent activity", () => {
+  it("defaults to soonest submission deadline first, within each section", () => {
     renderFeed();
     expect(headings()).toEqual([
-      "היסטוריה של רומא", // due first
-      "חידון אלגברה",
-      "חידון כימיה", // window closed most recently
-      "חידון גיאומטריה",
+      "היסטוריה של רומא", // due 2027-02
+      "חידון אלגברה", // due 2027-03
+      "חידון כימיה", // the only finished quiz with a deadline
+      "חידון גיאומטריה", // no deadline — sinks
     ]);
   });
 
-  it("sorts by assignment date, both directions, in both sections", async () => {
+  it("flips to furthest deadline first, keeping deadline-less quizzes last", async () => {
     renderFeed();
     await userEvent.selectOptions(
       screen.getByLabelText("מיון"),
-      "תאריך הקצאה (החדש קודם)"
-    );
-    expect(headings()).toEqual([
-      "היסטוריה של רומא",
-      "חידון אלגברה",
-      "חידון כימיה",
-      "חידון גיאומטריה",
-    ]);
-    await userEvent.selectOptions(
-      screen.getByLabelText("מיון"),
-      "תאריך הקצאה (הישן קודם)"
+      "מועד הגשה (הרחוק קודם)"
     );
     expect(headings()).toEqual([
       "חידון אלגברה",
       "היסטוריה של רומא",
-      "חידון גיאומטריה",
       "חידון כימיה",
+      "חידון גיאומטריה",
     ]);
   });
 
-  it("sorts by name, using the video title for an untitled quiz", async () => {
+  it("offers deadline sorting only, in both directions", () => {
     renderFeed();
-    await userEvent.selectOptions(screen.getByLabelText("מיון"), "שם החידון (א׳–ת׳)");
-    expect(headings()).toEqual([
-      "היסטוריה של רומא",
-      "חידון אלגברה",
-      "חידון גיאומטריה",
-      "חידון כימיה",
-    ]);
+    const options = Array.from(
+      screen.getByLabelText("מיון").querySelectorAll("option")
+    ).map((o) => o.textContent);
+    expect(options).toEqual(["מועד הגשה (הקרוב קודם)", "מועד הגשה (הרחוק קודם)"]);
   });
 
-  it("keeps a chosen sort applied while filters narrow the feed", async () => {
+  it("keeps a chosen direction applied while filters narrow the feed", async () => {
     renderFeed();
     await userEvent.selectOptions(
       screen.getByLabelText("מיון"),
-      "תאריך הקצאה (הישן קודם)"
+      "מועד הגשה (הרחוק קודם)"
     );
     await openFilter("כיתה");
     await userEvent.click(screen.getByRole("checkbox", { name: "כיתה א" }));

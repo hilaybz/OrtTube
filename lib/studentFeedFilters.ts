@@ -47,91 +47,51 @@ export function sectionSelected(
 
 // ── Sort ─────────────────────────────────────────────────────────────────────
 
-export type FeedSortOption =
-  | "smart"
-  | "deadline_asc"
-  | "assigned_desc"
-  | "assigned_asc"
-  | "title_asc";
+/**
+ * The only axis a student sorts by: the submission deadline. Everything else a
+ * feed item carries (assignment date, title, completion time) is the teacher's
+ * bookkeeping, not the student's question — "what is due next" is.
+ */
+export type FeedSortOption = "deadline_asc" | "deadline_desc";
 
 export const FEED_SORT_LABELS: Record<FeedSortOption, string> = {
-  smart: "מומלץ",
-  deadline_asc: "מועד סיום (הקרוב קודם)",
-  assigned_desc: "תאריך הקצאה (החדש קודם)",
-  assigned_asc: "תאריך הקצאה (הישן קודם)",
-  title_asc: "שם החידון (א׳–ת׳)",
+  deadline_asc: "מועד הגשה (הקרוב קודם)",
+  deadline_desc: "מועד הגשה (הרחוק קודם)",
 };
 
 export const FEED_SORT_OPTIONS = Object.keys(FEED_SORT_LABELS) as FeedSortOption[];
 
-/** The text a card shows as its heading — also what `title_asc` sorts on. */
+/** The default: soonest deadline first, i.e. most urgent on top. */
+export const DEFAULT_FEED_SORT: FeedSortOption = "deadline_asc";
+
+/** The text a card shows as its heading. */
 export function feedHeading(item: StudentFeedItem): string {
   return item.title ?? item.video_title ?? "חידון";
 }
 
-const time = (iso: string | null): number => (iso ? new Date(iso).getTime() : 0);
-
 /**
- * Sort the "not yet attempted" section by soonest deadline first — this
- * section answers "what do I need to do before I run out of time," so the
- * most urgent item belongs on top. No-deadline items carry no urgency, so
- * they sink to the end (newest-assigned-first among themselves).
- */
-export function sortNotYetAttempted(items: StudentFeedItem[]): StudentFeedItem[] {
-  return [...items].sort((a, b) => {
-    const da = a.available_until ? new Date(a.available_until).getTime() : Infinity;
-    const db = b.available_until ? new Date(b.available_until).getTime() : Infinity;
-    if (da !== db) return da - db;
-    return time(b.assigned_at) - time(a.assigned_at);
-  });
-}
-
-/**
- * Sort the "finished" section by most recent activity first — this section
- * is a history view, so "what did I just do" is the natural read. A missed
- * quiz has no completion timestamp, so its window's own close time stands
- * in as "when it became finished."
- */
-export function sortFinished(items: StudentFeedItem[]): StudentFeedItem[] {
-  const activity = (item: StudentFeedItem): number =>
-    time(item.status === "missed" ? item.available_until : item.last_completed_at);
-  return [...items].sort((a, b) => activity(b) - activity(a));
-}
-
-/**
- * Returns a NEW sorted array (never mutates `items`). `"smart"` is the
- * default and delegates to the section's own ordering above — deadline-first
- * for work still owed, most-recent-activity-first for history — which is why
- * sorting takes the section rather than being section-blind. Every other
- * option means the same thing in both sections.
- *
- * `deadline_asc` keeps `"smart"`'s rule for a deadline-less item: no deadline
- * is no urgency, so it sinks below every dated one instead of sorting as
- * though it were due at the epoch.
+ * Returns a NEW sorted array (never mutates `items`). A quiz with no deadline
+ * sinks to the end under BOTH directions rather than flipping to the top under
+ * `deadline_desc`: "no deadline" is the absence of a submission date, not a
+ * date infinitely far out, so it never outranks a real one. Ties (including
+ * two deadline-less items) keep their incoming order — `list_student_feed`
+ * already returns rows in a stable order.
  */
 export function sortFeed(
   items: StudentFeedItem[],
-  sort: FeedSortOption,
-  section: FeedSection
+  sort: FeedSortOption
 ): StudentFeedItem[] {
-  switch (sort) {
-    case "smart":
-      return section === "not_yet" ? sortNotYetAttempted(items) : sortFinished(items);
-    case "deadline_asc":
-      return [...items].sort((a, b) => {
-        const da = a.available_until ? new Date(a.available_until).getTime() : Infinity;
-        const db = b.available_until ? new Date(b.available_until).getTime() : Infinity;
-        return da - db;
-      });
-    case "assigned_desc":
-      return [...items].sort((a, b) => time(b.assigned_at) - time(a.assigned_at));
-    case "assigned_asc":
-      return [...items].sort((a, b) => time(a.assigned_at) - time(b.assigned_at));
-    case "title_asc":
-      return [...items].sort((a, b) =>
-        feedHeading(a).localeCompare(feedHeading(b), "he")
-      );
-  }
+  const deadline = (item: StudentFeedItem): number | null =>
+    item.available_until ? new Date(item.available_until).getTime() : null;
+  return [...items].sort((a, b) => {
+    const da = deadline(a);
+    const db = deadline(b);
+    if (da === null || db === null) {
+      if (da === db) return 0;
+      return da === null ? 1 : -1;
+    }
+    return sort === "deadline_asc" ? da - db : db - da;
+  });
 }
 
 // ── Search + filters ─────────────────────────────────────────────────────────

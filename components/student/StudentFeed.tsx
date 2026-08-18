@@ -14,6 +14,7 @@ import {
   matchesFeedFilters,
   hasActiveFilters,
   feedClassOptions,
+  DEFAULT_FEED_SORT,
   FEED_SORT_LABELS,
   FEED_SORT_OPTIONS,
   type FeedSection,
@@ -78,20 +79,21 @@ function FeedSectionView({
 /**
  * The student feed: every quiz assigned to any of their classes, split into
  * "not yet attempted" and "finished" (see `lib/studentFeedFilters.ts` for the
- * bucketing and each section's default sort).
+ * bucketing and the sort).
  *
- * Search/filter/sort (backlog 4.2) work exactly like the teacher library's
- * (1.4) and run entirely client-side — `list_student_feed` hands over the whole
- * feed in one query. One control bar governs BOTH sections rather than a bar
- * per section: a student searching for a quiz doesn't know, or care, which
- * section it landed in. The class filter appears only once a student is in more
- * than one class, where it starts to mean something.
+ * Search/filter/sort (backlog 4.2) mirror the teacher library's (1.4) and run
+ * entirely client-side — `list_student_feed` hands over the whole feed in one
+ * query. One control bar governs BOTH sections rather than a bar per section: a
+ * student searching for a quiz doesn't know, or care, which section it landed
+ * in. The class filter appears only once a student is in more than one class,
+ * where it starts to mean something. Sorting is deadline-only, both directions
+ * — the one ordering a student actually asks for.
  */
 export function StudentFeed({ items }: { items: StudentFeedItem[] }) {
   const [search, setSearch] = useState("");
   const [classes, setClasses] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Set<StudentFeedStatus>>(new Set());
-  const [sort, setSort] = useState<FeedSortOption>("smart");
+  const [sort, setSort] = useState<FeedSortOption>(DEFAULT_FEED_SORT);
 
   const filters = useMemo(
     () => ({ search, classes, statuses }),
@@ -105,8 +107,7 @@ export function StudentFeed({ items }: { items: StudentFeedItem[] }) {
       const all = items.filter((i) => sectionOf(i) === section);
       const filtered = sortFeed(
         all.filter((i) => matchesFeedFilters(i, filters)),
-        sort,
-        section
+        sort
       );
       return { section, all, filtered };
     };
