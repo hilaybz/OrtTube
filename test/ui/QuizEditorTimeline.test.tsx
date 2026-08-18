@@ -51,6 +51,8 @@ const QUIZ: AuthorQuiz = {
   base_language: "he",
   visibility: "private",
   transcript_status: "ready",
+  time_restricted: false,
+  duration_minutes: null,
   video: {
     id: "video-1",
     youtube_video_id: "aircAruvnKk",

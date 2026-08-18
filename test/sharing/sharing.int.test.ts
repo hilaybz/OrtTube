@@ -214,6 +214,25 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     expect(catalog.find((row) => row.quiz_id === shared.id)!.is_own).toBe(false);
   });
 
+  it("list_shared_quizzes carries the quiz's duration fields (issue #80)", async () => {
+    const shared = await authorQuizWithQuestion(teacher, { title: "Timed & Shared" });
+    await shared.makeShared();
+    await teacher.client.rpc("update_quiz", {
+      p_quiz_id: shared.id,
+      p_time_restricted: true,
+      p_duration_minutes: 8,
+    });
+
+    const peerTeacher = await lincoln.enrollTeacher({ name: "Iris" });
+    const row = (await peerTeacher.sharedQuizzes()).find((r) => r.quiz_id === shared.id)!;
+    expect(row.time_restricted).toBe(true);
+    expect(row.duration_minutes).toBe(8);
+    // `authorQuiz`'s fixture always sets p_duration_seconds: 600 — a null
+    // video length (the real-world failure case) is covered by
+    // classes.int.test.ts's student-feed duration test instead.
+    expect(row.duration_seconds).toBe(600);
+  });
+
   it("list_shared_quizzes hides soft-deleted shared quizzes", async () => {
     const shared = await authorQuizWithQuestion(teacher);
     await shared.makeShared();

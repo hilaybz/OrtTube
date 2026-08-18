@@ -433,6 +433,12 @@ export interface StudentFeedItem {
   title: string | null;
   youtube_video_id: string;
   video_title: string | null;
+  /** The video's length — used to derive an estimate when unrestricted (see
+   * `lib/quizDuration.ts`). `null` if the length was never determined. */
+  duration_seconds: number | null;
+  time_restricted: boolean;
+  /** Only non-null while `time_restricted`. */
+  duration_minutes: number | null;
   max_attempts: number | null;
   /** Null = no deadline. Past = the window has closed (see `status`). */
   available_until: string | null;

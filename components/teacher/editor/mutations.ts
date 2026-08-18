@@ -51,16 +51,28 @@ async function call(fn: string, args: Record<string, unknown>): Promise<void> {
  * RPC — except `title`, where an EMPTY string means "clear it", so the quiz
  * falls back to showing the video's title. Passing null for the title reads as
  * "not provided" and leaves the existing one in place.
+ *
+ * `timeRestricted: false` always clears `durationMinutes` server-side
+ * regardless of what's passed alongside it — going unrestricted always drops
+ * the stated number (see `update_quiz`'s own comment).
  */
 export function updateQuizMeta(
   quizId: string,
-  patch: { title?: string | null; visibility?: QuizVisibility; baseLanguage?: Language }
+  patch: {
+    title?: string | null;
+    visibility?: QuizVisibility;
+    baseLanguage?: Language;
+    timeRestricted?: boolean;
+    durationMinutes?: number | null;
+  }
 ): Promise<void> {
   return call("update_quiz", {
     p_quiz_id: quizId,
     p_title: patch.title ?? null,
     p_visibility: patch.visibility ?? null,
     p_base_language: patch.baseLanguage ?? null,
+    p_time_restricted: patch.timeRestricted ?? null,
+    p_duration_minutes: patch.durationMinutes ?? null,
   });
 }
 

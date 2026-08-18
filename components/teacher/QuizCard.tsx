@@ -5,6 +5,7 @@ import { Icon } from "@/components/ui/Icon";
 import type { MyQuiz } from "@/lib/quiz";
 import type { QuizAllocationTags } from "@/lib/allocations";
 import type { Language } from "@/lib/lang";
+import { quizDurationMinutes } from "@/lib/quizDuration";
 
 /**
  * Shared teacher-quiz card + its building blocks — extracted from
@@ -66,16 +67,32 @@ export function ChannelLine({ channelName }: { channelName: string | null }) {
 export function QuizMeta({
   baseLanguage,
   questionCount,
+  duration,
 }: {
   baseLanguage: Language;
   questionCount: number;
+  /** Omitted (or `null`) shows nothing — an unrestricted quiz whose video
+   * length isn't known yet, or a caller that doesn't have the duration
+   * fields at all (e.g. a `PreviewQuiz`). */
+  duration?: {
+    time_restricted: boolean;
+    duration_minutes: number | null;
+    duration_seconds: number | null;
+  } | null;
 }) {
+  const d = duration ? quizDurationMinutes(duration) : null;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Badge variant="gray">{LANG_LABEL[baseLanguage] ?? baseLanguage}</Badge>
       <span className="text-xs text-[var(--body-subtle)]">
         <span className="tabular-nums">{questionCount}</span> שאלות
       </span>
+      {d && (
+        <span className="text-xs text-[var(--body-subtle)]">
+          {d.estimated && "~"}
+          <span className="tabular-nums">{d.minutes}</span> דקות
+        </span>
+      )}
     </div>
   );
 }
@@ -176,7 +193,11 @@ export function QuizCard({
       </div>
       <VideoLine quiz={quiz} />
       <ChannelLine channelName={quiz.channel_name} />
-      <QuizMeta baseLanguage={quiz.base_language} questionCount={quiz.question_count} />
+      <QuizMeta
+        baseLanguage={quiz.base_language}
+        questionCount={quiz.question_count}
+        duration={quiz}
+      />
       {tags !== undefined && <AllocationTagsRow tags={tags} />}
       {/* This row must sit ABOVE the stretched link, or the link swallows the
           delete click. `.glass > *` in globals.css pins every direct child to

@@ -20,6 +20,7 @@ import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import type { ClassRow } from "@/lib/classes";
 import type { QuizAllocation } from "@/lib/allocations";
+import { estimateQuizMinutes } from "@/lib/quizDuration";
 import { QuestionModal } from "./QuestionModal";
 import { AllocationsSection } from "./AllocationsSection";
 import { VideoPreviewPanel, type VideoPreviewPanelHandle } from "./VideoPreviewPanel";
@@ -227,6 +228,14 @@ export function QuizEditor({
   const [title, setTitle] = useState(initial.title ?? "");
   const [titleDirty, setTitleDirty] = useState(false);
 
+  const [timeRestricted, setTimeRestricted] = useState(initial.time_restricted);
+  const [durationMinutes, setDurationMinutes] = useState(
+    initial.duration_minutes != null ? String(initial.duration_minutes) : ""
+  );
+  const [durationDirty, setDurationDirty] = useState(false);
+  const [durationError, setDurationError] = useState<string | null>(null);
+  const estimatedMinutes = estimateQuizMinutes(initial.video.duration_seconds);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AuthorQuestion | null>(null);
 
@@ -292,6 +301,36 @@ export function QuizEditor({
       setBanner({
         kind: "danger",
         msg: e instanceof MutationError ? e.message : "עדכון הכותרת נכשל.",
+      });
+    } finally {
+      setMetaBusy(false);
+    }
+  }
+
+  /** Validates and saves the time-restriction toggle + minutes (issue #80).
+   * Turning restriction off always clears the stored number server-side
+   * (`update_quiz`'s own rule), regardless of what's left in the field. */
+  async function saveDuration() {
+    setBanner(null);
+    setDurationError(null);
+    let minutes: number | null = null;
+    if (timeRestricted) {
+      const n = Number(durationMinutes);
+      if (!Number.isInteger(n) || n < 1) {
+        setDurationError("משך הזמן חייב להיות מספר שלם גדול מ־0.");
+        return;
+      }
+      minutes = n;
+    }
+    setMetaBusy(true);
+    try {
+      await updateQuizMeta(quizId, { timeRestricted, durationMinutes: minutes });
+      setDurationDirty(false);
+      refresh();
+    } catch (e) {
+      setBanner({
+        kind: "danger",
+        msg: e instanceof MutationError ? e.message : "עדכון משך הזמן נכשל.",
       });
     } finally {
       setMetaBusy(false);
@@ -526,6 +565,50 @@ export function QuizEditor({
             />
             {titleDirty && (
               <Button size="sm" onClick={saveTitle} disabled={metaBusy}>
+                {metaBusy ? <Spinner size={16} /> : "שמירה"}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-[var(--heading)]">משך החידון</span>
+          {durationError && <p className="text-xs text-[var(--fg-danger)]">{durationError}</p>}
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-[var(--body)]">
+              <input
+                type="checkbox"
+                checked={timeRestricted}
+                onChange={(e) => {
+                  setTimeRestricted(e.target.checked);
+                  setDurationDirty(true);
+                }}
+                className="h-4 w-4 rounded-[var(--radius-sm)] border border-[var(--glass-border)] accent-[var(--brand)]"
+              />
+              הגבלת זמן
+            </label>
+            {timeRestricted ? (
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={durationMinutes}
+                onChange={(e) => {
+                  setDurationMinutes(e.target.value);
+                  setDurationDirty(true);
+                }}
+                placeholder="דקות"
+                className="w-24 rounded-[var(--radius)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1.5 text-sm text-[var(--heading)] outline-none backdrop-blur-[20px] focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+              />
+            ) : (
+              <span className="text-xs text-[var(--body-subtle)]">
+                {estimatedMinutes != null
+                  ? `מוצג לתלמידים כהערכה: ~${estimatedMinutes} דקות`
+                  : "אורך הסרטון אינו ידוע — לא תוצג הערכה"}
+              </span>
+            )}
+            {durationDirty && (
+              <Button size="sm" onClick={saveDuration} disabled={metaBusy}>
                 {metaBusy ? <Spinner size={16} /> : "שמירה"}
               </Button>
             )}

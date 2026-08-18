@@ -96,6 +96,9 @@ export interface SharedQuizRow {
   video_id: string;
   youtube_video_id: string;
   is_own: boolean;
+  time_restricted: boolean;
+  duration_minutes: number | null;
+  duration_seconds: number | null;
 }
 
 /** A quiz authored by a teacher. Carries its owner so owner-scoped RPCs run as them. */
