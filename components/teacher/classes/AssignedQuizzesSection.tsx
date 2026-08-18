@@ -56,7 +56,7 @@ function sectionSortValue(state: AllocationState, a: AssignedQuiz): number {
 /**
  * Buckets assigned quizzes into their four lifecycle sections and sorts each
  * — pure, so it's unit-testable without a DOM (mirrors
- * `sortNotYetAttempted`/`sortFinished` in `components/student/StudentFeed.tsx`).
+ * `sortNotYetAttempted`/`sortFinished` in `lib/studentFeedFilters.ts`).
  * Does not mutate `assigned`.
  */
 export function groupAssignedByState(

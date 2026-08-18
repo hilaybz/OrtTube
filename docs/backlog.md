@@ -428,7 +428,7 @@ what is already there is the teacher's decision, made explicitly.
 | # | Task | Flag |
 | --- | --- | --- |
 | 4.1 | UI pass, with a **clear visual distinction between single-answer and multi-answer questions** so students know whether to pick one or several. | 🎨 |
-| 4.2 | Search, filter and sort quizzes. | 🎨 |
+| 4.2 | ~~Search, filter and sort quizzes.~~ **Done** — the student-side twin of 1.4: `lib/studentFeedFilters.ts` (pure; reuses 1.4's `matchesText`) + `components/student/StudentFeed.tsx`, entirely client-side (`list_student_feed` returns the whole feed in one query and never paginates). ONE control bar governs both feed sections — a student looking for a quiz doesn't know which section it landed in. Search: quiz title + video title + class name + teacher name. Filters: class (multi-select OR, shown only once the student is in more than one class) and status (`טרם התחלת`/`בתהליך`/`הושלם`/`פוספס`) — a status selection that empties a whole section drops that section instead of leaving it standing empty. Sort: `מומלץ` (the default; each section's own ordering — soonest deadline for work owed, most recent activity for history), soonest deadline, assignment date both directions, and quiz name. Language is deliberately NOT a filter axis here: a student reads every quiz in their own resolved language, so it would be a no-op. | ✅ |
 | 4.3 | ~~**Checkpoint markers stay visible; only navigation is disabled.**~~ **Done** — `c906c7c`, pinned by `test/ui/QuizPlayerCheckpoints.test.tsx`. | ✅ |
 
 ### 4.4 · No seeking forward past unwatched content ❓

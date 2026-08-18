@@ -1,79 +1,183 @@
 "use client";
+import { useMemo, useState } from "react";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { Button } from "@/components/ui/Button";
+import { Field } from "@/components/ui/Field";
+import { Select } from "@/components/ui/Select";
+import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { QuizCard } from "./QuizCard";
-import type { StudentFeedItem } from "@/lib/classes";
+import type { StudentFeedItem, StudentFeedStatus } from "@/lib/classes";
+import {
+  sectionOf,
+  sectionSelected,
+  sortFeed,
+  matchesFeedFilters,
+  hasActiveFilters,
+  feedClassOptions,
+  FEED_SORT_LABELS,
+  FEED_SORT_OPTIONS,
+  type FeedSection,
+  type FeedSortOption,
+} from "@/lib/studentFeedFilters";
 
-/**
- * Sort the "not yet attempted" section by soonest deadline first — this
- * section answers "what do I need to do before I run out of time," so the
- * most urgent item belongs on top. No-deadline items carry no urgency, so
- * they sink to the end (newest-assigned-first among themselves).
- */
-export function sortNotYetAttempted(items: StudentFeedItem[]): StudentFeedItem[] {
-  return [...items].sort((a, b) => {
-    const da = a.available_until ? new Date(a.available_until).getTime() : Infinity;
-    const db = b.available_until ? new Date(b.available_until).getTime() : Infinity;
-    if (da !== db) return da - db;
-    return new Date(b.assigned_at).getTime() - new Date(a.assigned_at).getTime();
-  });
+const STATUS_OPTIONS: { value: StudentFeedStatus; label: string }[] = [
+  { value: "not_started", label: "טרם התחלת" },
+  { value: "in_progress", label: "בתהליך" },
+  { value: "completed", label: "הושלם" },
+  { value: "missed", label: "פוספס" },
+];
+
+const SECTION_TITLE: Record<FeedSection, string> = {
+  not_yet: "טרם ניסית",
+  finished: "הושלמו",
+};
+
+/** What a section says when the student has nothing in it at all (no filters involved). */
+const SECTION_EMPTY: Record<FeedSection, string> = {
+  not_yet: "עדיין אין חידונים שממתינים לך. חידונים חדשים שיוקצו לכיתות שלך יופיעו כאן.",
+  finished: "עדיין לא סיימת אף חידון. אחרי שתשלימו ניסיון, הוא יופיע כאן.",
+};
+
+function FeedSectionView({
+  section,
+  items,
+  filtered,
+  filtersActive,
+}: {
+  section: FeedSection;
+  /** Every item in this section, before search/filters — drives the "you have nothing here" copy. */
+  items: StudentFeedItem[];
+  /** What survived search/filters, already sorted. */
+  filtered: StudentFeedItem[];
+  filtersActive: boolean;
+}) {
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold text-[var(--heading)]">
+        {SECTION_TITLE[section]}
+      </h2>
+      {filtered.length === 0 ? (
+        <GlassCard>
+          <p className="text-[var(--body)]">
+            {items.length > 0 && filtersActive
+              ? "אין חידונים התואמים את החיפוש."
+              : SECTION_EMPTY[section]}
+          </p>
+        </GlassCard>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((item) => (
+            <QuizCard key={`${item.class_id}:${item.quiz_id}`} item={item} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 /**
- * Sort the "finished" section by most recent activity first — this section
- * is a history view, so "what did I just do" is the natural read. A missed
- * quiz has no completion timestamp, so its window's own close time stands
- * in as "when it became finished."
+ * The student feed: every quiz assigned to any of their classes, split into
+ * "not yet attempted" and "finished" (see `lib/studentFeedFilters.ts` for the
+ * bucketing and each section's default sort).
+ *
+ * Search/filter/sort (backlog 4.2) work exactly like the teacher library's
+ * (1.4) and run entirely client-side — `list_student_feed` hands over the whole
+ * feed in one query. One control bar governs BOTH sections rather than a bar
+ * per section: a student searching for a quiz doesn't know, or care, which
+ * section it landed in. The class filter appears only once a student is in more
+ * than one class, where it starts to mean something.
  */
-export function sortFinished(items: StudentFeedItem[]): StudentFeedItem[] {
-  const activity = (item: StudentFeedItem): number => {
-    const iso = item.status === "missed" ? item.available_until : item.last_completed_at;
-    return iso ? new Date(iso).getTime() : 0;
-  };
-  return [...items].sort((a, b) => activity(b) - activity(a));
-}
-
 export function StudentFeed({ items }: { items: StudentFeedItem[] }) {
-  const notYet = sortNotYetAttempted(
-    items.filter((i) => i.status === "not_started" || i.status === "in_progress")
+  const [search, setSearch] = useState("");
+  const [classes, setClasses] = useState<Set<string>>(new Set());
+  const [statuses, setStatuses] = useState<Set<StudentFeedStatus>>(new Set());
+  const [sort, setSort] = useState<FeedSortOption>("smart");
+
+  const filters = useMemo(
+    () => ({ search, classes, statuses }),
+    [search, classes, statuses]
   );
-  const finished = sortFinished(
-    items.filter((i) => i.status === "completed" || i.status === "missed")
-  );
+  const filtersActive = hasActiveFilters(filters);
+  const classOptions = useMemo(() => feedClassOptions(items), [items]);
+
+  const sections = useMemo(() => {
+    const bucket = (section: FeedSection) => {
+      const all = items.filter((i) => sectionOf(i) === section);
+      const filtered = sortFeed(
+        all.filter((i) => matchesFeedFilters(i, filters)),
+        sort,
+        section
+      );
+      return { section, all, filtered };
+    };
+    return (["not_yet", "finished"] as const)
+      .filter((section) => sectionSelected(section, statuses))
+      .map(bucket);
+  }, [items, filters, statuses, sort]);
+
+  function clearFilters() {
+    setSearch("");
+    setClasses(new Set());
+    setStatuses(new Set());
+  }
 
   return (
-    <div className="flex flex-col gap-8">
-      <section>
-        <h2 className="mb-3 text-lg font-semibold text-[var(--heading)]">טרם ניסית</h2>
-        {notYet.length === 0 ? (
-          <GlassCard>
-            <p className="text-[var(--body)]">
-              עדיין אין חידונים שממתינים לך. חידונים חדשים שיוקצו לכיתות שלך יופיעו כאן.
-            </p>
-          </GlassCard>
-        ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {notYet.map((item) => (
-              <QuizCard key={`${item.class_id}:${item.quiz_id}`} item={item} />
-            ))}
+    <div className="flex flex-col gap-6">
+      {items.length > 0 && (
+        <GlassCard className="flex flex-wrap items-end gap-4">
+          <div className="min-w-[220px] flex-1">
+            <Field
+              label="חיפוש"
+              name="feed-search"
+              placeholder="לפי שם החידון, הסרטון, הכיתה או המורה"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
-        )}
-      </section>
-      <section>
-        <h2 className="mb-3 text-lg font-semibold text-[var(--heading)]">הושלמו</h2>
-        {finished.length === 0 ? (
-          <GlassCard>
-            <p className="text-[var(--body)]">
-              עדיין לא סיימת אף חידון. אחרי שתשלימו ניסיון, הוא יופיע כאן.
-            </p>
-          </GlassCard>
-        ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {finished.map((item) => (
-              <QuizCard key={`${item.class_id}:${item.quiz_id}`} item={item} />
+          {classOptions.length > 1 && (
+            <MultiSelectDropdown
+              label="כיתה"
+              options={classOptions}
+              selected={classes}
+              onChange={setClasses}
+            />
+          )}
+          <MultiSelectDropdown
+            label="מצב"
+            options={STATUS_OPTIONS}
+            selected={statuses}
+            onChange={setStatuses}
+          />
+          <Select
+            label="מיון"
+            name="feed-sort"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as FeedSortOption)}
+          >
+            {FEED_SORT_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {FEED_SORT_LABELS[opt]}
+              </option>
             ))}
-          </div>
-        )}
-      </section>
+          </Select>
+          {filtersActive && (
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              נקה מסננים
+            </Button>
+          )}
+        </GlassCard>
+      )}
+      <div className="flex flex-col gap-8">
+        {sections.map(({ section, all, filtered }) => (
+          <FeedSectionView
+            key={section}
+            section={section}
+            items={all}
+            filtered={filtered}
+            filtersActive={filtersActive}
+          />
+        ))}
+      </div>
     </div>
   );
 }

@@ -3,7 +3,7 @@
  * redesign — two sections instead of per-class tabs) — no DB, no React.
  */
 import { describe, it, expect } from "vitest";
-import { sortNotYetAttempted, sortFinished } from "@/components/student/StudentFeed";
+import { sortNotYetAttempted, sortFinished } from "@/lib/studentFeedFilters";
 import type { StudentFeedItem } from "@/lib/classes";
 
 function item(overrides: Partial<StudentFeedItem> = {}): StudentFeedItem {
