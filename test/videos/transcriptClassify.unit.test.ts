@@ -270,8 +270,10 @@ describe("fetchFreshTranscript trace", () => {
 
     const outcome = await fetchFreshTranscript("vid");
 
+    // `lang=any`: the scrape was blocked, so there was no track list to read a
+    // language off, and guessing one would only cost a request.
     expect(outcome.trace).toContain(
-      "download lang=he → YoutubeTranscriptTooManyRequestError: captcha required"
+      "download lang=any → YoutubeTranscriptTooManyRequestError: captcha required"
     );
   });
 
@@ -303,6 +305,70 @@ describe("fetchFreshTranscript trace", () => {
 
     // An empty answer says something about the video; a throw says something
     // about the egress. Both end as "no transcript" and must stay tellable apart.
-    expect(outcome.trace).toContain("download lang=he → empty");
+    expect(outcome.trace).toContain("download lang=any → empty");
+  });
+});
+
+/**
+ * The download used to walk LANG_PREFERENCE blind — five attempts, four of them
+ * guaranteed to miss on a single-track video, each able to pull its own ~1.2MB
+ * watch page inside the package. That is ~7MB per video, and on metered proxy
+ * egress it multiplies the bill roughly fivefold to learn what the scrape had
+ * already returned.
+ */
+describe("fetchFreshTranscript download language", () => {
+  beforeEach(() => {
+    fetchTranscript.mockResolvedValue([{ text: "hi", offset: 0, duration: 1, lang: "he" }]);
+  });
+
+  function servesTracks(...langs: { languageCode: string; kind?: string }[]): void {
+    youtubeServes(
+      watchPage({
+        playabilityStatus: { status: "OK" },
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: langs.map((t) => ({ baseUrl: "u", ...t })),
+          },
+        },
+      })
+    );
+  }
+
+  it("downloads exactly ONCE, not once per candidate language", async () => {
+    servesTracks({ languageCode: "en", kind: "asr" });
+
+    await fetchFreshTranscript("vid");
+
+    expect(fetchTranscript).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for the best language the scrape actually listed", async () => {
+    // Hebrew outranks English, and both are present — so no request is spent
+    // discovering that.
+    servesTracks({ languageCode: "en" }, { languageCode: "he" });
+
+    await fetchFreshTranscript("vid");
+
+    expect(fetchTranscript).toHaveBeenCalledWith("vid", expect.objectContaining({ lang: "he" }));
+  });
+
+  it("honours the legacy Hebrew code the same as the modern one", async () => {
+    // Older videos tag Hebrew "iw"; it must not be passed over for English.
+    servesTracks({ languageCode: "en" }, { languageCode: "iw" });
+
+    await fetchFreshTranscript("vid");
+
+    expect(fetchTranscript).toHaveBeenCalledWith("vid", expect.objectContaining({ lang: "iw" }));
+  });
+
+  it("asks for no language when the list holds none the app speaks", async () => {
+    // Requesting a language the video does not have would fail on purpose.
+    servesTracks({ languageCode: "ja" });
+
+    await fetchFreshTranscript("vid");
+
+    expect(fetchTranscript).toHaveBeenCalledTimes(1);
+    const config = fetchTranscript.mock.calls[0][1];
+    expect(config.lang).toBeUndefined();
   });
 });

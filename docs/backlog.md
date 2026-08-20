@@ -26,7 +26,7 @@ production.** Everything else in this backlog assumes videos can be added.
 | --- | --- | --- |
 | 0.1 | ~~Switch the primary caption path to InnerTube ANDROID.~~ **Done / moot** — `852b3d0`. The package already used ANDROID InnerTube; the dead watch-page download is deleted. | ✅ |
 | 0.2 | ~~Re-probe Vercel.~~ **Answered: blocked.** `not_playable:LOGIN_REQUIRED` from a preview deployment. Not free after all. | ✅ |
-| 0.3 | **The only remaining path.** Paid egress behind the `fetchFreshTranscript` seam — residential proxy or hosted transcript API. | ❓ |
+| 0.3 | ~~Paid egress behind the `fetchFreshTranscript` seam.~~ **Done, and free.** Proxy pool in `lib/egress.ts`; the free tier turned out to be enough. See below. | ✅ |
 | 0.4 | Verify the no-transcript experience end to end (below). Tutor behaviour decided; blocked on 0.5. | ❓ |
 | 0.5 | Make "has no transcript" a property of the quiz rather than of request timing. Blocks 0.4 and, until settled, makes tutor availability differ between students in the same class. | ❓ |
 
@@ -62,6 +62,45 @@ and ~5× less metered traffic.
 it is null in production too. Titles come from oEmbed and appear unaffected.
 
 Issues #7 and #8 are closed with this evidence; #9 carries the path forward.
+
+### Resolved 2026-08-20 — 0.3 shipped, and it cost nothing
+
+The assumption baked into 0.3 was that **datacenter** proxies would be refused
+exactly like Vercel's, so only residential egress could work. Measured against
+Webshare's *free* tier (10 datacenter proxies, $0) with `npm run probe:proxy`:
+
+| | Watch page | InnerTube |
+| --- | --- | --- |
+| `31.56.127.193` (US) | OK, 1 track | OK, 1 track |
+| `84.247.60.125` (PL) | OK, 1 track | OK, 1 track |
+| `45.38.107.97` (UK) | HTTP 429 | OK, 1 track |
+| other 7 | 429 / LOGIN_REQUIRED | LOGIN_REQUIRED |
+
+**3 of 10 clear the check, identically across two consecutive runs** — a stable
+per-IP property, the same reasoning that made 0.2's verdict trustworthy. So the
+assumption was wrong and no payment is required yet.
+
+That unreliability is designed for rather than papered over: `lib/egress.ts`
+treats the pool as mostly-burned, skipping any exit that answers 429 or a bot
+check and remembering the one that worked, so a request pays for a dead proxy at
+most once per instance. When the pool eventually decays, **the fix is the value
+of `YOUTUBE_PROXY_URLS`, not a code change** — the pool interface is identical
+for one paid residential endpoint.
+
+Two traps worth recording, both of which produced confident wrong answers first:
+
+- **Node's global `fetch` rejects a `dispatcher` built by a separately-installed
+  undici** (`UND_ERR_INVALID_ARG`), surfaced as a bare `TypeError: fetch failed`
+  that is indistinguishable from an unreachable host. Every proxy looked dead,
+  and the probe concluded datacenter IPs cannot clear the check. Proxy code must
+  import `fetch` from `undici`.
+- **A probe run from a dev machine proves nothing unless it checks its own exit
+  IP.** A residential IP already works, so a proxy that silently falls back to
+  direct returns a perfect transcript and reads as success.
+
+The request-count cut landed with it: the download now reads its language off
+the track list the scrape already returned and makes **one** call instead of up
+to five, taking ~7 MB per video down to ~1.5 MB.
 
 ### 0.4 · What happens when there is no transcript
 

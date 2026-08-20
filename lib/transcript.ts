@@ -1,4 +1,5 @@
 import { YoutubeTranscript } from "youtube-transcript";
+import { proxiedFetch } from "./egress";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ function tracingFetch(trace: string[]): typeof globalThis.fetch {
       // Not absolute — keep it verbatim rather than dropping the request.
     }
     try {
-      const res = await fetch(input, init);
+      const res = await proxiedFetch(input, init);
       trace.push(`${method} ${label} → ${res.status}`);
       return res;
     } catch (e) {
@@ -188,7 +189,7 @@ async function fetchCaptionTracks(
     return { pageLoaded: false, playability: null, tracks: [], failure };
   };
   try {
-    const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+    const res = await proxiedFetch(`https://www.youtube.com/watch?v=${videoId}`, {
       headers: YOUTUBE_HEADERS,
     });
     trace.push(`GET www.youtube.com/watch → ${res.status}`);
@@ -279,16 +280,41 @@ async function tryPackage(
   }
 }
 
-/** Tries the app's languages in preference order, then whatever the video has. */
+/**
+ * Picks the language to download from the tracks the scrape already listed,
+ * ranked by `LANG_PREFERENCE`. Returns null when the list is empty or holds
+ * nothing the app speaks — the caller then asks for no language in particular.
+ */
+function preferredTrackLang(tracks: CaptionTrack[]): string | null {
+  let best: { code: string; rank: number } | null = null;
+  for (const track of tracks) {
+    const rank = LANG_PREFERENCE.indexOf(normalizeLang(track.languageCode) ?? "");
+    if (rank === -1) continue;
+    if (!best || rank < best.rank) best = { code: track.languageCode, rank };
+  }
+  return best?.code ?? null;
+}
+
+/**
+ * Downloads the transcript in ONE call.
+ *
+ * This used to walk `LANG_PREFERENCE` blind — up to five attempts, four of them
+ * guaranteed to miss on a single-track video, each able to trigger its own
+ * ~1.2MB watch-page download inside the package. That is ~7MB per video, and on
+ * metered proxy egress it multiplies the bill roughly fivefold for nothing.
+ *
+ * The scrape has already returned the track list, so the language is known
+ * before any download starts: ask for that one. Only when the scrape itself was
+ * blocked (no list to read) does this fall back to a single unconstrained call,
+ * which is also the case where the download is least likely to work anyway.
+ */
 async function fetchViaPackage(
   videoId: string,
-  trace: string[]
+  trace: string[],
+  tracks: CaptionTrack[]
 ): Promise<{ segments: TranscriptSegment[]; language: string | null } | null> {
-  for (const lang of LANG_PREFERENCE) {
-    const got = await tryPackage(videoId, trace, lang);
-    if (got) return got;
-  }
-  return tryPackage(videoId, trace);
+  const lang = preferredTrackLang(tracks);
+  return tryPackage(videoId, trace, lang ?? undefined);
 }
 
 // ─── Fresh transcript fetch (original language) ──────────────────────────────
@@ -318,7 +344,7 @@ export async function fetchFreshTranscript(videoId: string): Promise<FetchOutcom
   const trace: string[] = [];
   const scrape = await fetchCaptionTracks(videoId, trace);
 
-  const pkg = await fetchViaPackage(videoId, trace);
+  const pkg = await fetchViaPackage(videoId, trace, scrape.tracks);
   if (pkg) {
     return {
       status: "ok",

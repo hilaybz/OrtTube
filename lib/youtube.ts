@@ -1,4 +1,5 @@
 import { extractInlineJson } from "./transcript";
+import { proxiedFetch } from "./egress";
 
 const PATTERNS = [
   /[?&]v=([a-zA-Z0-9_-]{11})/,
@@ -53,10 +54,14 @@ export interface VideoMetadata {
  * Scrapes `ytInitialPlayerResponse.videoDetails.lengthSeconds` from the watch
  * page. oEmbed (used for the title) does not expose duration, so this is the
  * only reliable no-API-key source. Returns null on any failure.
+ *
+ * Proxied: this is the same watch page the transcript scrape reads, so it is
+ * refused by the same bot check — which is why `duration_seconds` is null in
+ * production while oEmbed titles still arrive.
  */
 async function fetchDurationSeconds(videoId: string): Promise<number | null> {
   try {
-    const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+    const res = await proxiedFetch(`https://www.youtube.com/watch?v=${videoId}`, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",

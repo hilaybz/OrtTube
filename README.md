@@ -136,9 +136,32 @@ calling out because searching the code for their names finds nothing:
 | `TRANSCRIPT_BUCKET` | `transcripts` |
 | `CRON_SECRET` | guards `/api/jobs/*`; Vercel Cron sends it automatically |
 | `ADMIN_SECRET` | guards `/api/admin/*`; must differ from `CRON_SECRET` |
+| `YOUTUBE_PROXY_URLS` | **production only** — see below; leave empty locally |
 
 Optional tuning, all defaulted: `GC_VIDEO_GRACE_MINUTES`, `PURGE_RETENTION_DAYS`,
 `RECONCILE_AUTH_MINUTES`, `TRANSCRIPT_TTL_DAYS`.
+
+### YouTube egress
+
+YouTube bot-checks datacenter IPs, and Vercel's functions run on one: without a
+proxy, every watch-page and InnerTube request from production returns
+`playabilityStatus: LOGIN_REQUIRED`, which breaks transcripts *and* the
+`duration_seconds` scrape. (Titles come from oEmbed, a different endpoint, and
+are unaffected — which is why a broken video still shows its name.)
+
+`YOUTUBE_PROXY_URLS` is a comma-separated pool, tried in order with the
+last-known-good entry preferred, accepting either `http://user:pass@host:port`
+or the `host:port:user:pass` form dashboards export. An exit that answers 429 or
+a bot check is skipped for the next one. **Empty means no proxy** — the right
+setting locally, where a residential IP already works, and the kill switch in
+production.
+
+Proxies get burned over time. [`scripts/probe-proxy.mjs`](scripts/probe-proxy.mjs)
+(`npm run probe:proxy`) reports which entries still clear the check, and refuses
+to draw conclusions from a proxy that was never actually in the request path.
+**Changing provider is a change to this variable's value only** — the pool
+interface is identical whether it holds ten cheap datacenter proxies or one
+residential endpoint.
 
 **Never set `SUPABASE_DB_URL` in a deployed environment.** No application code
 reads it — only the test harness, which truncates every table and clears
