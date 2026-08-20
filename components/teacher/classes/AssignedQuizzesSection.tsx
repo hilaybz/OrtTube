@@ -16,6 +16,7 @@ import { allocationState, type AllocationState } from "@/lib/allocationState";
 import type { MyQuiz } from "@/lib/quiz";
 import { TUTOR_MODE_LABELS } from "./labels";
 import { QuizPreviewModal } from "@/components/teacher/library/QuizPreviewModal";
+import { EndQuizConfirmModal } from "@/components/teacher/EndQuizConfirmModal";
 import {
   STATE_LABEL,
   STATE_VARIANT,
@@ -130,6 +131,9 @@ export function AssignedQuizzesSection({
   // Read-only preview for an assigned shared quiz this teacher didn't author.
   const [previewQuizId, setPreviewQuizId] = useState<string | null>(null);
 
+  // The row awaiting "end quiz now" confirmation (null = modal closed).
+  const [endConfirm, setEndConfirm] = useState<AssignedQuiz | null>(null);
+
   function openAssign() {
     setQuizId(available[0]?.quiz_id ?? "");
     setTutorMode("hints");
@@ -219,6 +223,49 @@ export function AssignedQuizzesSection({
     }
   }
 
+  /**
+   * Ends a live allocation right now — sets `available_until` to the current
+   * moment, which is the exact same window-close mechanism a scheduled end
+   * already triggers (see `EndQuizConfirmModal`'s doc comment). Preserves
+   * `available_from` as-is (always null-or-already-past on a `live` row).
+   */
+  async function endQuiz(id: string, availableFrom: string | null) {
+    setPending(id);
+    setRowError("");
+    try {
+      await apiFetch(`/api/classes/${classId}/quizzes/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          availableFrom,
+          availableUntil: new Date().toISOString(),
+        }),
+      });
+      setEndConfirm(null);
+      router.refresh();
+    } catch (err) {
+      setRowError(err instanceof ApiError ? err.message : "סיום השאלון נכשל.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  /** Reopens a `done` allocation, open-ended — clears `available_until`. */
+  async function reopenQuiz(id: string, availableFrom: string | null) {
+    setPending(id);
+    setRowError("");
+    try {
+      await apiFetch(`/api/classes/${classId}/quizzes/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ availableFrom, availableUntil: null }),
+      });
+      router.refresh();
+    } catch (err) {
+      setRowError(err instanceof ApiError ? err.message : "פתיחת השאלון נכשלה.");
+    } finally {
+      setPending(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
@@ -294,6 +341,8 @@ export function AssignedQuizzesSection({
                       onTogglePublished={() => togglePublished(a.quiz_id, !a.published)}
                       onUnassign={() => unassign(a.quiz_id)}
                       onPreview={() => setPreviewQuizId(a.quiz_id)}
+                      onRequestEnd={() => setEndConfirm(a)}
+                      onReopen={() => reopenQuiz(a.quiz_id, a.available_from)}
                     />
                   ))}
                 </ul>
@@ -308,6 +357,19 @@ export function AssignedQuizzesSection({
         open={previewQuizId !== null}
         quizId={previewQuizId ?? ""}
         onClose={() => setPreviewQuizId(null)}
+      />
+
+      <EndQuizConfirmModal
+        open={endConfirm !== null}
+        prompt={
+          <>
+            לסיים את &rdquo;{endConfirm?.title ?? endConfirm?.video_title ?? "החידון"}&ldquo;{" "}
+            עכשיו לכל הכיתה?
+          </>
+        }
+        busy={endConfirm !== null && pending === endConfirm.quiz_id}
+        onConfirm={() => endConfirm && endQuiz(endConfirm.quiz_id, endConfirm.available_from)}
+        onClose={() => setEndConfirm(null)}
       />
 
       <Modal
@@ -445,6 +507,8 @@ function AssignedQuizRow({
   onTogglePublished,
   onUnassign,
   onPreview,
+  onRequestEnd,
+  onReopen,
 }: {
   classId: string;
   allocation: AssignedQuiz;
@@ -453,9 +517,21 @@ function AssignedQuizRow({
   onTogglePublished: () => void;
   onUnassign: () => void;
   onPreview: () => void;
+  onRequestEnd: () => void;
+  onReopen: () => void;
 }) {
   const heading = a.title ?? a.video_title ?? "חידון";
-  const showAnalytics = state === "live" || state === "done";
+
+  // "עד <date>" when a real end date is set; on a still-live, open-ended row
+  // (no available_until) an explicit note instead of silently showing
+  // nothing — the ambiguity this whole feature exists to resolve.
+  const windowParts: string[] = [];
+  if (a.available_from) windowParts.push(`מ־${formatWindowPart(a.available_from)}`);
+  if (a.available_until) {
+    windowParts.push(`עד ${formatWindowPart(a.available_until)}`);
+  } else if (state === "live") {
+    windowParts.push("ללא תאריך סיום — יישאר זמין עד לסיום ידני");
+  }
 
   return (
     <li className="glass relative p-4">
@@ -509,40 +585,59 @@ function AssignedQuizRow({
                 </Badge>
               )}
             </div>
-            {(a.available_from || a.available_until) && (
+            {windowParts.length > 0 && (
               <p className="text-xs text-[var(--body-subtle)]">
-                {a.available_from && `מ־${formatWindowPart(a.available_from)}`}
-                {a.available_from && a.available_until && " · "}
-                {a.available_until && `עד ${formatWindowPart(a.available_until)}`}
+                {windowParts.join(" · ")}
               </p>
             )}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {showAnalytics && (
-            <Link
-              href={`/dashboard/classes/${classId}/analytics/${a.quiz_id}`}
-              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1 text-sm font-medium text-[var(--fg-brand)] hover:bg-[var(--neutral-quaternary)]"
-            >
-              <Icon name="chart" size={16} />
-              אנליטיקה
-            </Link>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="pointer-events-auto"
-            disabled={busy}
-            onClick={onTogglePublished}
+          <Link
+            href={`/dashboard/classes/${classId}/analytics/${a.quiz_id}`}
+            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1 text-sm font-medium text-[var(--fg-brand)] hover:bg-[var(--neutral-quaternary)]"
           >
-            {busy ? (
-              <Spinner size={16} />
-            ) : a.published ? (
-              "הסתרה מתלמידים"
-            ) : (
-              "הצגה לתלמידים"
-            )}
-          </Button>
+            <Icon name="chart" size={16} />
+            אנליטיקה
+          </Link>
+          {state === "live" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="pointer-events-auto text-[var(--fg-warning)]"
+              disabled={busy}
+              onClick={onRequestEnd}
+            >
+              {busy ? <Spinner size={16} /> : "סיום שאלון"}
+            </Button>
+          )}
+          {state === "done" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="pointer-events-auto"
+              disabled={busy}
+              onClick={onReopen}
+            >
+              {busy ? <Spinner size={16} /> : "פתח שאלון שוב לכיתה"}
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="pointer-events-auto"
+              disabled={busy}
+              onClick={onTogglePublished}
+            >
+              {busy ? (
+                <Spinner size={16} />
+              ) : a.published ? (
+                "הסתרה מתלמידים"
+              ) : (
+                "הצגה לתלמידים"
+              )}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
