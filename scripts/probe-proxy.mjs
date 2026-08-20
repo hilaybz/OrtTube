@@ -25,7 +25,13 @@
  * response parsing here is regex-level, because a probe only needs a yes/no.
  */
 
-import { ProxyAgent } from "undici";
+// `fetch` MUST come from undici, not the global. Node bundles its own internal
+// undici, and it rejects a `dispatcher` built by a separately-installed one with
+// `UND_ERR_INVALID_ARG` — surfaced as a bare `TypeError: fetch failed` that looks
+// exactly like an unreachable host. Verified on Node 24.13 / undici 8.10: the
+// same ProxyAgent that fails under global fetch succeeds under undici's.
+// Whatever wires the proxy into `lib/` later inherits this constraint.
+import { ProxyAgent, fetch } from "undici";
 
 // The exact video from the #8 evidence: known to return Hebrew ASR captions
 // from a residential IP, and known to return LOGIN_REQUIRED from Vercel. Using
@@ -78,6 +84,11 @@ function redact(proxyUrl) {
   } catch {
     return "(unparseable)";
   }
+}
+
+/** Credentials embedded in the proxy URL are honoured by undici's ProxyAgent. */
+function makeDispatcher(proxyUrl) {
+  return new ProxyAgent(proxyUrl);
 }
 
 async function request(url, { dispatcher, method = "GET", headers, body } = {}) {
@@ -163,7 +174,11 @@ async function probeInnerTube(dispatcher) {
 
 async function probe(label, dispatcher) {
   const { ip, error } = await exitIp(dispatcher);
-  if (error) return { label, ip: null, watch: "—", inner: "—", state: `unreachable (${error})` };
+  // Never reached YouTube at all — a transport/auth problem, which says NOTHING
+  // about whether the bot check would have let us through. Kept strictly
+  // distinct from BLOCKED so a broken proxy can't be misread as evidence that
+  // proxying doesn't work.
+  if (error) return { label, ip: null, watch: "—", inner: "—", state: "UNREACHABLE", error };
   const watch = await probeWatchPage(dispatcher);
   const inner = await probeInnerTube(dispatcher);
   return {
@@ -200,11 +215,11 @@ async function main() {
   const rows = [control];
 
   for (const proxyUrl of proxies) {
-    const row = await probe(redact(proxyUrl), new ProxyAgent(proxyUrl));
+    const row = await probe(redact(proxyUrl), makeDispatcher(proxyUrl));
     // A proxy that isn't actually in the path would otherwise report the
     // control's own (working) result as a success.
     if (row.ip && control.ip && row.ip === control.ip) {
-      row.state = "NOT PROXIED — result discarded";
+      row.state = "NOT PROXIED";
       row.watch = "—";
       row.inner = "—";
     }
@@ -233,23 +248,46 @@ async function main() {
     return;
   }
 
-  const passing = proxyRows.filter((r) => r.state === "PASS");
-  const misconfigured = proxyRows.filter((r) => r.state.startsWith("NOT PROXIED"));
+  const count = (s) => proxyRows.filter((r) => r.state === s).length;
+  const passing = count("PASS");
+  const blocked = count("BLOCKED");
+  const unreachable = count("UNREACHABLE");
+  const misconfigured = count("NOT PROXIED");
+  // Only rows that actually reached YouTube can testify about the bot check.
+  const conclusive = passing + blocked;
 
-  if (passing.length === proxyRows.length) {
-    console.log("✓ Every proxy defeated the bot check. The free tier is enough — wire it in.");
-  } else if (passing.length > 0) {
+  if (unreachable > 0) {
+    const sample = proxyRows.find((r) => r.state === "UNREACHABLE")?.error;
     console.log(
-      `~ ${passing.length}/${proxyRows.length} proxies passed. The pool is partially burned,\n` +
-        "  so an integration would need health-checking and rotation, not a single fixed proxy."
+      `! ${unreachable}/${proxyRows.length} proxies could not be reached at all (e.g. ${sample}).\n` +
+        "  That is a transport or credentials problem, NOT a bot-check result — those rows\n" +
+        "  prove nothing either way. Sanity-check one outside Node before reading anything\n" +
+        "  into them:  curl -x http://user:pass@host:port https://api.ipify.org?format=json"
     );
-  } else if (misconfigured.length === proxyRows.length) {
-    console.log("✗ No proxy was actually in the request path. Config problem, not a verdict.");
+  }
+  if (misconfigured > 0) {
+    console.log(
+      `! ${misconfigured}/${proxyRows.length} proxies returned the direct control's own IP,\n` +
+        "  so they were never in the request path. Config problem, not a verdict."
+    );
+  }
+
+  if (conclusive === 0) {
+    console.log("\n✗ No proxy reached YouTube, so this run is INCONCLUSIVE. Fix the above and re-run.");
     process.exitCode = 1;
+  } else if (passing === conclusive) {
+    console.log(
+      `\n✓ All ${conclusive} reachable proxies defeated the bot check. The free tier is enough — wire it in.`
+    );
+  } else if (passing > 0) {
+    console.log(
+      `\n~ ${passing}/${conclusive} reachable proxies passed. The pool is partially burned, so an\n` +
+        "  integration would need health-checking and rotation, not a single fixed proxy."
+    );
   } else {
     console.log(
-      "✗ Every proxy was bot-checked, same as Vercel. Datacenter IPs do not clear it.\n" +
-        "  The next decision is residential egress (~$3.50/mo) — now evidence-backed."
+      `\n✗ All ${conclusive} reachable proxies were bot-checked, same as Vercel. Datacenter IPs\n` +
+        "  do not clear it. The next decision is residential egress (~$3.50/mo) — now evidence-backed."
     );
   }
 }
