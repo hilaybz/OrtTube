@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import type { StudentFeedItem } from "@/lib/classes";
 import { feedHeading } from "@/lib/studentFeedFilters";
+import { quizDurationMinutes } from "@/lib/quizDuration";
 
 /**
  * "עד 18:00 · היום" for a deadline later today, otherwise "עד 18:00 · 14.3".
@@ -62,6 +63,19 @@ function ClassTeacherLine({ item }: { item: StudentFeedItem }) {
     <p className="text-xs text-[var(--body-subtle)]">
       {item.class_name}
       {item.teacher_name && ` · ${item.teacher_name}`}
+    </p>
+  );
+}
+
+/** Omits itself entirely when nothing can be shown (unrestricted quiz whose
+ * video length isn't known yet) — see `lib/quizDuration.ts`. */
+function DurationLine({ item }: { item: StudentFeedItem }) {
+  const d = quizDurationMinutes(item);
+  if (!d) return null;
+  return (
+    <p className="text-xs text-[var(--body-subtle)]">
+      {d.estimated && "~"}
+      <span className="tabular-nums">{d.minutes}</span> דקות
     </p>
   );
 }
@@ -145,6 +159,7 @@ export function QuizCard({ item }: { item: StudentFeedItem }) {
         <div className="flex flex-1 flex-col gap-2 px-4 pb-4">
           <h3 className="font-semibold text-[var(--heading)]">{heading}</h3>
           <ClassTeacherLine item={item} />
+          <DurationLine item={item} />
           <p className="text-xs text-[var(--body-subtle)]">{attemptsNote(item)}</p>
           {item.status !== "completed" && item.available_until && (
             <p className="text-xs font-medium text-[var(--fg-warning)]">

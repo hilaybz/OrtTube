@@ -22,10 +22,19 @@ export function NewQuizForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [timeRestricted, setTimeRestricted] = useState(false);
+  const [durationMinutes, setDurationMinutes] = useState("");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    if (timeRestricted) {
+      const n = Number(durationMinutes);
+      if (!Number.isInteger(n) || n < 1) {
+        setError("משך הזמן חייב להיות מספר שלם גדול מ־0.");
+        return;
+      }
+    }
     setBusy(true);
     const form = new FormData(e.currentTarget);
     try {
@@ -35,6 +44,8 @@ export function NewQuizForm() {
           youtubeUrl: String(form.get("youtubeUrl") ?? "").trim(),
           baseLanguage: form.get("baseLanguage"),
           title: String(form.get("title") ?? "").trim() || undefined,
+          timeRestricted,
+          durationMinutes: timeRestricted ? Number(durationMinutes) : undefined,
         }),
       });
       router.push(`/dashboard/quizzes/${quiz.quiz_id}/edit`);
@@ -64,6 +75,35 @@ export function NewQuizForm() {
         ))}
       </Select>
       <Field label="כותרת (אופציונלי)" name="title" placeholder="שם החידון" />
+
+      <div className="flex flex-col gap-3">
+        <label className="flex items-center gap-2 text-sm text-[var(--body)]">
+          <input
+            type="checkbox"
+            checked={timeRestricted}
+            onChange={(e) => setTimeRestricted(e.target.checked)}
+            className="h-4 w-4 rounded-[var(--radius-sm)] border border-[var(--glass-border)] accent-[var(--brand)]"
+          />
+          הגבלת זמן
+        </label>
+        {timeRestricted && (
+          <Field
+            label="משך מוקצב (דקות)"
+            name="durationMinutes"
+            type="number"
+            min={1}
+            step={1}
+            value={durationMinutes}
+            onChange={(e) => setDurationMinutes(e.target.value)}
+          />
+        )}
+        {!timeRestricted && (
+          <p className="text-xs text-[var(--body-subtle)]">
+            ללא הגבלת זמן, משך החידון יוצג כהערכה המבוססת על אורך הסרטון.
+          </p>
+        )}
+      </div>
+
       <Button type="submit" size="lg" disabled={busy} className="mt-1 self-start">
         {busy ? <Spinner size={18} /> : "יצירת חידון"}
       </Button>

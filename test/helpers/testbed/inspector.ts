@@ -242,6 +242,19 @@ export class Inspector {
     );
   }
 
+  /**
+   * Null out a quiz's video's `duration_seconds` — simulates the real-world
+   * case where the YouTube watch-page scrape that populates it failed (see
+   * `lib/youtube.ts`), for tests asserting reads degrade gracefully rather
+   * than erroring. Never used to drive the system under test.
+   */
+  async clearVideoDuration(quiz: Quiz): Promise<void> {
+    await getPool().query(
+      "UPDATE public.videos SET duration_seconds = NULL WHERE id = $1",
+      [quiz.videoId]
+    );
+  }
+
   /** Whether the profile for a user id still exists. */
   async profileExists(userId: string): Promise<boolean> {
     const res = await getPool().query(

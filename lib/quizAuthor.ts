@@ -71,6 +71,9 @@ export interface AuthorQuiz {
   questions: AuthorQuestion[];
   /** Non-base languages that already have at least one translation row. */
   translated_languages: Language[];
+  time_restricted: boolean;
+  /** Only non-null while `time_restricted`. */
+  duration_minutes: number | null;
 }
 
 /**

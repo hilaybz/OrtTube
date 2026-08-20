@@ -389,6 +389,7 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
                 <QuizMeta
                   baseLanguage={q.base_language}
                   questionCount={q.question_count}
+                  duration={q}
                 />
                 <div className="mt-auto flex items-center gap-2 pt-1">
                   <Button

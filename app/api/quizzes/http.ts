@@ -30,6 +30,7 @@ export function statusForCode(code: string): number {
     case "option_not_found":
       return 404;
     case "invalid_base_language":
+    case "invalid_duration":
     case "invalid_kind":
     case "invalid_source":
     case "invalid_visibility":

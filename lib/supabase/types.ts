@@ -530,8 +530,10 @@ export type Database = {
           cloned_from_id: string | null
           created_at: string
           deleted_at: string | null
+          duration_minutes: number | null
           id: string
           school_id: string
+          time_restricted: boolean
           title: string | null
           video_id: string
           visibility: string
@@ -542,8 +544,10 @@ export type Database = {
           cloned_from_id?: string | null
           created_at?: string
           deleted_at?: string | null
+          duration_minutes?: number | null
           id?: string
           school_id: string
+          time_restricted?: boolean
           title?: string | null
           video_id: string
           visibility?: string
@@ -554,8 +558,10 @@ export type Database = {
           cloned_from_id?: string | null
           created_at?: string
           deleted_at?: string | null
+          duration_minutes?: number | null
           id?: string
           school_id?: string
+          time_restricted?: boolean
           title?: string | null
           video_id?: string
           visibility?: string
@@ -794,8 +800,10 @@ export type Database = {
           cloned_from_id: string | null
           created_at: string
           deleted_at: string | null
+          duration_minutes: number | null
           id: string
           school_id: string
+          time_restricted: boolean
           title: string | null
           video_id: string
           visibility: string
@@ -847,8 +855,10 @@ export type Database = {
         Args: {
           p_base_language: string
           p_channel_name?: string
+          p_duration_minutes?: number
           p_duration_seconds: number
           p_quiz_title: string
+          p_time_restricted?: boolean
           p_video_title: string
           p_youtube_id: string
         }
@@ -891,8 +901,11 @@ export type Database = {
           base_language: string
           channel_name: string
           created_at: string
+          duration_minutes: number
+          duration_seconds: number
           question_count: number
           quiz_id: string
+          time_restricted: boolean
           title: string
           transcript_status: string
           video_id: string
@@ -917,9 +930,12 @@ export type Database = {
           base_language: string
           channel_name: string
           created_at: string
+          duration_minutes: number
+          duration_seconds: number
           is_own: boolean
           question_count: number
           quiz_id: string
+          time_restricted: boolean
           title: string
           transcript_status: string
           video_id: string
@@ -1002,7 +1018,9 @@ export type Database = {
       update_quiz: {
         Args: {
           p_base_language?: string
+          p_duration_minutes?: number
           p_quiz_id: string
+          p_time_restricted?: boolean
           p_title?: string
           p_visibility?: string
         }
