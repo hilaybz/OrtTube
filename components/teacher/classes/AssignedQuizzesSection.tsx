@@ -25,7 +25,7 @@ import {
 } from "@/components/teacher/scheduleFormat";
 
 /** One lifecycle section, in display order — matches `AllocationState`. */
-const SECTION_ORDER: AllocationState[] = ["draft", "live", "scheduled", "done"];
+const SECTION_ORDER: AllocationState[] = ["draft", "scheduled", "live", "done"];
 
 const SECTION_LABEL: Record<AllocationState, string> = {
   draft: "מוסתרים",

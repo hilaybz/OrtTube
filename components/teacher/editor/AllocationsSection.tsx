@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
@@ -11,7 +11,7 @@ import { Select } from "@/components/ui/Select";
 import { Field } from "@/components/ui/Field";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { ClassRow, TutorMode } from "@/lib/classes";
-import { allocationState } from "@/lib/allocationState";
+import { allocationState, type AllocationState } from "@/lib/allocationState";
 import type { QuizAllocation } from "@/lib/allocations";
 import { TUTOR_MODE_LABELS } from "@/components/teacher/classes/labels";
 import { EndQuizConfirmModal } from "@/components/teacher/EndQuizConfirmModal";
@@ -23,6 +23,37 @@ import {
   toDatetimeLocalValue,
   fromDatetimeLocalValue,
 } from "@/components/teacher/scheduleFormat";
+
+/** Row order, matching `AllocationState`'s declared draft→scheduled→live→done order. */
+const STATE_ORDER: Record<AllocationState, number> = {
+  draft: 0,
+  scheduled: 1,
+  live: 2,
+  done: 3,
+};
+
+/**
+ * Sort key within a state — soonest-relevant-date first, so a teacher
+ * scanning the list sees what needs attention soonest at the top of each
+ * group. Mirrors `sectionSortValue` in `AssignedQuizzesSection` (same idea,
+ * applied to one flat list here instead of separate section headers, since
+ * this view is per-quiz across a handful of classes rather than per-class
+ * across many quizzes).
+ */
+function stateSortValue(state: AllocationState, a: QuizAllocation): number {
+  switch (state) {
+    case "live":
+      return a.available_until ? new Date(a.available_until).getTime() : Infinity;
+    case "scheduled":
+      return a.available_from ? new Date(a.available_from).getTime() : Infinity;
+    case "done":
+      // Most-recently-closed first.
+      return a.available_until ? -new Date(a.available_until).getTime() : Infinity;
+    case "draft":
+      // Newest-assigned first.
+      return -new Date(a.assigned_at).getTime();
+  }
+}
 
 /**
  * Allocation management for a quiz, on the editor page (Epic 2A.3): every
@@ -127,6 +158,15 @@ export function AllocationsSection({
   const assignedClassIds = new Set(allocations.map((a) => a.class_id));
   const candidates = classes.filter((c) => !assignedClassIds.has(c.id));
 
+  const sortedAllocations = useMemo(() => {
+    return [...allocations].sort((a, b) => {
+      const stateA = allocationState(a);
+      const stateB = allocationState(b);
+      if (stateA !== stateB) return STATE_ORDER[stateA] - STATE_ORDER[stateB];
+      return stateSortValue(stateA, a) - stateSortValue(stateB, b);
+    });
+  }, [allocations]);
+
   return (
     <GlassCard className="mb-6 flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
@@ -146,7 +186,7 @@ export function AllocationsSection({
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
-          {allocations.map((a) => {
+          {sortedAllocations.map((a) => {
             const state = allocationState(a);
             const busy = pending === a.class_id;
 
