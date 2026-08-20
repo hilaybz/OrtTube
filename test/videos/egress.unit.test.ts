@@ -15,14 +15,39 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const undiciFetch = vi.hoisted(() => vi.fn());
 const proxyAgentCtor = vi.hoisted(() => vi.fn());
 
+/**
+ * The fake agent keeps its own `uri`, so a test can tell WHICH exit a request
+ * went through. Without that the mock can only be scripted in call order, and
+ * an assertion on call COUNT passes whether or not the exit was chosen
+ * correctly — which is how the memo test below was originally tautological.
+ *
+ * Note this is a property the REAL ProxyAgent does not expose — it exists here
+ * only so tests can identify a dispatcher. Production code must not read it;
+ * `lib/egress.ts` keeps its own label alongside each agent for that reason.
+ */
 vi.mock("undici", () => ({
   fetch: undiciFetch,
   ProxyAgent: class {
-    constructor(uri: string) {
-      proxyAgentCtor(uri);
+    uri: string;
+    constructor(options: string | { uri: string }) {
+      this.uri = typeof options === "string" ? options : options.uri;
+      // Mirrors the real constructor, which rejects an unsupported scheme with
+      // InvalidArgumentError and an unparseable URL with TypeError (measured on
+      // undici 8.10). A permissive mock here would let a pool-construction bug
+      // through, since the whole hazard is that this throws.
+      const parsed = new URL(this.uri);
+      if (!/^(https?|socks[45]?):$/.test(parsed.protocol) || !parsed.hostname) {
+        throw new Error(`InvalidArgumentError: unsupported proxy protocol ${parsed.protocol}`);
+      }
+      proxyAgentCtor(this.uri);
     }
   },
 }));
+
+/** The exit a recorded call was dispatched through, as `host:port`. */
+function exitOf(call: number): string {
+  return new URL(undiciFetch.mock.calls[call][1].dispatcher.uri).host;
+}
 
 /** An undici-shaped response: only what `proxiedFetch` reads off it. */
 function reply(body: string, status = 200) {
@@ -165,19 +190,160 @@ describe("last-known-good memo", () => {
   it("sends the next request straight to the exit that worked", async () => {
     // Burned proxies are the common case, so without this every request pays
     // for the dead ones ahead of it in the list.
-    undiciFetch
-      .mockResolvedValueOnce(reply(BOT_CHECK))
-      .mockResolvedValueOnce(reply(GOOD))
-      .mockResolvedValue(reply(GOOD));
+    //
+    // Scripted by EXIT, not by call order: with an ordered mock the second
+    // request succeeds on its first attempt no matter which exit it picks, so
+    // a call-count assertion alone passes even with the memo deleted.
+    undiciFetch.mockImplementation(async (_url: string, opts: { dispatcher: { uri: string } }) =>
+      opts.dispatcher.uri.includes("1.1.1.1") ? reply(BOT_CHECK) : reply(GOOD)
+    );
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p");
 
     await proxiedFetch("https://www.youtube.com/watch?v=x");
     expect(undiciFetch).toHaveBeenCalledTimes(2);
+    expect(exitOf(0)).toBe("1.1.1.1:1");
+    expect(exitOf(1)).toBe("2.2.2.2:2");
 
     await proxiedFetch("https://www.youtube.com/watch?v=y");
 
-    // One more call total, not two: it skipped the known-bad exit.
+    // The burned exit is skipped entirely: one more call, and it went straight
+    // to the exit that answered last time.
     expect(undiciFetch).toHaveBeenCalledTimes(3);
+    expect(exitOf(2)).toBe("2.2.2.2:2");
+  });
+});
+
+describe("request forwarding", () => {
+  it("forwards method, headers and body — the InnerTube POST depends on it", async () => {
+    // Nothing else in this file asserts the second argument, so dropping `body`
+    // from the dispatch would otherwise go unnoticed until production.
+    undiciFetch.mockResolvedValue(reply(GOOD));
+    const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
+
+    await proxiedFetch("https://www.youtube.com/youtubei/v1/player", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: '{"videoId":"x"}',
+    });
+
+    expect(undiciFetch).toHaveBeenCalledWith(
+      "https://www.youtube.com/youtubei/v1/player",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: '{"videoId":"x"}',
+      })
+    );
+  });
+
+  it("passes an abort signal, so a stalled proxy cannot hang the request", async () => {
+    // undici's own defaults are 300s for headers and body; on a sequential
+    // sweep that is long enough to outlive the caller.
+    undiciFetch.mockResolvedValue(reply(GOOD));
+    const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
+
+    await proxiedFetch("https://www.youtube.com/watch?v=x");
+
+    expect(undiciFetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("rejects shapes it would otherwise send with the body silently dropped", async () => {
+    // The exported type is the platform fetch, which is wider than what is
+    // supported. Failing loudly beats YouTube answering 400 with no trace.
+    undiciFetch.mockResolvedValue(reply(GOOD));
+    const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
+
+    await expect(
+      proxiedFetch("https://x.test", { method: "POST", body: new URLSearchParams({ a: "b" }) })
+    ).rejects.toThrow(/string bodies/);
+    expect(undiciFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("pool construction is not brought down by one bad entry", () => {
+  it("survives an entry whose scheme makes ProxyAgent throw", async () => {
+    // `new ProxyAgent("htp://…")` throws InvalidArgumentError. Uncaught, that
+    // would break every YouTube fetch in the app for as long as the typo lived
+    // in the env var.
+    undiciFetch.mockResolvedValue(reply(GOOD));
+    const { proxiedFetch } = await loadEgress("htp://1.2.3.4:8080,2.2.2.2:2:u:p");
+
+    const res = await proxiedFetch("https://www.youtube.com/watch?v=x");
+
+    expect(res.status).toBe(200);
+    expect(exitOf(0)).toBe("2.2.2.2:2");
+  });
+
+  it("treats an empty variable as no proxy — the value the example file ships", async () => {
+    const globalFetch = vi.fn(async () => new Response("direct"));
+    vi.stubGlobal("fetch", globalFetch);
+    const { proxiedFetch } = await loadEgress("");
+
+    await proxiedFetch("https://www.youtube.com/watch?v=x");
+
+    expect(globalFetch).toHaveBeenCalledTimes(1);
+    expect(undiciFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("sweep cooldown", () => {
+  it("does not re-sweep the whole pool right after every exit refused", async () => {
+    // A genuinely login-gated video returns LOGIN_REQUIRED from every IP on
+    // earth, and is indistinguishable from a burned pool. Re-sweeping ten exits
+    // at ~1.2MB each on every retry would spend the monthly quota on a video
+    // that can never succeed.
+    undiciFetch.mockResolvedValue(reply(BOT_CHECK));
+    const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p,3.3.3.3:3:u:p");
+
+    await proxiedFetch("https://www.youtube.com/watch?v=gated");
+    expect(undiciFetch).toHaveBeenCalledTimes(3);
+
+    await proxiedFetch("https://www.youtube.com/watch?v=gated");
+
+    // One probe, not another full pass.
+    expect(undiciFetch).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("trace", () => {
+  it("names what each exit did, so a burned pool is visible", async () => {
+    // Without this the caller sees only the last exit's bot check and cannot
+    // tell "rotate the proxies" from "YouTube walled everything".
+    undiciFetch
+      .mockRejectedValueOnce(Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+      }))
+      .mockResolvedValue(reply(GOOD));
+    const { createProxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p");
+    const trace: string[] = [];
+
+    await createProxiedFetch(trace)("https://www.youtube.com/watch?v=x");
+
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toContain("1.1.1.1:1 ECONNREFUSED");
+    expect(trace[0]).toContain("2.2.2.2:2 ok");
+  });
+
+  it("does not leak proxy credentials into the trace", async () => {
+    undiciFetch.mockResolvedValue(reply(BOT_CHECK));
+    const { createProxiedFetch } = await loadEgress("1.1.1.1:1:bob:hunter2");
+    const trace: string[] = [];
+
+    await createProxiedFetch(trace)("https://www.youtube.com/watch?v=x");
+
+    expect(trace.join(" ")).not.toContain("hunter2");
+    expect(trace.join(" ")).not.toContain("bob");
+  });
+
+  it("stays silent on a clean first-exit success", async () => {
+    // The happy path is most requests; a line per call would drown the trace.
+    undiciFetch.mockResolvedValue(reply(GOOD));
+    const { createProxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
+    const trace: string[] = [];
+
+    await createProxiedFetch(trace)("https://www.youtube.com/watch?v=x");
+
+    expect(trace).toHaveLength(0);
   });
 });
 

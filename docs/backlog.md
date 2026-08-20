@@ -107,7 +107,18 @@ Two traps worth recording, both of which produced confident wrong answers first:
 
 The request-count cut landed with it: the download now reads its language off
 the track list the scrape already returned and makes **one** call instead of up
-to five, taking ~7 MB per video down to ~1.5 MB.
+to five (two when the first misses, since the WEB scrape and the ANDROID player
+do not always agree on whether Hebrew is `he` or `iw`).
+
+That is ~7 MB → ~1.5 MB **on the happy path only**, and it is worth being precise
+about the unhappy one: fallthrough multiplies a *failing* request by pool size.
+A video that is genuinely login-gated — age-restricted, private, members-only —
+returns LOGIN_REQUIRED from every IP on earth, so it sweeps every exit, and it
+does so separately for the scrape, the duration fetch and the download's own web
+fallback. Unbounded that is ~36 MB per attempt against a 1 GB monthly quota, on
+a video that can never succeed. Hence the sweep cooldown in `lib/egress.ts`: the
+first sweep pays to distinguish "burned pool" from "gated video", and retries
+within the next minute cost one request instead of another full pass.
 
 ### 0.4 · What happens when there is no transcript
 

@@ -1,5 +1,5 @@
 import { YoutubeTranscript } from "youtube-transcript";
-import { proxiedFetch } from "./egress";
+import { createProxiedFetch } from "./egress";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -114,7 +114,16 @@ export function extractInlineJson(html: string, varName: string): unknown {
  * (rate limit, disabled captions, unavailable video) carry their diagnosis in
  * the class name, and a bare `.message` throws it away. */
 function describeError(e: unknown): string {
-  return e instanceof Error ? `${e.constructor.name}: ${e.message}` : String(e);
+  if (!(e instanceof Error)) return String(e);
+  // undici reports a transport failure as a bare `TypeError: fetch failed` and
+  // puts the actual diagnosis (ECONNREFUSED, ETIMEDOUT, …) on `.cause`. Naming
+  // only the wrapper makes a dead proxy indistinguishable from a DNS failure.
+  const cause = e.cause;
+  const suffix =
+    cause instanceof Error
+      ? ` (${(cause as NodeJS.ErrnoException).code ?? cause.message})`
+      : "";
+  return `${e.constructor.name}: ${e.message}${suffix}`;
 }
 
 /**
@@ -142,7 +151,9 @@ function tracingFetch(trace: string[]): typeof globalThis.fetch {
       // Not absolute — keep it verbatim rather than dropping the request.
     }
     try {
-      const res = await proxiedFetch(input, init);
+      // Trace-aware: without it a fully-burned proxy pool is invisible here,
+      // showing only the last exit's bot check.
+      const res = await createProxiedFetch(trace)(input, init);
       trace.push(`${method} ${label} → ${res.status}`);
       return res;
     } catch (e) {
@@ -189,7 +200,7 @@ async function fetchCaptionTracks(
     return { pageLoaded: false, playability: null, tracks: [], failure };
   };
   try {
-    const res = await proxiedFetch(`https://www.youtube.com/watch?v=${videoId}`, {
+    const res = await createProxiedFetch(trace)(`https://www.youtube.com/watch?v=${videoId}`, {
       headers: YOUTUBE_HEADERS,
     });
     trace.push(`GET www.youtube.com/watch → ${res.status}`);
@@ -284,13 +295,21 @@ async function tryPackage(
  * Picks the language to download from the tracks the scrape already listed,
  * ranked by `LANG_PREFERENCE`. Returns null when the list is empty or holds
  * nothing the app speaks — the caller then asks for no language in particular.
+ *
+ * Ties break toward human captions. `normalizeLang` maps "iw" onto "he", so the
+ * two spellings of Hebrew rank identically and a video carrying both would
+ * otherwise be decided by list order — which can hand back the auto-generated
+ * track when a human-written one is sitting next to it.
  */
 function preferredTrackLang(tracks: CaptionTrack[]): string | null {
-  let best: { code: string; rank: number } | null = null;
+  let best: { code: string; rank: number; asr: boolean } | null = null;
   for (const track of tracks) {
     const rank = LANG_PREFERENCE.indexOf(normalizeLang(track.languageCode) ?? "");
     if (rank === -1) continue;
-    if (!best || rank < best.rank) best = { code: track.languageCode, rank };
+    const asr = track.kind === "asr";
+    if (!best || rank < best.rank || (rank === best.rank && best.asr && !asr)) {
+      best = { code: track.languageCode, rank, asr };
+    }
   }
   return best?.code ?? null;
 }
@@ -304,9 +323,17 @@ function preferredTrackLang(tracks: CaptionTrack[]): string | null {
  * metered proxy egress it multiplies the bill roughly fivefold for nothing.
  *
  * The scrape has already returned the track list, so the language is known
- * before any download starts: ask for that one. Only when the scrape itself was
- * blocked (no list to read) does this fall back to a single unconstrained call,
- * which is also the case where the download is least likely to work anyway.
+ * before any download starts: ask for that one.
+ *
+ * The unconstrained retry is not belt-and-braces — it covers a real divergence.
+ * The scrape reads the WEB watch page while the download talks to the ANDROID
+ * InnerTube player, and the two do not always list a video's captions under the
+ * same code: Hebrew appears as "he" on one and the legacy "iw" on the other,
+ * which is why `LANG_PREFERENCE` carries both spellings. The package matches the
+ * requested language EXACTLY and throws when it cannot, so asking for the code
+ * the scrape saw can miss a track the download would otherwise have served.
+ * Retrying without a language costs one extra call only when the first failed,
+ * versus the five this used to spend every time.
  */
 async function fetchViaPackage(
   videoId: string,
@@ -314,7 +341,8 @@ async function fetchViaPackage(
   tracks: CaptionTrack[]
 ): Promise<{ segments: TranscriptSegment[]; language: string | null } | null> {
   const lang = preferredTrackLang(tracks);
-  return tryPackage(videoId, trace, lang ?? undefined);
+  if (!lang) return tryPackage(videoId, trace);
+  return (await tryPackage(videoId, trace, lang)) ?? tryPackage(videoId, trace);
 }
 
 // ─── Fresh transcript fetch (original language) ──────────────────────────────
