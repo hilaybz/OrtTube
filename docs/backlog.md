@@ -76,16 +76,23 @@ Webshare's *free* tier (10 datacenter proxies, $0) with `npm run probe:proxy`:
 | `45.38.107.97` (UK) | HTTP 429 | OK, 1 track |
 | other 7 | 429 / LOGIN_REQUIRED | LOGIN_REQUIRED |
 
-**3 of 10 clear the check, identically across two consecutive runs** — a stable
-per-IP property, the same reasoning that made 0.2's verdict trustworthy. So the
-assumption was wrong and no payment is required yet.
+**3 of 10 clear the check**, so the assumption was wrong and no payment is
+required yet.
 
-That unreliability is designed for rather than papered over: `lib/egress.ts`
-treats the pool as mostly-burned, skipping any exit that answers 429 or a bot
-check and remembering the one that worked, so a request pays for a dead proxy at
-most once per instance. When the pool eventually decays, **the fix is the value
-of `YOUTUBE_PROXY_URLS`, not a code change** — the pool interface is identical
-for one paid residential endpoint.
+**Which** 3 is not stable, though, and that matters more than the count. Two
+back-to-back runs were byte-identical, which looked like a fixed per-IP
+property. Two hours later the membership had moved: `31.59.20.176` and
+`191.96.254.138` had recovered, `45.38.107.97` had been burned, and the count
+was 4. Treat any single probe run as a snapshot, never as a roster — the earlier
+reading of it as a standing property was simply too few samples.
+
+That churn is designed for rather than papered over: `lib/egress.ts` treats the
+pool as mostly-burned and membership as unknown, skipping any exit that answers
+429 or a bot check and remembering the one that just worked, so a request pays
+for a dead proxy at most once per instance and recovers on its own when the pool
+shifts underneath it. If it decays past usefulness, **the fix is the value of
+`YOUTUBE_PROXY_URLS`, not a code change** — the pool interface is identical for
+one paid residential endpoint.
 
 Two traps worth recording, both of which produced confident wrong answers first:
 

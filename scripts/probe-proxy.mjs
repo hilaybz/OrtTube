@@ -54,7 +54,11 @@ const INNERTUBE_CONTEXT = {
     clientVersion: "20.10.38",
   },
 };
-const INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+
+// No `key` query parameter: the package's own INNERTUBE_API_URL carries none,
+// and the endpoint answers without one — so sending a key would probe a request
+// shape production never makes.
+const INNERTUBE_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
 
 const TIMEOUT_MS = 20_000;
 
@@ -150,7 +154,7 @@ async function probeWatchPage(dispatcher) {
 async function probeInnerTube(dispatcher) {
   try {
     const { status, text } = await request(
-      `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}&prettyPrint=false`,
+      INNERTUBE_URL,
       {
         dispatcher,
         method: "POST",
