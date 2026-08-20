@@ -52,6 +52,9 @@ const S1: SharedQuiz = {
   author_name: "דנה כהן",
   is_own: false,
   created_at: "2026-01-01T00:00:00.000Z",
+  time_restricted: false,
+  duration_minutes: null,
+  duration_seconds: null,
 };
 
 const PREVIEW_QUIZ = {

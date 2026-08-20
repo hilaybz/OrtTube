@@ -248,6 +248,21 @@ describe.skipIf(!online)("authoring RPCs", () => {
     expect(afterDelete.some((q) => q.quiz_id === quiz.id)).toBe(false);
   });
 
+  it("list_my_quizzes carries the quiz's duration fields (issue #80)", async () => {
+    const quiz = await teacher.authorQuiz({ title: "Timed Quiz" });
+    await teacher.client.rpc("update_quiz", {
+      p_quiz_id: quiz.id,
+      p_time_restricted: true,
+      p_duration_minutes: 7,
+    });
+
+    const listed = (await teacher.myQuizzes()).find((q) => q.quiz_id === quiz.id)!;
+    expect(listed.time_restricted).toBe(true);
+    expect(listed.duration_minutes).toBe(7);
+    // `authorQuiz`'s fixture always sets p_duration_seconds: 600.
+    expect(listed.duration_seconds).toBe(600);
+  });
+
   // `update_quiz` is a partial patch, so NULL means "field not provided". That
   // made the title impossible to unset: clearing the box saved null, coalesce
   // kept the old value, and the teacher was stuck with a title they had deleted.
@@ -295,6 +310,107 @@ describe.skipIf(!online)("authoring RPCs", () => {
       });
 
       expect(await quizTitle(quiz.id)).toBe("Chapter Two");
+    });
+  });
+
+  // `time_restricted`/`duration_minutes` (issue #80): a teacher-stated cap,
+  // settable at creation and editable afterward. `duration_minutes` is only
+  // ever non-null while restricted — enforced both by a DB CHECK constraint
+  // and by both RPCs raising `invalid_duration` for an inconsistent pair.
+  describe("quiz duration (issue #80)", () => {
+    it("creates a restricted quiz and round-trips it via get_quiz_for_author", async () => {
+      const quiz = await teacher.authorQuiz({ title: "Timed Quiz" });
+      const { error } = await teacher.client.rpc("update_quiz", {
+        p_quiz_id: quiz.id,
+        p_time_restricted: true,
+        p_duration_minutes: 12,
+      });
+      expect(error).toBeNull();
+
+      const view = await teacher.editorView(quiz);
+      expect(view.time_restricted).toBe(true);
+      expect(view.duration_minutes).toBe(12);
+    });
+
+    it("a newly authored quiz starts unrestricted with no stored minutes", async () => {
+      const quiz = await teacher.authorQuiz({ title: "Untimed Quiz" });
+      const view = await teacher.editorView(quiz);
+      expect(view.time_restricted).toBe(false);
+      expect(view.duration_minutes).toBeNull();
+    });
+
+    it("create_quiz_for_video rejects time_restricted without a positive minute count", async () => {
+      const { error } = await teacher.client.rpc("create_quiz_for_video", {
+        p_youtube_id: `yt-${Math.random().toString(36).slice(2)}`,
+        p_video_title: "A Video",
+        p_duration_seconds: 600,
+        p_base_language: "he",
+        p_quiz_title: "Bad Duration",
+        p_time_restricted: true,
+        p_duration_minutes: null,
+      });
+      expect(error?.message).toBe("invalid_duration");
+    });
+
+    it("create_quiz_for_video rejects a zero/negative minute count even when restricted", async () => {
+      const { error } = await teacher.client.rpc("create_quiz_for_video", {
+        p_youtube_id: `yt-${Math.random().toString(36).slice(2)}`,
+        p_video_title: "A Video",
+        p_duration_seconds: 600,
+        p_base_language: "he",
+        p_quiz_title: "Bad Duration",
+        p_time_restricted: true,
+        p_duration_minutes: 0,
+      });
+      expect(error?.message).toBe("invalid_duration");
+    });
+
+    it("update_quiz rejects turning restriction on without a positive minute count", async () => {
+      const quiz = await teacher.authorQuiz();
+      const { error } = await teacher.client.rpc("update_quiz", {
+        p_quiz_id: quiz.id,
+        p_time_restricted: true,
+      });
+      expect(error?.message).toBe("invalid_duration");
+
+      // The rejected call must not have partially applied.
+      const view = await teacher.editorView(quiz);
+      expect(view.time_restricted).toBe(false);
+    });
+
+    it("toggling back to unrestricted clears the stored minute count", async () => {
+      const quiz = await teacher.authorQuiz();
+      await teacher.client.rpc("update_quiz", {
+        p_quiz_id: quiz.id,
+        p_time_restricted: true,
+        p_duration_minutes: 20,
+      });
+
+      const { error } = await teacher.client.rpc("update_quiz", {
+        p_quiz_id: quiz.id,
+        p_time_restricted: false,
+      });
+      expect(error).toBeNull();
+
+      const view = await teacher.editorView(quiz);
+      expect(view.time_restricted).toBe(false);
+      expect(view.duration_minutes).toBeNull();
+    });
+
+    it("leaves the duration untouched when time_restricted is not part of the patch", async () => {
+      const quiz = await teacher.authorQuiz();
+      await teacher.client.rpc("update_quiz", {
+        p_quiz_id: quiz.id,
+        p_time_restricted: true,
+        p_duration_minutes: 15,
+      });
+
+      // A title-only edit must not disturb the duration.
+      await teacher.client.rpc("update_quiz", { p_quiz_id: quiz.id, p_title: "Renamed" });
+
+      const view = await teacher.editorView(quiz);
+      expect(view.time_restricted).toBe(true);
+      expect(view.duration_minutes).toBe(15);
     });
   });
 

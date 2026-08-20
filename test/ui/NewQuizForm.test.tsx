@@ -115,6 +115,9 @@ describe("NewQuizForm", () => {
       youtubeUrl: WATCH_URL,
       baseLanguage: "he",
       title: "מבוא לרשתות",
+      // Unrestricted by default: no stated minute count, so students see the
+      // estimate derived from the video's length instead.
+      timeRestricted: false,
     });
     await vi.waitFor(() =>
       expect(push).toHaveBeenCalledWith("/dashboard/quizzes/new-quiz/edit")

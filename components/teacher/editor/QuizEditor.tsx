@@ -22,6 +22,7 @@ import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import type { ClassRow } from "@/lib/classes";
 import type { QuizAllocation } from "@/lib/allocations";
+import { estimateQuizMinutes } from "@/lib/quizDuration";
 import { QuestionModal } from "./QuestionModal";
 import { AllocationsSection } from "./AllocationsSection";
 import { VideoPreviewPanel, type VideoPreviewPanelHandle } from "./VideoPreviewPanel";
@@ -37,6 +38,14 @@ const HIGHLIGHT_MS = 1600;
 const VISIBILITY_SEGMENTS: ReadonlyArray<Segment<QuizVisibility>> = [
   { value: "private", label: "פרטי" },
   { value: "shared", label: "משותף לביה\u05f4ס" },
+];
+
+// How a quiz's length is decided: estimated from the video (the default, shown
+// to students with a `~`) or a minute count the teacher states outright.
+type DurationMode = "estimated" | "restricted";
+const DURATION_SEGMENTS: ReadonlyArray<Segment<DurationMode>> = [
+  { value: "estimated", label: "הערכה מהסרטון" },
+  { value: "restricted", label: "הגבלת זמן" },
 ];
 
 // A quiz can accumulate questions indefinitely (each AI run adds up to 20), so
@@ -231,6 +240,14 @@ export function QuizEditor({
   const [title, setTitle] = useState(initial.title ?? "");
   const [titleDirty, setTitleDirty] = useState(false);
 
+  const [timeRestricted, setTimeRestricted] = useState(initial.time_restricted);
+  const [durationMinutes, setDurationMinutes] = useState(
+    initial.duration_minutes != null ? String(initial.duration_minutes) : ""
+  );
+  const [durationDirty, setDurationDirty] = useState(false);
+  const [durationError, setDurationError] = useState<string | null>(null);
+  const estimatedMinutes = estimateQuizMinutes(initial.video.duration_seconds);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AuthorQuestion | null>(null);
 
@@ -303,6 +320,36 @@ export function QuizEditor({
       setBanner({
         kind: "danger",
         msg: e instanceof MutationError ? e.message : "עדכון הכותרת נכשל.",
+      });
+    } finally {
+      setMetaBusy(false);
+    }
+  }
+
+  /** Validates and saves the time-restriction toggle + minutes (issue #80).
+   * Turning restriction off always clears the stored number server-side
+   * (`update_quiz`'s own rule), regardless of what's left in the field. */
+  async function saveDuration() {
+    setBanner(null);
+    setDurationError(null);
+    let minutes: number | null = null;
+    if (timeRestricted) {
+      const n = Number(durationMinutes);
+      if (!Number.isInteger(n) || n < 1) {
+        setDurationError("משך הזמן חייב להיות מספר שלם גדול מ־0.");
+        return;
+      }
+      minutes = n;
+    }
+    setMetaBusy(true);
+    try {
+      await updateQuizMeta(quizId, { timeRestricted, durationMinutes: minutes });
+      setDurationDirty(false);
+      refresh();
+    } catch (e) {
+      setBanner({
+        kind: "danger",
+        msg: e instanceof MutationError ? e.message : "עדכון משך הזמן נכשל.",
       });
     } finally {
       setMetaBusy(false);
@@ -553,10 +600,11 @@ export function QuizEditor({
               <Icon name="clock" size={14} />
               {duration != null ? (
                 <>
-                  משך <span className="tabular-nums">{formatTime(duration)}</span>
+                  אורך הסרטון{" "}
+                  <span className="tabular-nums">{formatTime(duration)}</span>
                 </>
               ) : (
-                "משך הסרטון ייקבע עם טעינת הנגן"
+                "אורך הסרטון ייקבע עם טעינת הנגן"
               )}
             </span>
           </p>
@@ -618,6 +666,63 @@ export function QuizEditor({
           </span>
           {metaBusy && <Spinner size={16} />}
         </div>
+      </GlassCard>
+
+      {/* Quiz length: its own block, not a field buried in the settings box.
+          Unrestricted is the default and shows the estimate the student will
+          see; restricting it asks for the one number that then replaces it. */}
+      <GlassCard className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium text-[var(--heading)]">
+              משך החידון
+            </span>
+            <span className="text-xs text-[var(--body-subtle)]">
+              {timeRestricted
+                ? "התלמידים יראו את המשך שתקבעו."
+                : estimatedMinutes != null
+                  ? `התלמידים יראו הערכה מאורך הסרטון: ~${estimatedMinutes} דקות.`
+                  : "אורך הסרטון אינו ידוע — לא תוצג הערכה."}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <SegmentedToggle<DurationMode>
+              segments={DURATION_SEGMENTS}
+              value={timeRestricted ? "restricted" : "estimated"}
+              onChange={(mode) => {
+                setTimeRestricted(mode === "restricted");
+                setDurationDirty(true);
+              }}
+              ariaLabel="אופן קביעת משך החידון"
+            />
+            {timeRestricted && (
+              <label className="flex items-center gap-2 text-sm text-[var(--body)]">
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={durationMinutes}
+                  onChange={(e) => {
+                    setDurationMinutes(e.target.value);
+                    setDurationDirty(true);
+                  }}
+                  placeholder="דקות"
+                  aria-label="משך החידון בדקות"
+                  className="w-24 rounded-[var(--radius)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1.5 text-sm tabular-nums text-[var(--heading)] outline-none backdrop-blur-[20px] focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+                />
+                דקות
+              </label>
+            )}
+            {durationDirty && (
+              <Button size="sm" onClick={saveDuration} disabled={metaBusy}>
+                {metaBusy ? <Spinner size={16} /> : "שמירה"}
+              </Button>
+            )}
+          </div>
+        </div>
+        {durationError && (
+          <p className="text-sm text-[var(--fg-danger)]">{durationError}</p>
+        )}
       </GlassCard>
 
       {/* 2 · The video itself — the real player, with the checkpoint timeline

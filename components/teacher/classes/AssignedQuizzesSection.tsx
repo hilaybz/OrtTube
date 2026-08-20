@@ -23,6 +23,7 @@ import { TUTOR_MODE_LABELS } from "./labels";
 import { classQuizAnalyticsHref } from "../analyticsLinks";
 import { AllocationEditModal } from "./AllocationEditModal";
 import { QuizPreviewModal } from "@/components/teacher/library/QuizPreviewModal";
+import { EndQuizConfirmModal } from "@/components/teacher/EndQuizConfirmModal";
 import {
   allocationStatus,
   fromDatetimeLocalValue,
@@ -210,10 +211,13 @@ export function AssignedQuizzesSection({
   // Read-only preview for an assigned shared quiz this teacher didn't author.
   const [previewQuizId, setPreviewQuizId] = useState<string | null>(null);
   const [editing, setEditing] = useState<AssignedQuiz | null>(null);
-  // A destructive or irreversible row action, awaiting confirmation.
-  const [confirming, setConfirming] = useState<
-    { kind: "unassign" | "end"; allocation: AssignedQuiz } | null
-  >(null);
+  // The row awaiting unassign confirmation — destructive, so it asks first.
+  const [unassigning, setUnassigning] = useState<AssignedQuiz | null>(null);
+
+  // The row awaiting "end quiz now" confirmation (null = modal closed). Ending
+  // gets its own shared modal (`EndQuizConfirmModal`) because the editor's
+  // allocation rows ask the same question and the wording must not drift.
+  const [endConfirm, setEndConfirm] = useState<AssignedQuiz | null>(null);
 
   function openAssign() {
     setQuizId(available[0]?.quiz_id ?? "");
@@ -321,11 +325,34 @@ export function AssignedQuizzesSection({
     );
   }
 
-  async function runConfirmed() {
-    if (!confirming) return;
-    const { kind, allocation } = confirming;
-    setConfirming(null);
-    await (kind === "unassign" ? unassign(allocation) : endNow(allocation));
+  async function confirmUnassign() {
+    const target = unassigning;
+    if (!target) return;
+    setUnassigning(null);
+    await unassign(target);
+  }
+
+  async function confirmEnd() {
+    const target = endConfirm;
+    if (!target) return;
+    setEndConfirm(null);
+    await endNow(target);
+  }
+
+  /**
+   * Reopens an ended assignment, open-ended: clears `available_until` while
+   * resending the opening bound, since the RPC replaces the window as a whole.
+   */
+  function reopen(a: AssignedQuiz) {
+    return rowAction(a.quiz_id, "פתיחת השאלון נכשלה.", () =>
+      apiFetch(`/api/classes/${classId}/quizzes/${a.quiz_id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          availableFrom: a.available_from,
+          availableUntil: null,
+        }),
+      })
+    );
   }
 
   return (
@@ -431,7 +458,9 @@ export function AssignedQuizzesSection({
                   onEdit={setEditing}
                   onTogglePublished={togglePublished}
                   onPreview={setPreviewQuizId}
-                  onConfirm={setConfirming}
+                  onRequestEnd={setEndConfirm}
+                  onRequestUnassign={setUnassigning}
+                  onReopen={reopen}
                 />
               ))}
             </div>
@@ -456,31 +485,39 @@ export function AssignedQuizzesSection({
         }}
       />
 
+      <EndQuizConfirmModal
+        open={endConfirm !== null}
+        prompt={
+          <>
+            לסיים את &rdquo;{endConfirm ? headingOf(endConfirm) : "החידון"}&ldquo; עכשיו
+            לכל הכיתה?
+          </>
+        }
+        busy={endConfirm !== null && pending === endConfirm.quiz_id}
+        onConfirm={confirmEnd}
+        onClose={() => setEndConfirm(null)}
+      />
+
       <Modal
-        open={confirming !== null}
-        onClose={() => setConfirming(null)}
-        title={confirming?.kind === "end" ? "סיום השאלון" : "ביטול הקצאה"}
+        open={unassigning !== null}
+        onClose={() => setUnassigning(null)}
+        title="ביטול הקצאה"
       >
         <div className="flex flex-col gap-4">
           <p className="text-[var(--body)]">
-            {confirming?.kind === "end"
-              ? `לסיים את "${confirming ? headingOf(confirming.allocation) : ""}" עכשיו? התלמידים לא יוכלו להתחיל ניסיון נוסף.`
-              : `לבטל את ההקצאה של "${confirming ? headingOf(confirming.allocation) : ""}"? החידון יוסר מהכיתה; ניסיונות שהוגשו יישמרו.`}
+            {`לבטל את ההקצאה של "${unassigning ? headingOf(unassigning) : ""}"? החידון יוסר מהכיתה; ניסיונות שהוגשו יישמרו.`}
           </p>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setConfirming(null)}>
+            <Button type="button" variant="ghost" onClick={() => setUnassigning(null)}>
               חזרה
             </Button>
-            <Button
-              type="button"
-              variant={confirming?.kind === "end" ? "brand" : "danger"}
-              onClick={runConfirmed}
-            >
-              {confirming?.kind === "end" ? "סיום עכשיו" : "ביטול הקצאה"}
+            <Button type="button" variant="danger" onClick={confirmUnassign}>
+              ביטול הקצאה
             </Button>
           </div>
         </div>
       </Modal>
+
 
       <Modal
         open={open}
@@ -610,7 +647,9 @@ function AllocationSection({
   onEdit,
   onTogglePublished,
   onPreview,
-  onConfirm,
+  onRequestEnd,
+  onRequestUnassign,
+  onReopen,
 }: {
   classId: string;
   state: AllocationState;
@@ -620,7 +659,9 @@ function AllocationSection({
   onEdit: (a: AssignedQuiz) => void;
   onTogglePublished: (a: AssignedQuiz) => void;
   onPreview: (quizId: string) => void;
-  onConfirm: (c: { kind: "unassign" | "end"; allocation: AssignedQuiz }) => void;
+  onRequestEnd: (a: AssignedQuiz) => void;
+  onRequestUnassign: (a: AssignedQuiz) => void;
+  onReopen: (a: AssignedQuiz) => void;
 }) {
   const style = SECTION_STYLE[state];
   const paged = usePagedList(rows, { resetKey: state });
@@ -646,8 +687,9 @@ function AllocationSection({
             onEdit={() => onEdit(a)}
             onTogglePublished={() => onTogglePublished(a)}
             onPreview={() => onPreview(a.quiz_id)}
-            onEndNow={() => onConfirm({ kind: "end", allocation: a })}
-            onUnassign={() => onConfirm({ kind: "unassign", allocation: a })}
+            onEndNow={() => onRequestEnd(a)}
+            onUnassign={() => onRequestUnassign(a)}
+            onReopen={() => onReopen(a)}
           />
         ))}
       </ul>
@@ -684,6 +726,7 @@ function AssignedQuizRow({
   onPreview,
   onEndNow,
   onUnassign,
+  onReopen,
 }: {
   classId: string;
   allocation: AssignedQuiz;
@@ -694,6 +737,7 @@ function AssignedQuizRow({
   onPreview: () => void;
   onEndNow: () => void;
   onUnassign: () => void;
+  onReopen: () => void;
 }) {
   const heading = headingOf(a);
   const status = allocationStatus(a, now);
@@ -767,13 +811,25 @@ function AssignedQuizRow({
             disabled={busy}
             onClick={onEdit}
           />
-          <IconButton
-            name={a.published ? "eyeOff" : "eye"}
-            label={a.published ? "הסתרה מתלמידים" : "הצגה לתלמידים"}
-            size="sm"
-            busy={busy}
-            onClick={onTogglePublished}
-          />
+          {/* An ended assignment has nothing to publish — reopening it is the
+              one thing a teacher wants from that row instead. */}
+          {status.state === "done" ? (
+            <IconButton
+              name="replay"
+              label="פתיחת השאלון מחדש לכיתה"
+              size="sm"
+              busy={busy}
+              onClick={onReopen}
+            />
+          ) : (
+            <IconButton
+              name={a.published ? "eyeOff" : "eye"}
+              label={a.published ? "הסתרה מתלמידים" : "הצגה לתלמידים"}
+              size="sm"
+              busy={busy}
+              onClick={onTogglePublished}
+            />
+          )}
           {status.state === "live" && (
             <IconButton
               name="checkCircle"

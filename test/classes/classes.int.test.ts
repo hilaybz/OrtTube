@@ -278,6 +278,34 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     expect(quizIds).not.toContain(removed.id);
   });
 
+  it("list_student_feed carries the quiz's duration fields (issue #80)", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he", title: "Timed" });
+    await teacher.client.rpc("update_quiz", {
+      p_quiz_id: quiz.id,
+      p_time_restricted: true,
+      p_duration_minutes: 9,
+    });
+    await biology.enroll(student);
+    await teacher.assignQuiz(quiz, { to: biology });
+
+    const item = (await student.feed()).find((i) => i.quiz_id === quiz.id)!;
+    expect(item.time_restricted).toBe(true);
+    expect(item.duration_minutes).toBe(9);
+    // `authorQuiz`'s fixture always sets p_duration_seconds: 600.
+    expect(item.duration_seconds).toBe(600);
+  });
+
+  it("list_student_feed reports a null video length as null, not an error (issue #80)", async () => {
+    const quiz = await teacher.authorQuiz({ baseLanguage: "he", title: "Unknown length" });
+    await testbed.db.clearVideoDuration(quiz);
+    await biology.enroll(student);
+    await teacher.assignQuiz(quiz, { to: biology });
+
+    const item = (await student.feed()).find((i) => i.quiz_id === quiz.id)!;
+    expect(item.time_restricted).toBe(false);
+    expect(item.duration_seconds).toBeNull();
+  });
+
   it("a non-member student sees no quizzes for a class they aren't in", async () => {
     const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
     await teacher.assignQuiz(quiz, { to: biology });

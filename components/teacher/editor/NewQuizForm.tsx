@@ -17,6 +17,14 @@ const LANGUAGE_SEGMENTS: ReadonlyArray<Segment<Language>> = SUPPORTED_LANGUAGES.
   (l) => ({ value: l, label: LANGUAGE_LABELS[l] })
 );
 
+// How the quiz's length is decided — the same two states the editor offers, so
+// a teacher meets one vocabulary for this in both places.
+type DurationMode = "estimated" | "restricted";
+const DURATION_SEGMENTS: ReadonlyArray<Segment<DurationMode>> = [
+  { value: "estimated", label: "הערכה מהסרטון" },
+  { value: "restricted", label: "הגבלת זמן" },
+];
+
 /**
  * Create-a-quiz flow, in two steps a teacher can see at once: identify the
  * video, then name it. The link box is `dir="ltr"` — its content is a URL, so
@@ -43,6 +51,8 @@ export function NewQuizForm() {
   const [attempted, setAttempted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [timeRestricted, setTimeRestricted] = useState(false);
+  const [durationMinutes, setDurationMinutes] = useState("");
 
   const videoId = parseYouTubeVideoId(url);
   const urlError = !attempted
@@ -60,6 +70,13 @@ export function NewQuizForm() {
     setAttempted(true);
     setError(null);
     if (!videoId || title.trim() === "") return;
+    if (timeRestricted) {
+      const n = Number(durationMinutes);
+      if (!Number.isInteger(n) || n < 1) {
+        setError("משך הזמן חייב להיות מספר שלם גדול מ־0.");
+        return;
+      }
+    }
     setBusy(true);
     try {
       const { quiz } = await apiFetch<{ quiz: CreatedQuiz }>("/api/quizzes", {
@@ -72,6 +89,8 @@ export function NewQuizForm() {
             : { youtubeUrl: url.trim() }),
           baseLanguage: language,
           title: title.trim(),
+          timeRestricted,
+          durationMinutes: timeRestricted ? Number(durationMinutes) : undefined,
         }),
       });
       router.push(`/dashboard/quizzes/${quiz.quiz_id}/edit`);
@@ -134,6 +153,39 @@ export function NewQuizForm() {
           />
           <p className="text-xs text-[var(--body-subtle)]">
             השפה שבה ייכתבו השאלות. תלמידים שקוראים בשפה אחרת יקבלו תרגום אוטומטי.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-[var(--heading)]">משך החידון</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <SegmentedToggle<DurationMode>
+              segments={DURATION_SEGMENTS}
+              value={timeRestricted ? "restricted" : "estimated"}
+              onChange={(mode) => setTimeRestricted(mode === "restricted")}
+              ariaLabel="אופן קביעת משך החידון"
+              className="self-start"
+            />
+            {timeRestricted && (
+              <label className="flex items-center gap-2 text-sm text-[var(--body)]">
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={durationMinutes}
+                  onChange={(e) => setDurationMinutes(e.target.value)}
+                  placeholder="דקות"
+                  aria-label="משך החידון בדקות"
+                  className="w-24 rounded-[var(--radius)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1.5 text-sm tabular-nums text-[var(--heading)] outline-none backdrop-blur-[20px] focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+                />
+                דקות
+              </label>
+            )}
+          </div>
+          <p className="text-xs text-[var(--body-subtle)]">
+            {timeRestricted
+              ? "התלמידים יראו את המשך שתקבעו."
+              : "התלמידים יראו הערכה המבוססת על אורך הסרטון. אפשר לשנות זאת בכל עת."}
           </p>
         </div>
       </section>

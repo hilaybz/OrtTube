@@ -64,6 +64,8 @@ function quiz(questionCount: number): AuthorQuiz {
     base_language: "he",
     visibility: "private",
     transcript_status: "ready",
+    time_restricted: false,
+    duration_minutes: null,
     video: {
       id: "video-1",
       youtube_video_id: "aircAruvnKk",
@@ -161,11 +163,13 @@ describe("QuizEditor — page structure", () => {
 
   it("shows the video's length in the header once the player reports one", async () => {
     renderEditor();
-    expect(screen.getByText(/משך הסרטון ייקבע/)).toBeInTheDocument();
+    expect(screen.getByText(/אורך הסרטון ייקבע/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "report-ready" }));
     // Scoped to the header: the timeline under the player shows a duration too.
+    // "אורך הסרטון", not "משך" — the quiz's own duration is a separate,
+    // teacher-controlled fact with its own block below.
     const identity = screen.getByRole("heading", { level: 1 }).parentElement!;
-    expect(identity).toHaveTextContent("משך 10:00");
+    expect(identity).toHaveTextContent("אורך הסרטון 10:00");
   });
 
   it("pages the question list instead of growing it without bound", async () => {

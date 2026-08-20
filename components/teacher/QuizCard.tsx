@@ -7,6 +7,7 @@ import type { MyQuiz } from "@/lib/quiz";
 import type { SharedQuiz } from "@/lib/sharing";
 import type { QuizAllocationTags } from "@/lib/allocations";
 import type { Language } from "@/lib/lang";
+import { quizDurationMinutes } from "@/lib/quizDuration";
 
 /**
  * The teacher quiz card — the reference surface for every card in the teacher
@@ -82,6 +83,20 @@ export function QuizThumb({
       {children}
     </div>
   );
+}
+
+/**
+ * The quiz's length as students see it: the teacher's stated cap, or a `~`
+ * estimate from the video. `null` when neither is known, so callers can skip
+ * the chip entirely rather than render an empty one.
+ */
+export function durationChipText(quiz: {
+  time_restricted: boolean;
+  duration_minutes: number | null;
+  duration_seconds: number | null;
+}): string | null {
+  const d = quizDurationMinutes(quiz);
+  return d ? `${d.estimated ? "~" : ""}${d.minutes} דק׳` : null;
 }
 
 /** Dark pill sitting on the thumbnail — legible over any frame of any video. */
@@ -191,6 +206,7 @@ export function QuizCard({
 }: QuizCardProps) {
   const heading = cardHeading(quiz);
   const shared = quiz.visibility === "shared";
+  const durationText = durationChipText(quiz);
   return (
     <CardShell interactive className={className}>
       <Link
@@ -203,6 +219,12 @@ export function QuizCard({
           <Icon name="quiz" size={12} />
           <span className="tabular-nums">{quiz.question_count}</span> שאלות
         </ThumbChip>
+        {durationText && (
+          <ThumbChip className="bottom-2 end-2">
+            <Icon name="clock" size={12} />
+            <span className="tabular-nums">{durationText}</span>
+          </ThumbChip>
+        )}
         <ThumbChip className="top-2 start-2">
           <Icon
             name={shared ? "share" : "lock"}
@@ -272,6 +294,7 @@ export function CatalogQuizCard({
   className?: string;
 }) {
   const heading = cardHeading(quiz);
+  const durationText = durationChipText(quiz);
   return (
     <CardShell className={className}>
       <QuizThumb youtubeVideoId={quiz.youtube_video_id}>
@@ -279,6 +302,12 @@ export function CatalogQuizCard({
           <Icon name="quiz" size={12} />
           <span className="tabular-nums">{quiz.question_count}</span> שאלות
         </ThumbChip>
+        {durationText && (
+          <ThumbChip className="bottom-2 end-2">
+            <Icon name="clock" size={12} />
+            <span className="tabular-nums">{durationText}</span>
+          </ThumbChip>
+        )}
         {quiz.is_own && (
           <span className="absolute top-2 start-2">
             <Badge variant="brand">שלי</Badge>

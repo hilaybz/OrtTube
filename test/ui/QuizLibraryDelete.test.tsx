@@ -34,6 +34,9 @@ const QUIZ: MyQuiz = {
   transcript_status: "ready",
   question_count: 4,
   created_at: new Date().toISOString(),
+  time_restricted: false,
+  duration_minutes: null,
+  duration_seconds: null,
 };
 
 function renderLibrary(quizzes: MyQuiz[] = [QUIZ]) {

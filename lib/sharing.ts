@@ -51,6 +51,12 @@ export interface SharedQuiz {
   author_name: string | null;
   is_own: boolean;
   created_at: string;
+  time_restricted: boolean;
+  /** Only non-null while `time_restricted`. */
+  duration_minutes: number | null;
+  /** The video's length — used to derive an estimate when unrestricted (see
+   * `lib/quizDuration.ts`). `null` if the length was never determined. */
+  duration_seconds: number | null;
 }
 
 /**
@@ -89,8 +95,12 @@ export async function cloneQuiz(
 /** The full preview tree — `AuthorQuiz`'s shape plus the authoring teacher's
  * display name (which `get_quiz_for_author` never needs, since it's always
  * the caller) and the video's channel name (which `AuthorVideo` doesn't carry,
- * since the editor's own header links out to YouTube instead of showing it). */
-export type PreviewQuiz = Omit<AuthorQuiz, "video"> & {
+ * since the editor's own header links out to YouTube instead of showing it).
+ * `time_restricted`/`duration_minutes` are omitted: `get_quiz_for_preview`
+ * doesn't return them (issue #80 deliberately left the preview modal out of
+ * scope) — inheriting them from `AuthorQuiz` unomitted would claim a shape
+ * this RPC doesn't actually produce. */
+export type PreviewQuiz = Omit<AuthorQuiz, "video" | "time_restricted" | "duration_minutes"> & {
   video: AuthorQuiz["video"] & { channel_name: string | null };
   author_name: string | null;
 };

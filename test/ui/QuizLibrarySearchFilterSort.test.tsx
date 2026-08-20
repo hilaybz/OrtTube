@@ -31,6 +31,9 @@ function myQuiz(overrides: Partial<MyQuiz>): MyQuiz {
     transcript_status: "ready",
     question_count: 1,
     created_at: "2026-01-01T00:00:00.000Z",
+    time_restricted: false,
+    duration_minutes: null,
+    duration_seconds: null,
     ...overrides,
   };
 }
@@ -90,6 +93,9 @@ function sharedQuiz(overrides: Partial<SharedQuiz>): SharedQuiz {
     author_name: null,
     is_own: false,
     created_at: "2026-01-01T00:00:00.000Z",
+    time_restricted: false,
+    duration_minutes: null,
+    duration_seconds: null,
     ...overrides,
   };
 }

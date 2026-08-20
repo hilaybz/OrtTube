@@ -98,10 +98,14 @@ erDiagram
         uuid author_id FK
         uuid video_id FK
         uuid school_id FK
+        text title "optional; falls back to the video's"
         text base_language "author's language"
         text visibility "private | shared"
+        bool time_restricted "default false"
+        int duration_minutes "non-null only while time_restricted"
         uuid cloned_from_id FK "lineage"
         timestamptz deleted_at "soft delete"
+        timestamptz created_at
     }
     questions {
         uuid id PK
@@ -203,7 +207,12 @@ erDiagram
 
 - **`quizzes`** — authored on a video, in the author's `base_language`, `private`
   by default or `shared` to the same-school catalog. `cloned_from_id` records
-  clone lineage. Soft-deleted via `deleted_at`.
+  clone lineage. Soft-deleted via `deleted_at`. `time_restricted` +
+  `duration_minutes` state an optional teacher-given time cap, shown to both
+  roles as a bare number; unrestricted (the default), the UI instead shows an
+  *estimate* derived from the video's length (`~N דקות`, `lib/quizDuration.ts`)
+  rather than storing one. A CHECK constraint keeps the pair consistent:
+  `duration_minutes` is non-null if and only if `time_restricted` is true.
 - **`questions`** — anchored to a playhead `position_seconds`; `single` or `multi`
   choice. Soft-deleted.
 - **`question_options`** — the choices. **`is_correct` is the language-independent

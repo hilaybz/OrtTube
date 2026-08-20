@@ -44,6 +44,8 @@ export interface CreatedQuiz {
   visibility: "private" | "shared";
   transcript_status: "pending" | "ready" | "unavailable";
   created_at: string;
+  time_restricted: boolean;
+  duration_minutes: number | null;
 }
 
 /**
@@ -52,10 +54,20 @@ export interface CreatedQuiz {
  * in Node here, then handed to the `create_quiz_for_video` RPC which does the
  * video-upsert + quiz-insert together. Subsequent quizzes on the same video call
  * this too (the video upsert is a no-op then).
+ *
+ * `timeRestricted`/`durationMinutes` set the quiz's stated duration (issue
+ * #80) at creation time; omitted, the quiz starts unrestricted (its duration
+ * is estimated from the video's length instead — see `lib/quizDuration.ts`).
  */
 export async function createQuizForVideo(
   client: SupabaseClient,
-  params: { youtubeId: string; baseLanguage: Language; title?: string | null }
+  params: {
+    youtubeId: string;
+    baseLanguage: Language;
+    title?: string | null;
+    timeRestricted?: boolean;
+    durationMinutes?: number | null;
+  }
 ): Promise<CreatedQuiz> {
   const meta = await fetchVideoMetadata(params.youtubeId);
   const data = unwrap(
@@ -66,6 +78,8 @@ export async function createQuizForVideo(
       p_base_language: params.baseLanguage,
       p_quiz_title: params.title ?? null,
       p_channel_name: meta.channelName,
+      p_time_restricted: params.timeRestricted ?? false,
+      p_duration_minutes: params.timeRestricted ? (params.durationMinutes ?? null) : null,
     })
   );
   return data as unknown as CreatedQuiz;
@@ -129,12 +143,20 @@ export async function softDeleteOption(
  * Partial patch of a quiz's editable meta. An omitted field is left unchanged.
  * `title` additionally accepts an EMPTY string, which CLEARS it — a quiz with no
  * title falls back to the video's, so "no title" has to be expressible and null
- * already means "not provided".
+ * already means "not provided". `timeRestricted: false` always clears
+ * `durationMinutes` regardless of what's passed alongside it (see
+ * `update_quiz`'s own comment) — going unrestricted always drops the number.
  */
 export async function updateQuiz(
   client: SupabaseClient,
   quizId: string,
-  patch: { title?: string | null; visibility?: "private" | "shared"; baseLanguage?: Language }
+  patch: {
+    title?: string | null;
+    visibility?: "private" | "shared";
+    baseLanguage?: Language;
+    timeRestricted?: boolean;
+    durationMinutes?: number | null;
+  }
 ): Promise<void> {
   unwrap(
     await client.rpc("update_quiz", {
@@ -142,6 +164,8 @@ export async function updateQuiz(
       p_title: patch.title ?? null,
       p_visibility: patch.visibility ?? null,
       p_base_language: patch.baseLanguage ?? null,
+      p_time_restricted: patch.timeRestricted ?? null,
+      p_duration_minutes: patch.durationMinutes ?? null,
     })
   );
 }
@@ -164,6 +188,12 @@ export interface MyQuiz {
   transcript_status: "pending" | "ready" | "unavailable";
   question_count: number;
   created_at: string;
+  time_restricted: boolean;
+  /** Only non-null while `time_restricted`. */
+  duration_minutes: number | null;
+  /** The video's length — used to derive an estimate when unrestricted (see
+   * `lib/quizDuration.ts`). `null` if the length was never determined. */
+  duration_seconds: number | null;
 }
 
 /** The signed-in teacher's own-quizzes library (incl. unassigned). */
