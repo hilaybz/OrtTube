@@ -16,7 +16,7 @@ const MESSAGES: Record<string, string> = {
   no_attempts_left: "לא נותרו ניסיונות נוספים.",
   already_answered: "כבר ענית על שאלה זו.",
   attempt_completed: "הניסיון כבר הושלם.",
-  tutor_off: "המורה־AI כבוי במבחן זה.",
+  tutor_off: "OrtAI כבוי בחידון זה.",
   // Platform guardrails on the tutor. The first is temporary and says so; the
   // second is a lifetime budget for this quiz, so it must not imply that waiting
   // helps — the student needs to know it will not come back.
@@ -34,7 +34,7 @@ const MESSAGES: Record<string, string> = {
   is_teacher: "לא ניתן לרשום מורה כתלמיד.",
   invalid_email: "כתובת אימייל לא תקינה.",
   invalid_max_attempts: "מספר הניסיונות אינו תקין.",
-  invalid_tutor_mode: "מצב המורה־AI אינו תקין.",
+  invalid_tutor_mode: "מצב OrtAI אינו תקין.",
   lookup_failed: "אירעה תקלה זמנית. נסו שוב בעוד רגע.",
   // Deliberately covers BOTH causes in one sentence. A fetch that YouTube blocks
   // is often indistinguishable from a video that genuinely has no captions, so

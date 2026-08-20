@@ -1,240 +1,107 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/Button";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Field } from "@/components/ui/Field";
-import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
-import { Spinner } from "@/components/ui/Spinner";
-import { apiFetch, ApiError } from "@/lib/http";
-import type { ClassRoster } from "@/lib/classes";
+import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
+import { Pager } from "@/components/ui/Pager";
+import { usePagedList } from "@/components/ui/usePagedList";
+import { matchesText } from "@/lib/libraryFilters";
+import type { ClassRoster, RosterMember, RosterInvite } from "@/lib/classes";
 import { formatDate } from "./labels";
+import { studentAnalyticsHref } from "../analyticsLinks";
 
-const HEAD_CELL =
-  "whitespace-nowrap px-4 py-3 text-start text-sm font-medium text-[var(--body)]";
-const BODY_CELL = "px-4 py-4 text-sm";
+const PAGE_SIZES = [10, 25, 50] as const;
 
 /**
- * Class roster management: add a student by email, list current members (with
- * un-enroll), and list pending invites (with revoke). All mutations go through
- * `apiFetch` and `router.refresh()` to re-pull the server-rendered roster.
+ * The class roster, read-only: who is in the class, searchable and paged, each
+ * student a link to their analytics.
+ *
+ * Membership is deliberately not editable here. A teacher does not enrol or
+ * un-enrol anyone — the school owns the roster (the `add_student_to_class` /
+ * `remove_student_from_class` RPCs and their routes still exist for that
+ * path), so this screen answers "who is in my class and how are they doing"
+ * and nothing else. Pending invites are shown for the same reason: they
+ * explain why a student a teacher expects isn't listed yet.
+ *
+ * Search runs over the whole roster and paging over what survives it, so a
+ * query is never hidden behind a page boundary.
  */
-export function RosterSection({
-  classId,
-  roster,
-}: {
-  classId: string;
-  roster: ClassRoster;
-}) {
-  const router = useRouter();
+export function RosterSection({ roster }: { roster: ClassRoster }) {
   const { members, invites } = roster;
+  const [query, setQuery] = useState("");
 
-  const [email, setEmail] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [addError, setAddError] = useState("");
-  const [addNotice, setAddNotice] = useState<
-    { variant: "success" | "brand"; text: string } | null
-  >(null);
+  const visibleMembers = useMemo(
+    () => members.filter((m) => matchesText([m.display_name, m.email], query)),
+    [members, query]
+  );
+  const visibleInvites = useMemo(
+    () => invites.filter((i) => matchesText([i.email], query)),
+    [invites, query]
+  );
 
-  // Per-row pending id so only the acted-on button shows a spinner.
-  const [pending, setPending] = useState<string | null>(null);
-  const [rowError, setRowError] = useState("");
+  const pagedMembers = usePagedList(visibleMembers, { resetKey: query });
+  const pagedInvites = usePagedList(visibleInvites, { resetKey: query });
 
-  async function addStudent(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = email.trim();
-    if (!trimmed) {
-      setAddError("יש להזין כתובת אימייל.");
-      return;
-    }
-    setAdding(true);
-    setAddError("");
-    setAddNotice(null);
-    try {
-      const result = await apiFetch<
-        { status: "added"; student_id: string } | { status: "invited"; email: string }
-      >(`/api/classes/${classId}/students`, {
-        method: "POST",
-        body: JSON.stringify({ email: trimmed }),
-      });
-      setEmail("");
-      if (result.status === "added") {
-        setAddNotice({ variant: "success", text: "התלמיד/ה צורף/ה לכיתה." });
-      } else {
-        setAddNotice({
-          variant: "brand",
-          text: `נשלחה הזמנה ל־${result.email}. התלמיד/ה יצורף/תצורף אוטומטית עם ההרשמה.`,
-        });
-      }
-      router.refresh();
-    } catch (err) {
-      setAddError(err instanceof ApiError ? err.message : "הוספת התלמיד/ה נכשלה.");
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  async function removeMember(studentId: string) {
-    setPending(studentId);
-    setRowError("");
-    try {
-      await apiFetch(`/api/classes/${classId}/students/${studentId}`, {
-        method: "DELETE",
-      });
-      router.refresh();
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "הסרת התלמיד/ה נכשלה.");
-    } finally {
-      setPending(null);
-    }
-  }
-
-  async function revoke(inviteEmail: string) {
-    setPending(inviteEmail);
-    setRowError("");
-    try {
-      await apiFetch(
-        `/api/classes/${classId}/invites?email=${encodeURIComponent(inviteEmail)}`,
-        { method: "DELETE" }
-      );
-      router.refresh();
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "ביטול ההזמנה נכשל.");
-    } finally {
-      setPending(null);
-    }
-  }
+  const searchable = members.length + invites.length > 5;
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Add student */}
-      <section className="glass p-5">
-        <h3 className="mb-1 text-lg font-semibold text-[var(--heading)]">
-          הוספת תלמיד/ה
-        </h3>
-        <p className="mb-4 text-sm text-[var(--body)]">
-          תלמיד/ה מאותו בית ספר יצורף/תצורף מיד; אחרת תישלח הזמנה שתמומש עם ההרשמה.
-        </p>
-        <form onSubmit={addStudent} className="flex flex-col gap-3">
-          {addError && (
-            <Alert variant="danger" title="לא ניתן להוסיף">
-              {addError}
-            </Alert>
-          )}
-          {addNotice && (
-            <Alert variant={addNotice.variant}>{addNotice.text}</Alert>
-          )}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <Field
-                label="אימייל התלמיד/ה"
-                name="email"
-                type="email"
-                inputMode="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="student@example.com"
-              />
-            </div>
-            <Button type="submit" disabled={adding}>
-              {adding && <Spinner size={16} />}
-              הוספה
-            </Button>
+      {searchable && (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[240px] flex-1">
+            <Field
+              label="חיפוש תלמיד/ה"
+              name="roster-search"
+              placeholder="לפי שם או אימייל"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </div>
-        </form>
-      </section>
-
-      {rowError && (
-        <Alert variant="danger" title="שגיאה">
-          {rowError}
-        </Alert>
+          {query !== "" && (
+            <IconButton
+              name="filterOff"
+              label="ניקוי החיפוש"
+              onClick={() => setQuery("")}
+              className="mb-1"
+            />
+          )}
+        </div>
       )}
 
-      {/* Members */}
-      <section className="glass">
-        <div className="flex items-center justify-between px-5 pt-5">
+      <section className="glass p-5">
+        <div className="mb-3 flex items-center justify-between gap-2">
           <h3 className="text-lg font-semibold text-[var(--heading)]">תלמידים</h3>
           <Badge variant="gray">
             <span className="tabular-nums">{members.length}</span>
           </Badge>
         </div>
+
         {members.length === 0 ? (
-          <p className="px-5 pb-5 pt-3 text-sm text-[var(--body)]">
-            עדיין אין תלמידים בכיתה. הוסיפו תלמיד/ה לפי אימייל.
+          <p className="text-sm text-[var(--body)]">
+            עדיין אין תלמידים בכיתה. צירוף תלמידים נעשה על ידי בית הספר.
+          </p>
+        ) : visibleMembers.length === 0 ? (
+          <p className="text-sm text-[var(--body)]">
+            אין תלמיד/ה שתואם/ת את החיפוש.
           </p>
         ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full border-collapse text-start">
-              <caption className="sr-only">רשימת התלמידים בכיתה</caption>
-              <thead>
-                <tr className="border-b border-[var(--glass-border-subtle)]">
-                  <th scope="col" className={HEAD_CELL}>
-                    תלמיד/ה
-                  </th>
-                  <th scope="col" className={HEAD_CELL}>
-                    צורף/ה בתאריך
-                  </th>
-                  <th scope="col" className={HEAD_CELL}>
-                    <span className="sr-only">פעולות</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {members.map((m, i) => {
-                  const last = i === members.length - 1;
-                  const busy = pending === m.student_id;
-                  return (
-                    <tr
-                      key={m.student_id}
-                      className={
-                        last ? "" : "border-b border-[var(--glass-border-subtle)]"
-                      }
-                    >
-                      <th scope="row" className={`${BODY_CELL} text-start`}>
-                        <span className="flex items-center gap-3">
-                          <Avatar name={m.display_name ?? m.email} size={36} />
-                          <span className="flex min-w-0 flex-col">
-                            <span className="truncate font-medium text-[var(--heading)]">
-                              {m.display_name ?? m.email}
-                            </span>
-                            {m.display_name && (
-                              <span className="truncate text-xs font-normal text-[var(--body-subtle)]">
-                                {m.email}
-                              </span>
-                            )}
-                          </span>
-                        </span>
-                      </th>
-                      <td
-                        className={`${BODY_CELL} whitespace-nowrap tabular-nums text-[var(--body)]`}
-                      >
-                        {formatDate(m.joined_at)}
-                      </td>
-                      <td className={`${BODY_CELL} text-end`}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-[var(--fg-danger)]"
-                          disabled={busy}
-                          onClick={() => removeMember(m.student_id)}
-                        >
-                          {busy ? <Spinner size={16} /> : "הסרה"}
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <ul className="flex flex-col gap-2">
+              {pagedMembers.slice.map((m) => (
+                <MemberRow key={m.student_id} member={m} />
+              ))}
+            </ul>
+            <Pager {...pagedMembers} label="ניווט בין תלמידים" pageSizeOptions={PAGE_SIZES} />
+          </>
         )}
       </section>
 
-      {/* Pending invites */}
       {invites.length > 0 && (
         <section className="glass p-5">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-1 flex items-center justify-between gap-2">
             <h3 className="text-lg font-semibold text-[var(--heading)]">
               הזמנות ממתינות
             </h3>
@@ -242,37 +109,68 @@ export function RosterSection({
               <span className="tabular-nums">{invites.length}</span>
             </Badge>
           </div>
-          <ul className="flex flex-col gap-2">
-            {invites.map((inv) => {
-              const busy = pending === inv.email;
-              return (
-                <li
-                  key={inv.email}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--glass-border-subtle)] px-4 py-3"
-                >
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm font-medium text-[var(--heading)]">
-                      {inv.email}
-                    </span>
-                    <span className="text-xs tabular-nums text-[var(--body-subtle)]">
-                      הוזמן/ה {formatDate(inv.created_at)}
-                    </span>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-[var(--fg-danger)]"
-                    disabled={busy}
-                    onClick={() => revoke(inv.email)}
-                  >
-                    {busy ? <Spinner size={16} /> : "ביטול הזמנה"}
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
+          <p className="mb-3 text-sm text-[var(--body-subtle)]">
+            יצטרפו לכיתה אוטומטית עם ההרשמה לאורטיוב.
+          </p>
+          {visibleInvites.length === 0 ? (
+            <p className="text-sm text-[var(--body)]">אין הזמנה שתואמת את החיפוש.</p>
+          ) : (
+            <>
+              <ul className="flex flex-col gap-2">
+                {pagedInvites.slice.map((inv) => (
+                  <InviteRow key={inv.email} invite={inv} />
+                ))}
+              </ul>
+              <Pager {...pagedInvites} label="ניווט בין הזמנות" />
+            </>
+          )}
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * One student. The whole row is the link — a roster exists to be drilled into,
+ * and there is exactly one thing to do with a student here, so a separate
+ * "open analytics" control would just be a smaller target for the same action.
+ */
+function MemberRow({ member }: { member: RosterMember }) {
+  const name = member.display_name ?? member.email;
+  return (
+    <li>
+      <Link
+        href={studentAnalyticsHref(member.student_id)}
+        className="group flex items-center gap-3 rounded-[var(--radius-d)] border border-transparent px-3 py-2.5 transition-colors hover:border-[var(--glass-border-subtle)] hover:bg-[var(--neutral-secondary-soft)]"
+      >
+        <Avatar name={name} size={36} />
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate font-medium text-[var(--heading)]">{name}</span>
+          {member.display_name && (
+            <span className="truncate text-xs text-[var(--body-subtle)]">
+              {member.email}
+            </span>
+          )}
+        </span>
+        <span className="ms-auto flex flex-none items-center gap-1.5 text-sm font-medium text-[var(--fg-brand)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+          <Icon name="chart" size={16} />
+          אנליטיקה
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+function InviteRow({ invite }: { invite: RosterInvite }) {
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-d)] border border-[var(--glass-border-subtle)] px-3 py-2.5 opacity-75">
+      <span className="flex min-w-0 items-center gap-2">
+        <Icon name="mail" size={16} className="flex-none text-[var(--body-subtle)]" />
+        <span className="truncate text-sm text-[var(--heading)]">{invite.email}</span>
+      </span>
+      <span className="text-xs tabular-nums text-[var(--body-subtle)]">
+        הוזמן/ה {formatDate(invite.created_at)}
+      </span>
+    </li>
   );
 }

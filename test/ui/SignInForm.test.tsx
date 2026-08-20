@@ -29,6 +29,11 @@ describe("SignInForm", () => {
     expect(push).toHaveBeenCalledWith("/dashboard");
   });
 
+  it("offers no self-signup path — accounts are provisioned by the school", () => {
+    render(<SignInForm />);
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
   it("shows the Hebrew message for a bad-credentials envelope", async () => {
     vi.stubGlobal(
       "fetch",

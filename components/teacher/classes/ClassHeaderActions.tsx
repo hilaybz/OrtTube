@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
@@ -12,9 +13,14 @@ import { SUPPORTED_LANGUAGES, type Language } from "@/lib/lang";
 import { LANGUAGE_LABELS } from "./labels";
 
 /**
- * Owner controls on the class header: rename / re-language (PATCH) and delete
- * (DELETE, behind a confirmation). A successful edit refreshes the server page;
- * a successful delete returns to the classes index.
+ * Owner controls on the class header: rename / re-language (PATCH), behind a
+ * pencil icon.
+ *
+ * Deleting a class is deliberately absent. A class is a school-level record —
+ * its roster is not the teacher's to assemble or dismantle — so the destructive
+ * end of its lifecycle belongs to the school/admin path (the DELETE route and
+ * its RPC still exist for that), not to a button one click from a teacher's
+ * everyday screen.
  */
 export function ClassHeaderActions({
   classId,
@@ -27,7 +33,6 @@ export function ClassHeaderActions({
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [confirming, setConfirming] = useState(false);
 
   const [draftName, setDraftName] = useState(name);
   const [draftLang, setDraftLang] = useState<Language>(language);
@@ -64,36 +69,14 @@ export function ClassHeaderActions({
     }
   }
 
-  async function confirmDelete() {
-    setBusy(true);
-    setError("");
-    try {
-      await apiFetch(`/api/classes/${classId}`, { method: "DELETE" });
-      router.push("/dashboard/classes");
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "מחיקת הכיתה נכשלה.");
-      setBusy(false);
-    }
-  }
-
   return (
     <>
-      <div className="flex shrink-0 gap-2">
-        <Button variant="secondary" onClick={openEdit}>
-          עריכה
-        </Button>
-        <Button
-          variant="ghost"
-          className="text-[var(--fg-danger)]"
-          onClick={() => {
-            setError("");
-            setConfirming(true);
-          }}
-        >
-          מחיקה
-        </Button>
-      </div>
+      <IconButton
+        name="edit"
+        label="עריכת הכיתה"
+        onClick={openEdit}
+        tooltipPlacement="bottom"
+      />
 
       <Modal
         open={editing}
@@ -141,43 +124,6 @@ export function ClassHeaderActions({
             </Button>
           </div>
         </form>
-      </Modal>
-
-      <Modal
-        open={confirming}
-        onClose={() => !busy && setConfirming(false)}
-        title="מחיקת כיתה"
-      >
-        <div className="flex flex-col gap-4">
-          {error && (
-            <Alert variant="danger" title="לא ניתן למחוק">
-              {error}
-            </Alert>
-          )}
-          <p className="text-[var(--body)]">
-            למחוק את הכיתה &rdquo;{name}&ldquo;? הפעולה תסיר את רשימת התלמידים,
-            ההזמנות הממתינות והקצאות החידונים בכיתה. לא ניתן לבטל את הפעולה.
-          </p>
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setConfirming(false)}
-              disabled={busy}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              variant="danger"
-              onClick={confirmDelete}
-              disabled={busy}
-            >
-              {busy && <Spinner size={16} />}
-              מחיקה
-            </Button>
-          </div>
-        </div>
       </Modal>
     </>
   );

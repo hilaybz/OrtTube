@@ -1,17 +1,28 @@
 import Link from "next/link";
-import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
+import { cn } from "@/components/ui/cn";
 import type { MyQuiz } from "@/lib/quiz";
+import type { SharedQuiz } from "@/lib/sharing";
 import type { QuizAllocationTags } from "@/lib/allocations";
 import type { Language } from "@/lib/lang";
 import { quizDurationMinutes } from "@/lib/quizDuration";
 
 /**
- * Shared teacher-quiz card + its building blocks — extracted from
- * `QuizLibrary.tsx`'s "mine" tab so the library page and the dashboard
- * landing section render identical cards (backlog 1.5 / 2A.4) instead of two
- * markups drifting apart.
+ * The teacher quiz card — the reference surface for every card in the teacher
+ * app (the overview page's tiles match its frame).
+ *
+ * Its whole design is a hierarchy: the video thumbnail identifies the quiz at a
+ * glance, the title is the only prominent text, and exactly ONE fact rides
+ * along under it — where the quiz stands right now. Everything else the card
+ * used to stack into a wall of badges (source video, channel, language,
+ * creation date) moved into the hover panel over the thumbnail, and the actions
+ * only surface on hover/focus, so a grid of cards reads as a grid of quizzes
+ * rather than a grid of forms.
+ *
+ * Hover content is dimmed with opacity, never unmounted, so it stays in the
+ * accessibility tree and `group-focus-within` brings it up for keyboard users.
  */
 
 export const LANG_LABEL: Record<Language, string> = {
@@ -25,202 +36,309 @@ export function cardHeading(quiz: { title: string | null; video_title: string | 
   return quiz.title ?? quiz.video_title ?? "חידון";
 }
 
-/**
- * The source video, shown under the heading. Rendered only when the teacher
- * gave the quiz its own title — otherwise `cardHeading` is already showing
- * the video title and repeating it says nothing.
- */
-export function VideoLine({
-  quiz,
+/** Shared frame: glass surface, flush media band on top, padded body below. */
+function CardShell({
+  interactive,
+  className,
+  children,
 }: {
-  quiz: { title: string | null; video_title: string | null };
+  interactive?: boolean;
+  className?: string;
+  children: React.ReactNode;
 }) {
-  if (!quiz.title || !quiz.video_title) return null;
   return (
-    <p
-      className="flex items-center gap-1.5 truncate text-xs text-[var(--body-subtle)]"
-      title={quiz.video_title}
+    <div
+      className={cn(
+        "glass group relative flex h-full flex-col",
+        interactive &&
+          "transition-[transform,background-color] duration-200 hover:-translate-y-0.5 hover:bg-[var(--glass-bg-hover)]",
+        className
+      )}
     >
-      <Icon name="play" size={12} className="flex-none" />
-      <span className="truncate">{quiz.video_title}</span>
-    </p>
+      {children}
+    </div>
   );
 }
 
 /**
- * The video's uploading channel, shown under the heading/video-title lines —
- * independent of `VideoLine`'s title-repeat guard, since this is new
- * information regardless of whether the card's heading already shows the
- * video's own title. Absent for videos added before this field existed, or
- * when the oEmbed fetch that supplies it failed. Exported so `QuizLibrary.tsx`'s
- * `SchoolTab` (own separate card markup, no `QuizCard`) can render it too.
+ * The 16:9 thumbnail band. YouTube's `mqdefault` is the only 16:9 still every
+ * video has, so it never letterboxes. `children` are chips/overlays positioned
+ * over it.
  */
-export function ChannelLine({ channelName }: { channelName: string | null }) {
-  if (!channelName) return null;
-  return (
-    <p className="truncate text-xs text-[var(--body-subtle)]" title={channelName}>
-      {channelName}
-    </p>
-  );
-}
-
-export function QuizMeta({
-  baseLanguage,
-  questionCount,
-  duration,
+export function QuizThumb({
+  youtubeVideoId,
+  children,
 }: {
-  baseLanguage: Language;
-  questionCount: number;
-  /** Omitted (or `null`) shows nothing — an unrestricted quiz whose video
-   * length isn't known yet, or a caller that doesn't have the duration
-   * fields at all (e.g. a `PreviewQuiz`). */
-  duration?: {
-    time_restricted: boolean;
-    duration_minutes: number | null;
-    duration_seconds: number | null;
-  } | null;
+  youtubeVideoId: string;
+  children?: React.ReactNode;
 }) {
-  const d = duration ? quizDurationMinutes(duration) : null;
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Badge variant="gray">{LANG_LABEL[baseLanguage] ?? baseLanguage}</Badge>
-      <span className="text-xs text-[var(--body-subtle)]">
-        <span className="tabular-nums">{questionCount}</span> שאלות
-      </span>
-      {d && (
-        <span className="text-xs text-[var(--body-subtle)]">
-          {d.estimated && "~"}
-          <span className="tabular-nums">{d.minutes}</span> דקות
-        </span>
-      )}
+    <div className="relative aspect-video w-full overflow-hidden bg-[var(--neutral-tertiary)]">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`https://i.ytimg.com/vi/${youtubeVideoId}/mqdefault.jpg`}
+        alt=""
+        className="h-full w-full object-cover"
+      />
+      {children}
     </div>
   );
 }
 
 /**
- * Allocation status: `זמין:` (live) / `מתוזמן:` (scheduled) rows of per-class
- * chips, each row omitted when empty. When BOTH are empty, a single neutral
- * badge stands in instead — so a card always says something about where the
- * quiz stands rather than going silent.
- *
- * That badge deliberately does NOT say "טיוטה" (draft): both buckets are also
- * empty for an allocation whose window has already closed (see the deferred
- * "quiz finished" issue, #69) — `list_my_quiz_allocation_tags` only reports
- * live/scheduled, so this component genuinely cannot tell "never allocated or
- * still a draft" apart from "was live and finished" from the response alone.
- * Claiming "draft" for a quiz that already ran would be a real factual error,
- * not just an incomplete one — "לא פעיל" (not active) is accurate either way.
+ * The quiz's length as students see it: the teacher's stated cap, or a `~`
+ * estimate from the video. `null` when neither is known, so callers can skip
+ * the chip entirely rather than render an empty one.
  */
-function AllocationTagsRow({ tags }: { tags: QuizAllocationTags | undefined }) {
-  const live = tags?.live ?? [];
-  const scheduled = tags?.scheduled ?? [];
-  if (live.length === 0 && scheduled.length === 0) {
-    return (
-      <div>
-        <Badge variant="warning">לא פעיל</Badge>
-      </div>
-    );
-  }
+export function durationChipText(quiz: {
+  time_restricted: boolean;
+  duration_minutes: number | null;
+  duration_seconds: number | null;
+}): string | null {
+  const d = quizDurationMinutes(quiz);
+  return d ? `${d.estimated ? "~" : ""}${d.minutes} דק׳` : null;
+}
+
+/** Dark pill sitting on the thumbnail — legible over any frame of any video. */
+function ThumbChip({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex flex-col gap-1.5">
-      {live.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-[var(--body-subtle)]">זמין:</span>
-          {live.map((c) => (
-            <Badge key={c.class_id} variant="success">
-              {c.class_name}
-            </Badge>
-          ))}
-        </div>
+    <span
+      className={cn(
+        "absolute inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm",
+        className
       )}
-      {scheduled.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-[var(--body-subtle)]">מתוזמן:</span>
-          {scheduled.map((c) => (
-            <Badge key={c.class_id} variant="gray">
-              {c.class_name}
-            </Badge>
-          ))}
-        </div>
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * The secondary facts, revealed over the thumbnail on hover/focus: the source
+ * video and its channel (skipped when the heading is already the video's own
+ * title), the authoring teacher on a catalog card, and the base language.
+ */
+function ThumbDetails({
+  quiz,
+  authorName,
+}: {
+  quiz: { title: string | null; video_title: string | null; channel_name: string | null; base_language: Language };
+  authorName?: string | null;
+}) {
+  const showVideoTitle = !!quiz.title && !!quiz.video_title;
+  return (
+    <div className="pointer-events-none absolute inset-0 flex flex-col justify-end gap-1 bg-black/70 p-3 text-[11px] leading-relaxed text-white opacity-0 backdrop-blur-[2px] transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100">
+      {showVideoTitle && (
+        <p className="flex items-center gap-1.5">
+          <Icon name="video" size={12} className="flex-none opacity-80" />
+          <span className="line-clamp-2">{quiz.video_title}</span>
+        </p>
       )}
+      {quiz.channel_name && (
+        <p className="truncate opacity-80">{quiz.channel_name}</p>
+      )}
+      {authorName && <p className="opacity-80">מאת {authorName}</p>}
+      <p className="opacity-80">{LANG_LABEL[quiz.base_language] ?? quiz.base_language}</p>
     </div>
   );
 }
 
 /**
- * A quiz card for one of the teacher's own quizzes. Used by both the library
- * page (`onRequestDelete` wired to its delete-confirm modal) and the
- * dashboard landing section (no delete affordance, and only rendered for
- * quizzes that have at least one allocation). `tags` is optional so a caller
- * without allocation data (or that hasn't fetched it) simply omits the rows —
- * `undefined` skips the block entirely, distinct from "fetched, has none"
- * (which would render the `טיוטה` badge).
+ * Where the quiz stands, in one line — the single fact worth carrying on a
+ * card. Deliberately NOT "טיוטה" when both buckets are empty:
+ * `list_my_quiz_allocation_tags` only reports live/scheduled, so an allocation
+ * whose window already closed looks identical to one that never existed.
+ * "לא פעיל" is true either way. `undefined` tags mean "not fetched" and render
+ * nothing at all.
+ */
+function AllocationLine({ tags }: { tags: QuizAllocationTags | undefined }) {
+  if (!tags) return null;
+  const live = tags.live;
+  const scheduled = tags.scheduled;
+
+  const [text, tone, dot] =
+    live.length === 1
+      ? [`זמין ב${live[0].class_name}`, "text-[var(--fg-success)]", "bg-[var(--fg-success)]"]
+      : live.length > 1
+        ? [`זמין ב-${live.length} כיתות`, "text-[var(--fg-success)]", "bg-[var(--fg-success)]"]
+        : scheduled.length === 1
+          ? [`מתוזמן ב${scheduled[0].class_name}`, "text-[var(--body)]", "bg-[var(--gray)]"]
+          : scheduled.length > 1
+            ? [`מתוזמן ב-${scheduled.length} כיתות`, "text-[var(--body)]", "bg-[var(--gray)]"]
+            : ["לא פעיל", "text-[var(--body-subtle)]", "bg-[var(--gray)]"];
+
+  return (
+    <p className={cn("mt-auto flex items-center gap-1.5 truncate text-xs font-medium", tone)}>
+      <span className={cn("h-1.5 w-1.5 flex-none rounded-full", dot)} />
+      <span className="truncate">{text}</span>
+    </p>
+  );
+}
+
+export interface QuizCardProps {
+  quiz: MyQuiz;
+  /** Allocation buckets for the status line. Omit when they weren't fetched. */
+  tags?: QuizAllocationTags;
+  /** Wire this to a confirmation dialog to show the card's delete action. */
+  onRequestDelete?: (quiz: MyQuiz) => void;
+  /** Where the card navigates. Defaults to this quiz's editor. */
+  href?: string;
+  className?: string;
+}
+
+/**
+ * A card for one of the teacher's OWN quizzes. The whole card is a link to the
+ * editor (a stretched anchor, so the card-wide target needs no button nested in
+ * an anchor); the delete action floats above that link.
  */
 export function QuizCard({
   quiz,
   tags,
   onRequestDelete,
-}: {
-  quiz: MyQuiz;
-  tags?: QuizAllocationTags;
-  onRequestDelete?: (quiz: MyQuiz) => void;
-}) {
+  href,
+  className,
+}: QuizCardProps) {
+  const heading = cardHeading(quiz);
+  const shared = quiz.visibility === "shared";
+  const durationText = durationChipText(quiz);
   return (
-    <GlassCard interactive className="relative flex h-full flex-col gap-3">
-      {/* Stretched link: the whole card opens the editor, while the delete
-          control sits above it and stays separately clickable. Keeps the
-          card-wide target without nesting a button in an anchor. */}
+    <CardShell interactive className={className}>
       <Link
-        href={`/dashboard/quizzes/${quiz.quiz_id}/edit`}
-        aria-label={`עריכת ${cardHeading(quiz)}`}
+        href={href ?? `/dashboard/quizzes/${quiz.quiz_id}/edit`}
+        aria-label={`עריכת ${heading}`}
         className="absolute inset-0 z-10 rounded-[inherit]"
       />
-      <div className="flex items-start gap-3">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={`https://i.ytimg.com/vi/${quiz.youtube_video_id}/mqdefault.jpg`}
-          alt=""
-          className="h-10 w-16 flex-none rounded-[var(--radius-sm)] object-cover"
-        />
-        <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
-          <h3 className="min-w-0 truncate font-semibold text-[var(--heading)]">
-            {cardHeading(quiz)}
-          </h3>
-          <Badge variant={quiz.visibility === "shared" ? "brand" : "gray"}>
-            {quiz.visibility === "shared" ? "משותף" : "פרטי"}
-          </Badge>
+      <QuizThumb youtubeVideoId={quiz.youtube_video_id}>
+        <ThumbChip className="bottom-2 start-2">
+          <Icon name="quiz" size={12} />
+          <span className="tabular-nums">{quiz.question_count}</span> שאלות
+        </ThumbChip>
+        {durationText && (
+          <ThumbChip className="bottom-2 end-2">
+            <Icon name="clock" size={12} />
+            <span className="tabular-nums">{durationText}</span>
+          </ThumbChip>
+        )}
+        <ThumbChip className="top-2 start-2">
+          <Icon
+            name={shared ? "share" : "lock"}
+            size={12}
+            label={shared ? "משותף לבית הספר" : "פרטי"}
+          />
+        </ThumbChip>
+        <ThumbDetails quiz={quiz} />
+      </QuizThumb>
+
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <h3
+          className="line-clamp-2 text-[15px] font-semibold leading-snug text-[var(--heading)]"
+          title={heading}
+        >
+          {heading}
+        </h3>
+        <AllocationLine tags={tags} />
+      </div>
+
+      {/* Above the stretched link, or the link swallows the click. `.glass > *`
+          in globals.css pins every direct child to z-index 2 — and because that
+          makes this wrapper a stacking context, a z-index on the button alone
+          would be trapped inside it and could never beat the link. So the
+          wrapper is lifted and made click-through, leaving only the button
+          interactive; the rest of the card keeps opening the editor. */}
+      {onRequestDelete && (
+        <div className="pointer-events-none absolute end-2 top-2 z-20">
+          <IconButton
+            name="trash"
+            label="מחיקת החידון"
+            variant="danger"
+            size="sm"
+            tooltipPlacement="bottom"
+            onClick={() => onRequestDelete(quiz)}
+            // Hidden until the card is hovered or focused — and always visible
+            // where there is no hover at all, so a touch device can still reach it.
+            className="pointer-events-auto bg-white/90 opacity-0 shadow-[var(--shadow-xs)] backdrop-blur-sm transition-opacity hover:bg-white focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+          />
+        </div>
+      )}
+    </CardShell>
+  );
+}
+
+/**
+ * The same frame for a quiz in the school catalog: no editor to link to (the
+ * viewer doesn't own it), so the actions — preview, clone — are the card's own
+ * footer instead of a stretched link, and the authoring teacher joins the hover
+ * panel.
+ */
+export function CatalogQuizCard({
+  quiz,
+  onPreview,
+  onClone,
+  cloning,
+  cloneDisabled,
+  className,
+}: {
+  quiz: SharedQuiz;
+  onPreview: (quizId: string) => void;
+  onClone: (quizId: string) => void;
+  /** THIS card's clone is in flight — shows the spinner on its own button. */
+  cloning: boolean;
+  /** Some other card's clone is in flight — one at a time. */
+  cloneDisabled?: boolean;
+  className?: string;
+}) {
+  const heading = cardHeading(quiz);
+  const durationText = durationChipText(quiz);
+  return (
+    <CardShell className={className}>
+      <QuizThumb youtubeVideoId={quiz.youtube_video_id}>
+        <ThumbChip className="bottom-2 start-2">
+          <Icon name="quiz" size={12} />
+          <span className="tabular-nums">{quiz.question_count}</span> שאלות
+        </ThumbChip>
+        {durationText && (
+          <ThumbChip className="bottom-2 end-2">
+            <Icon name="clock" size={12} />
+            <span className="tabular-nums">{durationText}</span>
+          </ThumbChip>
+        )}
+        {quiz.is_own && (
+          <span className="absolute top-2 start-2">
+            <Badge variant="brand">שלי</Badge>
+          </span>
+        )}
+        <ThumbDetails quiz={quiz} authorName={quiz.author_name} />
+      </QuizThumb>
+
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <h3
+          className="line-clamp-2 text-[15px] font-semibold leading-snug text-[var(--heading)]"
+          title={heading}
+        >
+          {heading}
+        </h3>
+        <div className="mt-auto flex items-center gap-1 pt-1">
+          <IconButton
+            name="play"
+            label="תצוגה מקדימה"
+            onClick={() => onPreview(quiz.quiz_id)}
+          />
+          <IconButton
+            name="copy"
+            label="שכפול"
+            variant="brand"
+            busy={cloning}
+            disabled={cloneDisabled}
+            onClick={() => onClone(quiz.quiz_id)}
+          />
         </div>
       </div>
-      <VideoLine quiz={quiz} />
-      <ChannelLine channelName={quiz.channel_name} />
-      <QuizMeta
-        baseLanguage={quiz.base_language}
-        questionCount={quiz.question_count}
-        duration={quiz}
-      />
-      {tags !== undefined && <AllocationTagsRow tags={tags} />}
-      {/* This row must sit ABOVE the stretched link, or the link swallows the
-          delete click. `.glass > *` in globals.css pins every direct child to
-          z-index 2 — and because that makes this row a stacking context, a
-          z-index on the button alone is trapped inside it and can never beat
-          the link. So the row is lifted, and made click-through, leaving only
-          the button itself interactive: "עריכה" keeps falling through to the
-          card link. */}
-      <div className="pointer-events-none relative z-20 mt-auto flex items-center justify-between gap-2 pt-1">
-        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--fg-brand)]">
-          עריכה
-          <Icon name="arrow" size={16} />
-        </span>
-        {onRequestDelete && (
-          <button
-            type="button"
-            onClick={() => onRequestDelete(quiz)}
-            className="pointer-events-auto rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--body-subtle)] hover:bg-[var(--neutral-quaternary)] hover:text-[var(--fg-danger)]"
-          >
-            מחיקה
-          </button>
-        )}
-      </div>
-    </GlassCard>
+    </CardShell>
   );
 }

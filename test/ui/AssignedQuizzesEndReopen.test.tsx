@@ -57,8 +57,12 @@ describe("AssignedQuizzesSection — end/reopen", () => {
     );
     renderSection([quiz({ published: true, available_from: null, available_until: null })]);
 
-    expect(screen.getByText(/ללא תאריך סיום/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "סיום שאלון" }));
+    // Open-endedness is still stated outright — now inside the row's status
+    // chip ("פעיל · ללא מועד סיום") rather than as a separate window line.
+    expect(screen.getByText(/ללא מועד סיום/)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "סיום השאלון עכשיו" })
+    );
 
     // The modal is open — confirming hasn't happened yet, no PATCH fired.
     expect(screen.getByText(/לסיים את/)).toBeInTheDocument();
@@ -93,7 +97,9 @@ describe("AssignedQuizzesSection — end/reopen", () => {
     expect(
       screen.queryByRole("button", { name: "הסתרה מתלמידים" })
     ).not.toBeInTheDocument();
-    const reopenButton = screen.getByRole("button", { name: "פתח שאלון שוב לכיתה" });
+    const reopenButton = screen.getByRole("button", {
+      name: "פתיחת השאלון מחדש לכיתה",
+    });
 
     await userEvent.click(reopenButton);
 
@@ -107,15 +113,28 @@ describe("AssignedQuizzesSection — end/reopen", () => {
     expect(body).toEqual({ availableFrom: null, availableUntil: null });
   });
 
-  it("the analytics link renders on a draft row (regression guard — no longer gated by state)", () => {
+  /**
+   * A withdrawn (unpublished) row deliberately has NO analytics affordance: it
+   * is the one group the class screen dims rather than titles, because a quiz
+   * students cannot see has nothing to analyse yet. This reverses an earlier
+   * guard that put the link on every row regardless of state.
+   */
+  it("a withdrawn row offers no analytics link", () => {
     renderSection([quiz({ published: false })]);
+    expect(screen.queryByRole("link", { name: /אנליטיקה/ })).not.toBeInTheDocument();
+  });
+
+  it("a live row does offer analytics", () => {
+    renderSection([quiz({ published: true })]);
     expect(screen.getByRole("link", { name: /אנליטיקה/ })).toBeInTheDocument();
   });
 
   it("a scheduled row has no End-quiz button (nothing has started yet)", () => {
     const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     renderSection([quiz({ published: true, available_from: future, available_until: null })]);
-    expect(screen.queryByRole("button", { name: "סיום שאלון" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "סיום השאלון עכשיו" })
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "הסתרה מתלמידים" })).toBeInTheDocument();
   });
 });

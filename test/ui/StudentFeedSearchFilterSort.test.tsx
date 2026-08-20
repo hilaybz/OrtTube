@@ -121,7 +121,7 @@ describe("StudentFeed — search", () => {
     expect(headings()).toEqual(["היסטוריה של רומא", "חידון כימיה"]);
   });
 
-  it("searches by class name", async () => {
+  it("searches by subject name", async () => {
     renderFeed();
     await userEvent.type(screen.getByLabelText("חיפוש"), "כיתה א");
     expect(headings()).toEqual(["חידון אלגברה", "חידון גיאומטריה"]);
@@ -136,23 +136,24 @@ describe("StudentFeed — search", () => {
 });
 
 describe("StudentFeed — filters", () => {
-  it("filters by class", async () => {
+  it("filters by subject", async () => {
     renderFeed();
-    await openFilter("כיתה");
+    await openFilter("מקצוע");
     await userEvent.click(screen.getByRole("checkbox", { name: "כיתה ב" }));
     expect(headings()).toEqual(["היסטוריה של רומא", "חידון כימיה"]);
   });
 
-  it("OR-matches across several selected classes", async () => {
+  it("OR-matches across several selected subjects", async () => {
     renderFeed();
-    await openFilter("כיתה");
+    await openFilter("מקצוע");
     await userEvent.click(screen.getByRole("checkbox", { name: "כיתה א" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "כיתה ב" }));
     expect(headings()).toHaveLength(4);
   });
 
-  it("hides the class filter for a student with only one class", () => {
+  it("hides the subject filter for a student with only one subject", () => {
     renderFeed([ALGEBRA, GEOMETRY]);
+    expect(screen.queryByRole("button", { name: "מקצוע" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "כיתה" })).not.toBeInTheDocument();
   });
 
@@ -173,9 +174,9 @@ describe("StudentFeed — filters", () => {
     expect(headings()).toEqual(["היסטוריה של רומא", "חידון גיאומטריה"]);
   });
 
-  it("ANDs search with a class filter", async () => {
+  it("ANDs search with a subject filter", async () => {
     renderFeed();
-    await openFilter("כיתה");
+    await openFilter("מקצוע");
     await userEvent.click(screen.getByRole("checkbox", { name: "כיתה א" }));
     await userEvent.type(screen.getByLabelText("חיפוש"), "רומא");
     expect(headings()).toEqual([]);
@@ -183,7 +184,7 @@ describe("StudentFeed — filters", () => {
 
   it("clears every filter and restores the full feed", async () => {
     renderFeed();
-    await openFilter("כיתה");
+    await openFilter("מקצוע");
     await userEvent.click(screen.getByRole("checkbox", { name: "כיתה ב" }));
     await userEvent.type(screen.getByLabelText("חיפוש"), "כימיה");
     await userEvent.click(screen.getByRole("button", { name: "נקה מסננים" }));
@@ -238,7 +239,7 @@ describe("StudentFeed — sort", () => {
       screen.getByLabelText("מיון"),
       "מועד הגשה (הרחוק קודם)"
     );
-    await openFilter("כיתה");
+    await openFilter("מקצוע");
     await userEvent.click(screen.getByRole("checkbox", { name: "כיתה א" }));
     expect(headings()).toEqual(["חידון אלגברה", "חידון גיאומטריה"]);
   });
@@ -250,5 +251,41 @@ describe("StudentFeed — empty feed", () => {
     expect(screen.queryByLabelText("חיפוש")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("מיון")).not.toBeInTheDocument();
     expect(sections()).toEqual(["טרם ניסית", "הושלמו"]);
+  });
+});
+
+describe("StudentFeed — paging", () => {
+  /** Seven quizzes in one section: one page of six, then the rest. */
+  const MANY = Array.from({ length: 7 }, (_, i) =>
+    item({
+      quiz_id: `q${i}`,
+      title: `חידון ${i}`,
+      available_until: `2027-0${i + 1}-01T00:00:00.000Z`,
+    })
+  );
+
+  it("pages a long section rather than rendering every card at once", async () => {
+    renderFeed(MANY);
+    expect(headings()).toHaveLength(6);
+    expect(headings()[0]).toBe("חידון 0");
+
+    await userEvent.click(screen.getByRole("button", { name: "העמוד הבא" }));
+
+    expect(headings()).toEqual(["חידון 6"]);
+  });
+
+  it("returns to the first page when the search narrows the feed", async () => {
+    renderFeed(MANY);
+    await userEvent.click(screen.getByRole("button", { name: "העמוד הבא" }));
+    expect(headings()).toEqual(["חידון 6"]);
+
+    await userEvent.type(screen.getByLabelText("חיפוש"), "חידון");
+
+    expect(headings()).toHaveLength(6);
+  });
+
+  it("shows no pager when a section fits on one page", () => {
+    renderFeed();
+    expect(screen.queryByRole("button", { name: "העמוד הבא" })).not.toBeInTheDocument();
   });
 });

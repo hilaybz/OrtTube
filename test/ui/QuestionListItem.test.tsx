@@ -41,8 +41,8 @@ describe("QuestionListItem", () => {
 
   it("renders no edit/delete buttons when the callbacks are omitted (read-only)", () => {
     renderInList(<QuestionListItem question={QUESTION} active={false} />);
-    expect(screen.queryByRole("button", { name: "עריכה" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "מחיקה" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "עריכת השאלה" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "מחיקת השאלה" })).not.toBeInTheDocument();
   });
 
   it("renders and wires the edit/delete buttons when the callbacks are supplied", async () => {
@@ -56,8 +56,8 @@ describe("QuestionListItem", () => {
         onDelete={onDelete}
       />
     );
-    await userEvent.click(screen.getByRole("button", { name: "עריכה" }));
-    await userEvent.click(screen.getByRole("button", { name: "מחיקה" }));
+    await userEvent.click(screen.getByRole("button", { name: "עריכת השאלה" }));
+    await userEvent.click(screen.getByRole("button", { name: "מחיקת השאלה" }));
     expect(onEdit).toHaveBeenCalledTimes(1);
     expect(onDelete).toHaveBeenCalledTimes(1);
   });

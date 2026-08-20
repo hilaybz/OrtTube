@@ -1,12 +1,22 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
+import { Icon } from "@/components/ui/Icon";
+
+/**
+ * Progress state of a checkpoint, for a read-only timeline (the student
+ * player). Optional: an authoring timeline has no such notion and leaves it
+ * unset, which renders the plain marker.
+ */
+export type TimelineMarkerState = "done" | "current" | "upcoming";
 
 export interface TimelineMarker {
   id: string;
   seconds: number;
   /** Accessible label + popover row text (e.g. "שאלה 2"); caller supplies it. */
   label: string;
+  /** Only meaningful with `readOnly` — drives the done/current/locked look. */
+  state?: TimelineMarkerState;
 }
 
 /**
@@ -25,8 +35,18 @@ export interface CheckpointTimelineProps {
   currentSeconds: number;
   markers: TimelineMarker[];
   activeMarkerId?: string | null;
-  /** Click on empty track. */
-  onSeek: (seconds: number) => void;
+  /**
+   * Progress display only: no click-to-seek, no dragging, no cluster popover —
+   * every checkpoint renders as a non-interactive status node. This is what the
+   * student player needs, where seeking is owned entirely by the block-skip
+   * gate and the video's own controls, and the timeline's job is to show where
+   * the questions sit and how far along the student is.
+   */
+  readOnly?: boolean;
+  /** Accessible name of the read-only checkpoint list. */
+  label?: string;
+  /** Click on empty track. Unused (and unnecessary) when `readOnly`. */
+  onSeek?: (seconds: number) => void;
   /** Click on a marker, or an item picked from a cluster popover. Falls back to `onSeek` when omitted. */
   onMarkerClick?: (id: string, seconds: number) => void;
   /** Drag committed on drop for a single (non-clustered) marker. Omitted entirely (or an id absent from `draggableIds`) disables dragging for that marker. */
@@ -113,12 +133,19 @@ function idsEqual(a: string[], b: string[]): boolean {
  * marker with a count badge rather than rendering N overlapping, unclickable
  * dots — clicking it opens a small popover to pick which one, dragging it
  * moves every clustered question to the same new instant together.
+ *
+ * `readOnly` turns the same geometry into a pure progress display (the student
+ * player): the bar tracks playback, each checkpoint is a status node showing
+ * whether it is answered, current or still locked, and nothing on it is
+ * clickable — seeking there belongs to the block-skip gate alone.
  */
 export function CheckpointTimeline({
   durationSeconds,
   currentSeconds,
   markers,
   activeMarkerId = null,
+  readOnly = false,
+  label,
   onSeek,
   onMarkerClick,
   onMarkerMove,
@@ -226,12 +253,12 @@ export function CheckpointTimeline({
 
   function fireClick(id: string, seconds: number) {
     if (onMarkerClick) onMarkerClick(id, seconds);
-    else onSeek(seconds);
+    else onSeek?.(seconds);
   }
 
   function handleTrackPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (!ready) return;
-    onSeek(secondsFromClientX(e.clientX));
+    onSeek?.(secondsFromClientX(e.clientX));
   }
 
   function handleDragPointerDown(
@@ -291,15 +318,23 @@ export function CheckpointTimeline({
     <div dir="ltr" className={cn("select-none", className)}>
       <div
         ref={trackRef}
-        onPointerDown={handleTrackPointerDown}
+        {...(readOnly
+          ? { role: "list", "aria-label": label ?? "נקודות העצירה" }
+          : { onPointerDown: handleTrackPointerDown })}
         data-testid="timeline-track"
         aria-busy={!ready}
-        className={cn("relative h-11", ready && "cursor-pointer")}
+        className={cn("relative h-11", !readOnly && ready && "cursor-pointer")}
       >
-        <div className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 overflow-hidden rounded-full border border-[var(--glass-border)] bg-[var(--neutral-quaternary)]">
+        {/* The bar: watched portion filled, like a video scrubber. Decoration —
+            the playhead's meaning is carried by the video player itself. */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 overflow-hidden rounded-full border border-[var(--glass-border)] bg-[var(--neutral-quaternary)]"
+        >
           {ready && (
             <div
-              className="h-full bg-[var(--brand-softer)] transition-[width] duration-300"
+              data-testid="timeline-progress"
+              className="h-full rounded-full bg-[var(--brand)] transition-[width] duration-200 ease-linear"
               style={{ width: `${playheadPct}%` }}
             />
           )}
@@ -308,9 +343,12 @@ export function CheckpointTimeline({
         {ready && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 h-5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--brand)]"
+            data-testid="timeline-playhead"
+            className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-200 ease-linear"
             style={{ left: `${playheadPct}%` }}
-          />
+          >
+            <span className="block h-3.5 w-3.5 rounded-full border-2 border-white bg-[var(--brand-strong)] shadow-[var(--shadow-xs)]" />
+          </div>
         )}
 
         {ready &&
@@ -330,6 +368,18 @@ export function CheckpointTimeline({
                 ? pending.seconds
                 : cluster.seconds;
             const posPct = pct(seconds);
+
+            if (readOnly) {
+              return (
+                <div
+                  key={cluster.key}
+                  className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                  style={{ left: `${posPct}%` }}
+                >
+                  <ReadOnlyNode items={cluster.items} seconds={cluster.seconds} />
+                </div>
+              );
+            }
 
             if (!isCluster) {
               const m = cluster.items[0];
@@ -497,5 +547,76 @@ export function CheckpointTimeline({
         </div>
       )}
     </div>
+  );
+}
+
+/** What a read-only marker's appearance means, spelled out for assistive tech. */
+const MARKER_STATE_LABEL: Record<TimelineMarkerState, string> = {
+  done: "נענתה",
+  current: "השאלה הנוכחית",
+  upcoming: "טרם נפתחה",
+};
+
+/** The telling state of a stack of checkpoints: the current one wins, then done. */
+function groupState(items: TimelineMarker[]): TimelineMarkerState | undefined {
+  if (items.some((i) => i.state === "current")) return "current";
+  if (items.every((i) => i.state === "done")) return "done";
+  return items.some((i) => i.state != null) ? "upcoming" : undefined;
+}
+
+/**
+ * One checkpoint (or a stack of near-simultaneous ones) on a `readOnly`
+ * timeline: a status node, not a control. Its appearance carries the state
+ * visually — answered, current, still locked — and an sr-only line per
+ * clustered question carries the same in words, since neither the shape nor
+ * the position is available to a screen reader.
+ */
+function ReadOnlyNode({ items, seconds }: { items: TimelineMarker[]; seconds: number }) {
+  const state = groupState(items);
+  const count = items.length;
+  return (
+    <span
+      role="listitem"
+      data-testid="checkpoint-marker"
+      data-state={state ?? "upcoming"}
+      data-seconds={seconds}
+      className={cn(
+        "relative grid h-6 w-6 place-items-center rounded-full border-2 transition-colors",
+        state === "done"
+          ? "border-[var(--brand)] bg-[var(--brand)] text-white"
+          : state === "current"
+            ? "border-[var(--brand)] bg-white ring-4 ring-[var(--brand-softer)]"
+            : "border-[var(--neutral-quaternary)] bg-white text-[var(--body-subtle)]"
+      )}
+    >
+      {state === "done" ? (
+        <Icon name="check" size={14} />
+      ) : state === "current" ? (
+        <span
+          aria-hidden="true"
+          className="block h-2 w-2 rounded-full bg-[var(--brand)]"
+        />
+      ) : (
+        <Icon name="lock" size={12} />
+      )}
+      {count > 1 && (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "absolute -end-1.5 -top-1.5 grid place-items-center rounded-full bg-[var(--heading)] text-[9px] font-bold leading-none text-white",
+            count > 9 ? "h-3.5 min-w-[16px] px-1" : "h-3.5 w-3.5"
+          )}
+        >
+          {count > 9 ? "9+" : count}
+        </span>
+      )}
+      {items.map((item) => (
+        <span key={item.id} className="sr-only">
+          {`${item.label} · ${formatSeconds(item.seconds)}${
+            item.state ? ` · ${MARKER_STATE_LABEL[item.state]}` : ""
+          }`}
+        </span>
+      ))}
+    </span>
   );
 }

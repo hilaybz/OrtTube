@@ -9,30 +9,87 @@ import { Field } from "@/components/ui/Field";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
+import { IconButton, IconLink } from "@/components/ui/IconButton";
+import { SegmentedToggle } from "@/components/ui/SegmentedToggle";
+import { Pager } from "@/components/ui/Pager";
+import { usePagedList } from "@/components/ui/usePagedList";
 import { Spinner } from "@/components/ui/Spinner";
 import { apiFetch, ApiError } from "@/lib/http";
+import { matchesText } from "@/lib/libraryFilters";
 import type { AssignedQuiz, TutorMode } from "@/lib/classes";
 import { allocationState, type AllocationState } from "@/lib/allocationState";
 import type { MyQuiz } from "@/lib/quiz";
 import { TUTOR_MODE_LABELS } from "./labels";
+import { classQuizAnalyticsHref } from "../analyticsLinks";
+import { AllocationEditModal } from "./AllocationEditModal";
 import { QuizPreviewModal } from "@/components/teacher/library/QuizPreviewModal";
 import { EndQuizConfirmModal } from "@/components/teacher/EndQuizConfirmModal";
 import {
-  STATE_LABEL,
-  STATE_VARIANT,
-  formatWindowPart,
+  allocationStatus,
   fromDatetimeLocalValue,
 } from "@/components/teacher/scheduleFormat";
 
-/** One lifecycle section, in display order — matches `AllocationState`. */
-const SECTION_ORDER: AllocationState[] = ["draft", "scheduled", "live", "done"];
+/**
+ * The lifecycle sections, in display order. Open work comes first and the
+ * hidden ones sink to the bottom, since a quiz students can't see is the one a
+ * teacher is least likely to be looking for.
+ */
+const SECTION_ORDER: AllocationState[] = ["live", "scheduled", "done", "draft"];
 
-const SECTION_LABEL: Record<AllocationState, string> = {
-  draft: "מוסתרים",
-  live: "פעילים",
-  scheduled: "מתוזמנים",
-  done: "הסתיימו",
+/**
+ * How each section reads. A coloured rail down the inline start plus a heading
+ * in the same colour groups the rows without tinting the glass: open work is
+ * red (it has a clock running), ended work is green (it's settled), scheduled
+ * is amber (it hasn't started).
+ *
+ * `draft` has no title and no rail on purpose: quizzes withdrawn from students
+ * aren't a phase of the lifecycle a teacher is working through, they're rows
+ * parked to one side — so they render dimmed at the end, with no heading to
+ * give them equal billing and no analytics (nobody has taken them).
+ */
+const SECTION_STYLE: Record<
+  AllocationState,
+  { title: string | null; frame: string; heading: string }
+> = {
+  live: {
+    title: "פעילים",
+    frame: "border-s-2 border-s-[var(--fg-danger)] ps-4",
+    heading: "text-[var(--fg-danger)]",
+  },
+  scheduled: {
+    title: "מתוזמנים",
+    frame: "border-s-2 border-s-[var(--fg-warning)] ps-4",
+    heading: "text-[var(--fg-warning)]",
+  },
+  done: {
+    title: "הסתיימו",
+    frame: "border-s-2 border-s-[var(--fg-success)] ps-4",
+    heading: "text-[var(--fg-success)]",
+  },
+  // A rule instead of a heading: enough to mark the break, not enough to
+  // announce a section.
+  draft: {
+    title: null,
+    frame: "border-t border-[var(--glass-border-subtle)] pt-5",
+    heading: "",
+  },
 };
+
+/** The three things a teacher asks of this list. */
+type QuizFilter = "all" | "active" | "done";
+
+const FILTER_SEGMENTS = [
+  { value: "all", label: "הכול" },
+  { value: "active", label: "פעילים" },
+  { value: "done", label: "הסתיימו" },
+] as const;
+
+/** Which lifecycle sections a filter admits. */
+export function sectionInFilter(state: AllocationState, filter: QuizFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "active") return state === "live";
+  return state === "done";
+}
 
 /**
  * Sort key per section — soonest-relevant-date first, so a teacher scanning
@@ -81,15 +138,18 @@ export function groupAssignedByState(
   return groups;
 }
 
+/** The text a row is titled by, and searched by. */
+function headingOf(a: AssignedQuiz): string {
+  return a.title ?? a.video_title ?? "חידון";
+}
+
 /**
- * Assigned-quizzes management for a class: four lifecycle sections (hidden /
- * live / scheduled / ended), an unassign action and a publish/draft toggle
- * per row, plus an "assign" modal that picks from the teacher's own quizzes
- * and sets `tutorMode` + `maxAttempts` + `published` + an optional scheduling
- * window. Mutations round-trip through `apiFetch` + `router.refresh()`.
- * Editing an existing allocation's settings (beyond the quick publish toggle)
- * is the quiz editor's job (`AllocationsSection`) — this class-side view is
- * for assigning and for the fast publish/unassign/analytics actions.
+ * Assigned-quizzes management for a class: a search box and an
+ * all/active/ended filter over four lifecycle sections, each paged, with
+ * icon-only row actions (analytics, edit, show/hide, end now, unassign) and an
+ * "assign" modal that picks from the teacher's own quizzes and sets
+ * `tutorMode` + `maxAttempts` + `published` + an optional scheduling window.
+ * Mutations round-trip through `apiFetch` + `router.refresh()`.
  *
  * Each row is itself a stretched link: it opens the quiz editor for a quiz
  * this teacher authored, or a read-only preview for an assigned `shared` quiz
@@ -106,13 +166,33 @@ export function AssignedQuizzesSection({
 }) {
   const router = useRouter();
 
+  // One instant for the whole render, so every row's state and countdown agree
+  // with each other and with the section they were sorted into.
+  const [now] = useState(() => new Date());
+
   // Only quizzes not already assigned to this class are assignable.
   const available = useMemo(() => {
     const taken = new Set(assigned.map((a) => a.quiz_id));
     return myQuizzes.filter((q) => !taken.has(q.quiz_id));
   }, [assigned, myQuizzes]);
 
-  const sections = useMemo(() => groupAssignedByState(assigned), [assigned]);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<QuizFilter>("all");
+
+  // Search narrows the rows; the filter narrows the sections. Searching first
+  // means a hit is never hidden behind a page boundary.
+  const matched = useMemo(
+    () =>
+      assigned.filter((a) =>
+        matchesText([a.title, a.video_title, a.author_name], query)
+      ),
+    [assigned, query]
+  );
+  const sections = useMemo(() => groupAssignedByState(matched, now), [matched, now]);
+  const visibleSections = SECTION_ORDER.filter(
+    (state) => sectionInFilter(state, filter) && sections[state].length > 0
+  );
+  const narrowed = query !== "" || filter !== "all";
 
   const [open, setOpen] = useState(false);
   const [quizId, setQuizId] = useState("");
@@ -130,8 +210,13 @@ export function AssignedQuizzesSection({
 
   // Read-only preview for an assigned shared quiz this teacher didn't author.
   const [previewQuizId, setPreviewQuizId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<AssignedQuiz | null>(null);
+  // The row awaiting unassign confirmation — destructive, so it asks first.
+  const [unassigning, setUnassigning] = useState<AssignedQuiz | null>(null);
 
-  // The row awaiting "end quiz now" confirmation (null = modal closed).
+  // The row awaiting "end quiz now" confirmation (null = modal closed). Ending
+  // gets its own shared modal (`EndQuizConfirmModal`) because the editor's
+  // allocation rows ask the same question and the wording must not drift.
   const [endConfirm, setEndConfirm] = useState<AssignedQuiz | null>(null);
 
   function openAssign() {
@@ -190,85 +275,89 @@ export function AssignedQuizzesSection({
     }
   }
 
-  async function unassign(id: string) {
+  /** Runs one row mutation with that row's spinner and error surface. */
+  async function rowAction(
+    id: string,
+    failure: string,
+    run: () => Promise<unknown>
+  ) {
     setPending(id);
     setRowError("");
     try {
-      await apiFetch(`/api/classes/${classId}/quizzes/${id}`, {
-        method: "DELETE",
-      });
+      await run();
       router.refresh();
     } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "ביטול ההקצאה נכשל.");
+      setRowError(err instanceof ApiError ? err.message : failure);
     } finally {
       setPending(null);
     }
   }
 
-  async function togglePublished(id: string, nextPublished: boolean) {
-    setPending(id);
-    setRowError("");
-    try {
-      await apiFetch(`/api/classes/${classId}/quizzes/${id}`, {
+  function unassign(a: AssignedQuiz) {
+    return rowAction(a.quiz_id, "ביטול ההקצאה נכשל.", () =>
+      apiFetch(`/api/classes/${classId}/quizzes/${a.quiz_id}`, { method: "DELETE" })
+    );
+  }
+
+  function togglePublished(a: AssignedQuiz) {
+    return rowAction(a.quiz_id, "עדכון הצגת החידון נכשל.", () =>
+      apiFetch(`/api/classes/${classId}/quizzes/${a.quiz_id}`, {
         method: "PATCH",
-        body: JSON.stringify({ published: nextPublished }),
-      });
-      router.refresh();
-    } catch (err) {
-      setRowError(
-        err instanceof ApiError ? err.message : "עדכון סטטוס הפרסום נכשל."
-      );
-    } finally {
-      setPending(null);
-    }
+        body: JSON.stringify({ published: !a.published }),
+      })
+    );
   }
 
   /**
-   * Ends a live allocation right now — sets `available_until` to the current
-   * moment, which is the exact same window-close mechanism a scheduled end
-   * already triggers (see `EndQuizConfirmModal`'s doc comment). Preserves
-   * `available_from` as-is (always null-or-already-past on a `live` row).
+   * End an open quiz now: move its closing bound to this instant. The window is
+   * replaced as a whole (the RPC has no partial update), so the opening bound
+   * is resent unchanged.
    */
-  async function endQuiz(id: string, availableFrom: string | null) {
-    setPending(id);
-    setRowError("");
-    try {
-      await apiFetch(`/api/classes/${classId}/quizzes/${id}`, {
+  function endNow(a: AssignedQuiz) {
+    return rowAction(a.quiz_id, "סיום השאלון נכשל.", () =>
+      apiFetch(`/api/classes/${classId}/quizzes/${a.quiz_id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          availableFrom,
+          availableFrom: a.available_from,
           availableUntil: new Date().toISOString(),
         }),
-      });
-      setEndConfirm(null);
-      router.refresh();
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "סיום השאלון נכשל.");
-    } finally {
-      setPending(null);
-    }
+      })
+    );
   }
 
-  /** Reopens a `done` allocation, open-ended — clears `available_until`. */
-  async function reopenQuiz(id: string, availableFrom: string | null) {
-    setPending(id);
-    setRowError("");
-    try {
-      await apiFetch(`/api/classes/${classId}/quizzes/${id}`, {
+  async function confirmUnassign() {
+    const target = unassigning;
+    if (!target) return;
+    setUnassigning(null);
+    await unassign(target);
+  }
+
+  async function confirmEnd() {
+    const target = endConfirm;
+    if (!target) return;
+    setEndConfirm(null);
+    await endNow(target);
+  }
+
+  /**
+   * Reopens an ended assignment, open-ended: clears `available_until` while
+   * resending the opening bound, since the RPC replaces the window as a whole.
+   */
+  function reopen(a: AssignedQuiz) {
+    return rowAction(a.quiz_id, "פתיחת השאלון נכשלה.", () =>
+      apiFetch(`/api/classes/${classId}/quizzes/${a.quiz_id}`, {
         method: "PATCH",
-        body: JSON.stringify({ availableFrom, availableUntil: null }),
-      });
-      router.refresh();
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "פתיחת השאלון נכשלה.");
-    } finally {
-      setPending(null);
-    }
+        body: JSON.stringify({
+          availableFrom: a.available_from,
+          availableUntil: null,
+        }),
+      })
+    );
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-semibold text-[var(--heading)]">
             חידונים מוקצים
@@ -277,10 +366,14 @@ export function AssignedQuizzesSection({
             <span className="tabular-nums">{assigned.length}</span>
           </Badge>
         </div>
-        <Button onClick={openAssign} disabled={available.length === 0}>
-          <Icon name="book" size={16} />
-          הקצאת חידון
-        </Button>
+        <IconButton
+          name="plus"
+          label="הקצאת חידון"
+          variant="brand"
+          onClick={openAssign}
+          disabled={available.length === 0}
+          tooltipPlacement="bottom"
+        />
       </div>
 
       {rowError && (
@@ -310,46 +403,69 @@ export function AssignedQuizzesSection({
             </p>
           ) : (
             <p className="text-[var(--body)]">
-              עדיין לא הוקצו חידונים לכיתה זו. לחצו על &rdquo;הקצאת חידון&ldquo;
-              כדי להתחיל.
+              עדיין לא הוקצו חידונים לכיתה זו. הוסיפו חידון בעזרת הכפתור למעלה.
             </p>
           )}
         </div>
       ) : (
-        <div className="flex flex-col gap-6">
-          {SECTION_ORDER.map((state) => {
-            const rows = sections[state];
-            if (rows.length === 0) return null;
-            return (
-              <div key={state} className="flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-semibold text-[var(--body)]">
-                    {SECTION_LABEL[state]}
-                  </h4>
-                  <Badge variant="gray">
-                    <span className="tabular-nums">{rows.length}</span>
-                  </Badge>
-                </div>
-                <ul className="flex flex-col gap-3">
-                  {rows.map((a) => (
-                    <AssignedQuizRow
-                      key={a.quiz_id}
-                      classId={classId}
-                      allocation={a}
-                      state={state}
-                      busy={pending === a.quiz_id}
-                      onTogglePublished={() => togglePublished(a.quiz_id, !a.published)}
-                      onUnassign={() => unassign(a.quiz_id)}
-                      onPreview={() => setPreviewQuizId(a.quiz_id)}
-                      onRequestEnd={() => setEndConfirm(a)}
-                      onReopen={() => reopenQuiz(a.quiz_id, a.available_from)}
-                    />
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
+        <>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[240px] flex-1">
+              <Field
+                label="חיפוש חידון"
+                name="assigned-search"
+                placeholder="לפי שם החידון, הסרטון או המחבר"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+            <SegmentedToggle
+              ariaLabel="סינון לפי מצב"
+              segments={FILTER_SEGMENTS}
+              value={filter}
+              onChange={setFilter}
+              className="mb-1"
+            />
+            {narrowed && (
+              <IconButton
+                name="filterOff"
+                label="ניקוי החיפוש והסינון"
+                onClick={() => {
+                  setQuery("");
+                  setFilter("all");
+                }}
+                className="mb-1"
+              />
+            )}
+          </div>
+
+          {visibleSections.length === 0 ? (
+            <div className="glass p-5">
+              <p className="text-[var(--body)]">
+                אין חידון שתואם את החיפוש או הסינון.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-6">
+              {visibleSections.map((state) => (
+                <AllocationSection
+                  key={state}
+                  classId={classId}
+                  state={state}
+                  rows={sections[state]}
+                  now={now}
+                  pending={pending}
+                  onEdit={setEditing}
+                  onTogglePublished={togglePublished}
+                  onPreview={setPreviewQuizId}
+                  onRequestEnd={setEndConfirm}
+                  onRequestUnassign={setUnassigning}
+                  onReopen={reopen}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       <QuizPreviewModal
@@ -359,18 +475,49 @@ export function AssignedQuizzesSection({
         onClose={() => setPreviewQuizId(null)}
       />
 
+      <AllocationEditModal
+        classId={classId}
+        allocation={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          router.refresh();
+        }}
+      />
+
       <EndQuizConfirmModal
         open={endConfirm !== null}
         prompt={
           <>
-            לסיים את &rdquo;{endConfirm?.title ?? endConfirm?.video_title ?? "החידון"}&ldquo;{" "}
-            עכשיו לכל הכיתה?
+            לסיים את &rdquo;{endConfirm ? headingOf(endConfirm) : "החידון"}&ldquo; עכשיו
+            לכל הכיתה?
           </>
         }
         busy={endConfirm !== null && pending === endConfirm.quiz_id}
-        onConfirm={() => endConfirm && endQuiz(endConfirm.quiz_id, endConfirm.available_from)}
+        onConfirm={confirmEnd}
         onClose={() => setEndConfirm(null)}
       />
+
+      <Modal
+        open={unassigning !== null}
+        onClose={() => setUnassigning(null)}
+        title="ביטול הקצאה"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-[var(--body)]">
+            {`לבטל את ההקצאה של "${unassigning ? headingOf(unassigning) : ""}"? החידון יוסר מהכיתה; ניסיונות שהוגשו יישמרו.`}
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setUnassigning(null)}>
+              חזרה
+            </Button>
+            <Button type="button" variant="danger" onClick={confirmUnassign}>
+              ביטול הקצאה
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
 
       <Modal
         open={open}
@@ -487,51 +634,114 @@ export function AssignedQuizzesSection({
 }
 
 /**
+ * One lifecycle section: its heading (unless it's the withdrawn group, which
+ * has none), its rows, and its own pager — each section pages independently so
+ * a long list of ended quizzes never pushes the open ones off the screen.
+ */
+function AllocationSection({
+  classId,
+  state,
+  rows,
+  now,
+  pending,
+  onEdit,
+  onTogglePublished,
+  onPreview,
+  onRequestEnd,
+  onRequestUnassign,
+  onReopen,
+}: {
+  classId: string;
+  state: AllocationState;
+  rows: AssignedQuiz[];
+  now: Date;
+  pending: string | null;
+  onEdit: (a: AssignedQuiz) => void;
+  onTogglePublished: (a: AssignedQuiz) => void;
+  onPreview: (quizId: string) => void;
+  onRequestEnd: (a: AssignedQuiz) => void;
+  onRequestUnassign: (a: AssignedQuiz) => void;
+  onReopen: (a: AssignedQuiz) => void;
+}) {
+  const style = SECTION_STYLE[state];
+  const paged = usePagedList(rows, { resetKey: state });
+
+  return (
+    <section className={`flex flex-col gap-3 ${style.frame}`}>
+      {style.title && (
+        <div className="flex items-center gap-2">
+          <h4 className={`text-sm font-semibold ${style.heading}`}>{style.title}</h4>
+          <Badge variant="gray">
+            <span className="tabular-nums">{rows.length}</span>
+          </Badge>
+        </div>
+      )}
+      <ul className={`flex flex-col gap-3 ${state === "draft" ? "opacity-60" : ""}`}>
+        {paged.slice.map((a) => (
+          <AssignedQuizRow
+            key={a.quiz_id}
+            classId={classId}
+            allocation={a}
+            now={now}
+            busy={pending === a.quiz_id}
+            onEdit={() => onEdit(a)}
+            onTogglePublished={() => onTogglePublished(a)}
+            onPreview={() => onPreview(a.quiz_id)}
+            onEndNow={() => onRequestEnd(a)}
+            onUnassign={() => onRequestUnassign(a)}
+            onReopen={() => onReopen(a)}
+          />
+        ))}
+      </ul>
+      <Pager {...paged} label="ניווט בין חידונים" />
+    </section>
+  );
+}
+
+/**
  * One assignment row. Clickable via the stretched-link pattern (precedent:
  * `components/teacher/QuizCard.tsx`): a `Link`/button absolutely fills the
  * row, the visible content sits above it lifted to `z-20 pointer-events-none`
  * (the whole wrapper, not just a button — `.glass > *` in globals.css pins
  * every direct child to `z-index: 2`, so a lower z-index on one control alone
- * would stay trapped beneath that stacking context), and each real control
+ * would stay trapped beneath that stacking context), and the action cluster
  * opts back in with `pointer-events-auto`.
  *
  * `allocation.is_own` decides the destination: your own quiz opens the
  * editor; an assigned shared quiz someone else authored opens the read-only
  * preview instead of dead-ending on the editor's "not yours" page.
+ *
+ * The row carries ONE status chip — a sentence, not a state noun, so it needs
+ * no date range beside it to be understood — plus the facts a teacher chooses
+ * an assignment by. Everything else about the allocation lives one click away
+ * in the edit modal.
  */
 function AssignedQuizRow({
   classId,
   allocation: a,
-  state,
+  now,
   busy,
+  onEdit,
   onTogglePublished,
-  onUnassign,
   onPreview,
-  onRequestEnd,
+  onEndNow,
+  onUnassign,
   onReopen,
 }: {
   classId: string;
   allocation: AssignedQuiz;
-  state: AllocationState;
+  now: Date;
   busy: boolean;
+  onEdit: () => void;
   onTogglePublished: () => void;
-  onUnassign: () => void;
   onPreview: () => void;
-  onRequestEnd: () => void;
+  onEndNow: () => void;
+  onUnassign: () => void;
   onReopen: () => void;
 }) {
-  const heading = a.title ?? a.video_title ?? "חידון";
-
-  // "עד <date>" when a real end date is set; on a still-live, open-ended row
-  // (no available_until) an explicit note instead of silently showing
-  // nothing — the ambiguity this whole feature exists to resolve.
-  const windowParts: string[] = [];
-  if (a.available_from) windowParts.push(`מ־${formatWindowPart(a.available_from)}`);
-  if (a.available_until) {
-    windowParts.push(`עד ${formatWindowPart(a.available_until)}`);
-  } else if (state === "live") {
-    windowParts.push("ללא תאריך סיום — יישאר זמין עד לסיום ידני");
-  }
+  const heading = headingOf(a);
+  const status = allocationStatus(a, now);
+  const showAnalytics = status.state === "live" || status.state === "done";
 
   return (
     <li className="glass relative p-4">
@@ -562,22 +772,18 @@ function AssignedQuizRow({
               {heading}
             </h4>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
+              <Badge variant={status.variant}>
+                <Icon name={status.icon} size={12} />
+                {/* Relative to the moment the page rendered, so the server's
+                    first paint and the client's hydration can word it
+                    differently across a boundary. */}
+                <span suppressHydrationWarning>{status.label}</span>
+              </Badge>
               <Badge variant="gray">
                 <span className="tabular-nums">{a.question_count}</span> שאלות
               </Badge>
               <Badge variant="brand">
                 מורה־AI: {TUTOR_MODE_LABELS[a.tutor_mode]}
-              </Badge>
-              <Badge variant="gray">
-                {a.max_attempts == null ? (
-                  "ניסיונות ללא הגבלה"
-                ) : (
-                  <>
-                    <span className="tabular-nums">{a.max_attempts}</span>{" "}
-                    ניסיונות
-                  </>
-                )}
               </Badge>
               {!a.is_own && (
                 <Badge variant="gray">
@@ -585,68 +791,62 @@ function AssignedQuizRow({
                 </Badge>
               )}
             </div>
-            {windowParts.length > 0 && (
-              <p className="text-xs text-[var(--body-subtle)]">
-                {windowParts.join(" · ")}
-              </p>
-            )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/dashboard/classes/${classId}/analytics/${a.quiz_id}`}
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1 text-sm font-medium text-[var(--fg-brand)] hover:bg-[var(--neutral-quaternary)]"
-          >
-            <Icon name="chart" size={16} />
-            אנליטיקה
-          </Link>
-          {state === "live" && (
-            <Button
-              variant="ghost"
+        {/* The whole action cluster opts back into pointer events, tooltip
+            wrappers included, so hovering an icon still explains it. */}
+        <div className="pointer-events-auto flex items-center gap-1">
+          {showAnalytics && (
+            <IconLink
+              name="chart"
+              label="אנליטיקה של החידון בכיתה"
+              href={classQuizAnalyticsHref(classId, a.quiz_id)}
               size="sm"
-              className="pointer-events-auto text-[var(--fg-warning)]"
-              disabled={busy}
-              onClick={onRequestEnd}
-            >
-              {busy ? <Spinner size={16} /> : "סיום שאלון"}
-            </Button>
+            />
           )}
-          {state === "done" ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="pointer-events-auto"
-              disabled={busy}
-              onClick={onReopen}
-            >
-              {busy ? <Spinner size={16} /> : "פתח שאלון שוב לכיתה"}
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="pointer-events-auto"
-              disabled={busy}
-              onClick={onTogglePublished}
-            >
-              {busy ? (
-                <Spinner size={16} />
-              ) : a.published ? (
-                "הסתרה מתלמידים"
-              ) : (
-                "הצגה לתלמידים"
-              )}
-            </Button>
-          )}
-          <Button
-            variant="ghost"
+          <IconButton
+            name="edit"
+            label="עריכת ההקצאה"
             size="sm"
-            className="pointer-events-auto text-[var(--fg-danger)]"
+            disabled={busy}
+            onClick={onEdit}
+          />
+          {/* An ended assignment has nothing to publish — reopening it is the
+              one thing a teacher wants from that row instead. */}
+          {status.state === "done" ? (
+            <IconButton
+              name="replay"
+              label="פתיחת השאלון מחדש לכיתה"
+              size="sm"
+              busy={busy}
+              onClick={onReopen}
+            />
+          ) : (
+            <IconButton
+              name={a.published ? "eyeOff" : "eye"}
+              label={a.published ? "הסתרה מתלמידים" : "הצגה לתלמידים"}
+              size="sm"
+              busy={busy}
+              onClick={onTogglePublished}
+            />
+          )}
+          {status.state === "live" && (
+            <IconButton
+              name="checkCircle"
+              label="סיום השאלון עכשיו"
+              size="sm"
+              disabled={busy}
+              onClick={onEndNow}
+            />
+          )}
+          <IconButton
+            name="trash"
+            label="ביטול הקצאה"
+            variant="danger"
+            size="sm"
             disabled={busy}
             onClick={onUnassign}
-          >
-            {busy ? <Spinner size={16} /> : "ביטול הקצאה"}
-          </Button>
+          />
         </div>
       </div>
     </li>

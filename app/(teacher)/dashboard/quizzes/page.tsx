@@ -4,7 +4,10 @@ import { listMyQuizzes, type MyQuiz } from "@/lib/quiz";
 import { listSharedQuizzes, type SharedQuiz } from "@/lib/sharing";
 import { listMyQuizAllocationTags, type QuizAllocationTags } from "@/lib/allocations";
 import { listMyClasses, type ClassRow } from "@/lib/classes";
+import Link from "next/link";
 import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { QuizLibrary } from "@/components/teacher/library/QuizLibrary";
 
 export default async function QuizzesPage() {
@@ -35,10 +38,23 @@ export default async function QuizzesPage() {
 
   return (
     <div className="mx-auto max-w-6xl py-2">
-      <h1 className="mb-1 text-3xl font-bold tracking-tight">החידונים שלי</h1>
-      <p className="mb-6 text-[var(--body)]">
-        נהלו את החידונים שלכם ושכפלו חידונים ממאגר בית הספר.
-      </p>
+      {/* The page's one affirmative action lives in the header, next to the
+          title, instead of floating above the grid — it belongs to the page,
+          not to whichever tab happens to be open. */}
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="mb-1 text-3xl font-bold tracking-tight">החידונים שלי</h1>
+          <p className="text-[var(--body)]">
+            נהלו את החידונים שלכם ושכפלו חידונים ממאגר בית הספר.
+          </p>
+        </div>
+        <Link href="/dashboard/quizzes/new">
+          <Button size="lg">
+            <Icon name="plus" size={18} />
+            חידון חדש
+          </Button>
+        </Link>
+      </header>
       {failed ? (
         <Alert variant="danger">לא ניתן לטעון את החידונים. נסו לרענן.</Alert>
       ) : (

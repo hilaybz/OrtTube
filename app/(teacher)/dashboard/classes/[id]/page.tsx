@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -13,16 +12,22 @@ import { listMyQuizzes, type MyQuiz } from "@/lib/quiz";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
+import { IconLink } from "@/components/ui/IconButton";
+import { BackLink } from "@/components/ui/BackLink";
 import { ClassHeaderActions } from "@/components/teacher/classes/ClassHeaderActions";
 import { ClassTabs } from "@/components/teacher/classes/ClassTabs";
 import { LANGUAGE_LABELS } from "@/components/teacher/classes/labels";
+import { classAnalyticsHref } from "@/components/teacher/analyticsLinks";
+
+const BACK_HREF = "/dashboard/classes";
+const BACK_LABEL = "הכיתות שלי";
 
 /**
- * Class detail: header (name + language) with owner rename/delete controls, then
- * tabbed roster + assigned-quizzes management. `listMyClasses` doubles as the
- * ownership/existence check (a class the caller doesn't own is simply absent).
- * Each read is isolated so a transient failure degrades to a friendly Alert
- * instead of crashing the page.
+ * Class detail: header (name + language) with the owner's rename control and a
+ * link into the class's analytics, then tabbed quizzes + roster.
+ * `listMyClasses` doubles as the ownership/existence check (a class the caller
+ * doesn't own is simply absent). Each read is isolated so a transient failure
+ * degrades to a friendly Alert instead of crashing the page.
  */
 export default async function ClassDetailPage({
   params,
@@ -31,16 +36,6 @@ export default async function ClassDetailPage({
 }) {
   const { id } = await params;
   const client = (await createClient()) as unknown as SupabaseClient;
-
-  const backLink = (
-    <Link
-      href="/dashboard/classes"
-      className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--fg-brand)] hover:underline"
-    >
-      <Icon name="arrow" size={16} />
-      חזרה לכיתות
-    </Link>
-  );
 
   let klass: ClassRow | null = null;
   let lookupFailed = false;
@@ -51,24 +46,19 @@ export default async function ClassDetailPage({
     lookupFailed = true;
   }
 
-  if (lookupFailed) {
+  if (lookupFailed || !klass) {
     return (
       <div className="mx-auto max-w-5xl py-2">
-        {backLink}
-        <Alert variant="danger" title="לא ניתן לטעון את הכיתה">
-          אירעה שגיאה בטעינת הכיתה. נסו לרענן את הדף.
-        </Alert>
-      </div>
-    );
-  }
-
-  if (!klass) {
-    return (
-      <div className="mx-auto max-w-5xl py-2">
-        {backLink}
-        <Alert variant="warning" title="הכיתה לא נמצאה">
-          הכיתה אינה קיימת או שאינה שייכת לך.
-        </Alert>
+        <BackLink href={BACK_HREF} label={BACK_LABEL} className="mb-4" />
+        {lookupFailed ? (
+          <Alert variant="danger" title="לא ניתן לטעון את הכיתה">
+            אירעה שגיאה בטעינת הכיתה. נסו לרענן את הדף.
+          </Alert>
+        ) : (
+          <Alert variant="warning" title="הכיתה לא נמצאה">
+            הכיתה אינה קיימת או שאינה שייכת לך.
+          </Alert>
+        )}
       </div>
     );
   }
@@ -89,10 +79,9 @@ export default async function ClassDetailPage({
 
   return (
     <div className="mx-auto max-w-5xl py-2">
-      {backLink}
-
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-2">
+          <BackLink href={BACK_HREF} label={BACK_LABEL} />
           <h1 className="truncate text-3xl font-bold tracking-tight">
             {klass.name}
           </h1>
@@ -101,12 +90,20 @@ export default async function ClassDetailPage({
             {LANGUAGE_LABELS[klass.language]}
           </Badge>
         </div>
-        <ClassHeaderActions
-          classId={klass.id}
-          name={klass.name}
-          language={klass.language}
-        />
-      </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <IconLink
+            name="chart"
+            label="אנליטיקה של הכיתה"
+            href={classAnalyticsHref(klass.id)}
+            tooltipPlacement="bottom"
+          />
+          <ClassHeaderActions
+            classId={klass.id}
+            name={klass.name}
+            language={klass.language}
+          />
+        </div>
+      </header>
 
       {dataFailed ? (
         <Alert variant="danger" title="לא ניתן לטעון את נתוני הכיתה">

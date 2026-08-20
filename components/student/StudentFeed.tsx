@@ -1,10 +1,12 @@
 "use client";
 import { useMemo, useState } from "react";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
+import { IconButton } from "@/components/ui/IconButton";
 import { Select } from "@/components/ui/Select";
 import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
+import { Pager } from "@/components/ui/Pager";
+import { usePagedList } from "@/components/ui/usePagedList";
 import { QuizCard } from "./QuizCard";
 import type { StudentFeedItem, StudentFeedStatus } from "@/lib/classes";
 import {
@@ -35,15 +37,19 @@ const SECTION_TITLE: Record<FeedSection, string> = {
 
 /** What a section says when the student has nothing in it at all (no filters involved). */
 const SECTION_EMPTY: Record<FeedSection, string> = {
-  not_yet: "עדיין אין חידונים שממתינים לך. חידונים חדשים שיוקצו לכיתות שלך יופיעו כאן.",
+  not_yet: "עדיין אין חידונים שממתינים לך. חידונים חדשים שיוקצו למקצועות שלך יופיעו כאן.",
   finished: "עדיין לא סיימת אף חידון. אחרי שתשלימו ניסיון, הוא יופיע כאן.",
 };
+
+/** Two full rows of the three-column grid before a reader has to page. */
+const CARDS_PER_PAGE = 6;
 
 function FeedSectionView({
   section,
   items,
   filtered,
   filtersActive,
+  resetKey,
 }: {
   section: FeedSection;
   /** Every item in this section, before search/filters — drives the "you have nothing here" copy. */
@@ -51,7 +57,10 @@ function FeedSectionView({
   /** What survived search/filters, already sorted. */
   filtered: StudentFeedItem[];
   filtersActive: boolean;
+  /** Any change to search/filters/sort returns this section to its first page. */
+  resetKey: string;
 }) {
+  const paged = usePagedList(filtered, { pageSize: CARDS_PER_PAGE, resetKey });
   return (
     <section>
       <h2 className="mb-3 text-lg font-semibold text-[var(--heading)]">
@@ -66,11 +75,14 @@ function FeedSectionView({
           </p>
         </GlassCard>
       ) : (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((item) => (
-            <QuizCard key={`${item.class_id}:${item.quiz_id}`} item={item} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {paged.slice.map((item) => (
+              <QuizCard key={`${item.class_id}:${item.quiz_id}`} item={item} />
+            ))}
+          </div>
+          <Pager {...paged} label={`ניווט בין חידונים — ${SECTION_TITLE[section]}`} />
+        </>
       )}
     </section>
   );
@@ -85,9 +97,10 @@ function FeedSectionView({
  * entirely client-side — `list_student_feed` hands over the whole feed in one
  * query. One control bar governs BOTH sections rather than a bar per section: a
  * student searching for a quiz doesn't know, or care, which section it landed
- * in. The class filter appears only once a student is in more than one class,
- * where it starts to mean something. Sorting is deadline-only, both directions
- * — the one ordering a student actually asks for.
+ * in. The subject filter appears only once a student is in more than one
+ * subject, where it starts to mean something. Sorting is deadline-only, both
+ * directions — the one ordering a student actually asks for. Each section pages
+ * independently, so a long finished list never buries what is still due.
  */
 export function StudentFeed({ items }: { items: StudentFeedItem[] }) {
   const [search, setSearch] = useState("");
@@ -116,6 +129,15 @@ export function StudentFeed({ items }: { items: StudentFeedItem[] }) {
       .map(bucket);
   }, [items, filters, statuses, sort]);
 
+  // Narrowing the feed must not leave the reader stranded on a page that no
+  // longer exists, so every control that changes what is listed resets paging.
+  const pageResetKey = [
+    search.trim(),
+    [...classes].sort().join(","),
+    [...statuses].sort().join(","),
+    sort,
+  ].join("|");
+
   function clearFilters() {
     setSearch("");
     setClasses(new Set());
@@ -130,14 +152,14 @@ export function StudentFeed({ items }: { items: StudentFeedItem[] }) {
             <Field
               label="חיפוש"
               name="feed-search"
-              placeholder="לפי שם החידון, הסרטון, הכיתה או המורה"
+              placeholder="לפי שם החידון, הסרטון, המקצוע או המורה"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           {classOptions.length > 1 && (
             <MultiSelectDropdown
-              label="כיתה"
+              label="מקצוע"
               options={classOptions}
               selected={classes}
               onChange={setClasses}
@@ -162,9 +184,12 @@ export function StudentFeed({ items }: { items: StudentFeedItem[] }) {
             ))}
           </Select>
           {filtersActive && (
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              נקה מסננים
-            </Button>
+            <IconButton
+              name="filterOff"
+              label="נקה מסננים"
+              className="mb-0.5"
+              onClick={clearFilters}
+            />
           )}
         </GlassCard>
       )}
@@ -176,6 +201,7 @@ export function StudentFeed({ items }: { items: StudentFeedItem[] }) {
             items={all}
             filtered={filtered}
             filtersActive={filtersActive}
+            resetKey={pageResetKey}
           />
         ))}
       </div>

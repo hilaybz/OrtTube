@@ -5,6 +5,7 @@ import { Icon } from "@/components/ui/Icon";
 import type { StudentFeedItem } from "@/lib/classes";
 import { feedHeading } from "@/lib/studentFeedFilters";
 import { quizDurationMinutes } from "@/lib/quizDuration";
+import { formatGrade, gradeOf } from "./grade";
 
 /**
  * "עד 18:00 · היום" for a deadline later today, otherwise "עד 18:00 · 14.3".
@@ -33,18 +34,19 @@ export function attemptsNote(item: StudentFeedItem): string {
     : "ניסיונות ללא הגבלה";
 }
 
-/** Badge shown on a not-started/in-progress/completed card (never `missed` — see `QuizCard`). */
+/**
+ * Badge shown on a not-started/in-progress/completed card (never `missed` — see
+ * `QuizCard`). A finished quiz shows its grade out of 100; an attempt with no
+ * recorded questions has no grade to show, so it falls back to a plain label.
+ */
 export function badgeFor(item: StudentFeedItem): {
   text: string;
   variant: "brand" | "gray" | "success";
 } {
   if (item.status === "in_progress") return { text: "בתהליך", variant: "brand" };
   if (item.status === "completed") {
-    const text =
-      item.last_num_questions != null && item.last_num_questions > 0
-        ? `${Math.round(((item.last_num_correct ?? 0) / item.last_num_questions) * 100)}%`
-        : "הושלם";
-    return { text, variant: "success" };
+    const grade = gradeOf(item.last_num_correct, item.last_num_questions);
+    return { text: grade != null ? formatGrade(grade) : "הושלם", variant: "success" };
   }
   return { text: "טרם התחלת", variant: "gray" };
 }
