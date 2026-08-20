@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
@@ -11,9 +11,10 @@ import { Select } from "@/components/ui/Select";
 import { Field } from "@/components/ui/Field";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { ClassRow, TutorMode } from "@/lib/classes";
-import { allocationState } from "@/lib/allocationState";
+import { allocationState, type AllocationState } from "@/lib/allocationState";
 import type { QuizAllocation } from "@/lib/allocations";
 import { TUTOR_MODE_LABELS } from "@/components/teacher/classes/labels";
+import { EndQuizConfirmModal } from "@/components/teacher/EndQuizConfirmModal";
 import { BulkAssignModal } from "./BulkAssignModal";
 import {
   STATE_LABEL,
@@ -22,6 +23,37 @@ import {
   toDatetimeLocalValue,
   fromDatetimeLocalValue,
 } from "@/components/teacher/scheduleFormat";
+
+/** Row order, matching `AllocationState`'s declared draft→scheduled→live→done order. */
+const STATE_ORDER: Record<AllocationState, number> = {
+  draft: 0,
+  scheduled: 1,
+  live: 2,
+  done: 3,
+};
+
+/**
+ * Sort key within a state — soonest-relevant-date first, so a teacher
+ * scanning the list sees what needs attention soonest at the top of each
+ * group. Mirrors `sectionSortValue` in `AssignedQuizzesSection` (same idea,
+ * applied to one flat list here instead of separate section headers, since
+ * this view is per-quiz across a handful of classes rather than per-class
+ * across many quizzes).
+ */
+function stateSortValue(state: AllocationState, a: QuizAllocation): number {
+  switch (state) {
+    case "live":
+      return a.available_until ? new Date(a.available_until).getTime() : Infinity;
+    case "scheduled":
+      return a.available_from ? new Date(a.available_from).getTime() : Infinity;
+    case "done":
+      // Most-recently-closed first.
+      return a.available_until ? -new Date(a.available_until).getTime() : Infinity;
+    case "draft":
+      // Newest-assigned first.
+      return -new Date(a.assigned_at).getTime();
+  }
+}
 
 /**
  * Allocation management for a quiz, on the editor page (Epic 2A.3): every
@@ -51,6 +83,9 @@ export function AllocationsSection({
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editing, setEditing] = useState<QuizAllocation | null>(null);
 
+  // The row (class) awaiting "end quiz now" confirmation (null = closed).
+  const [endConfirm, setEndConfirm] = useState<QuizAllocation | null>(null);
+
   async function togglePublished(classId: string, next: boolean) {
     setPending(classId);
     setRowError("");
@@ -62,6 +97,46 @@ export function AllocationsSection({
       router.refresh();
     } catch (e) {
       setRowError(e instanceof ApiError ? e.message : "עדכון הפרסום נכשל.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  /** Ends this allocation right now (see `EndQuizConfirmModal`'s doc comment
+   * for why this is just the existing window-close mechanism, not new
+   * grading logic). Preserves `available_from` as-is. */
+  async function endQuiz(classId: string, availableFrom: string | null) {
+    setPending(classId);
+    setRowError("");
+    try {
+      await apiFetch(`/api/classes/${classId}/quizzes/${quizId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          availableFrom,
+          availableUntil: new Date().toISOString(),
+        }),
+      });
+      setEndConfirm(null);
+      router.refresh();
+    } catch (e) {
+      setRowError(e instanceof ApiError ? e.message : "סיום השאלון נכשל.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  /** Reopens a `done` allocation, open-ended — clears `available_until`. */
+  async function reopenQuiz(classId: string, availableFrom: string | null) {
+    setPending(classId);
+    setRowError("");
+    try {
+      await apiFetch(`/api/classes/${classId}/quizzes/${quizId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ availableFrom, availableUntil: null }),
+      });
+      router.refresh();
+    } catch (e) {
+      setRowError(e instanceof ApiError ? e.message : "פתיחת השאלון נכשלה.");
     } finally {
       setPending(null);
     }
@@ -83,6 +158,15 @@ export function AllocationsSection({
   const assignedClassIds = new Set(allocations.map((a) => a.class_id));
   const candidates = classes.filter((c) => !assignedClassIds.has(c.id));
 
+  const sortedAllocations = useMemo(() => {
+    return [...allocations].sort((a, b) => {
+      const stateA = allocationState(a);
+      const stateB = allocationState(b);
+      if (stateA !== stateB) return STATE_ORDER[stateA] - STATE_ORDER[stateB];
+      return stateSortValue(stateA, a) - stateSortValue(stateB, b);
+    });
+  }, [allocations]);
+
   return (
     <GlassCard className="mb-6 flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
@@ -102,9 +186,20 @@ export function AllocationsSection({
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
-          {allocations.map((a) => {
+          {sortedAllocations.map((a) => {
             const state = allocationState(a);
             const busy = pending === a.class_id;
+
+            // "עד <date>" for a real end date; on a still-live, open-ended
+            // row an explicit note instead of showing nothing.
+            const windowParts: string[] = [];
+            if (a.available_from) windowParts.push(`מ־${formatWindowPart(a.available_from)}`);
+            if (a.available_until) {
+              windowParts.push(`עד ${formatWindowPart(a.available_until)}`);
+            } else if (state === "live") {
+              windowParts.push("ללא תאריך סיום — יישאר זמין עד לסיום ידני");
+            }
+
             return (
               <li
                 key={a.class_id}
@@ -126,29 +221,49 @@ export function AllocationsSection({
                           : `${a.max_attempts} ניסיונות`}
                       </Badge>
                     </div>
-                    {(a.available_from || a.available_until) && (
+                    {windowParts.length > 0 && (
                       <p className="text-xs text-[var(--body-subtle)]">
-                        {a.available_from && `מ־${formatWindowPart(a.available_from)}`}
-                        {a.available_from && a.available_until && " · "}
-                        {a.available_until && `עד ${formatWindowPart(a.available_until)}`}
+                        {windowParts.join(" · ")}
                       </p>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => togglePublished(a.class_id, !a.published)}
-                    >
-                      {busy ? (
-                        <Spinner size={16} />
-                      ) : a.published ? (
-                        "הסתרה מתלמידים"
-                      ) : (
-                        "הצגה לתלמידים"
-                      )}
-                    </Button>
+                    {state === "live" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-[var(--fg-warning)]"
+                        disabled={busy}
+                        onClick={() => setEndConfirm(a)}
+                      >
+                        {busy ? <Spinner size={16} /> : "סיום שאלון"}
+                      </Button>
+                    )}
+                    {state === "done" ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => reopenQuiz(a.class_id, a.available_from)}
+                      >
+                        {busy ? <Spinner size={16} /> : "פתח שאלון שוב לכיתה"}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => togglePublished(a.class_id, !a.published)}
+                      >
+                        {busy ? (
+                          <Spinner size={16} />
+                        ) : a.published ? (
+                          "הסתרה מתלמידים"
+                        ) : (
+                          "הצגה לתלמידים"
+                        )}
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -190,6 +305,18 @@ export function AllocationsSection({
           setEditing(null);
           router.refresh();
         }}
+      />
+
+      <EndQuizConfirmModal
+        open={endConfirm !== null}
+        prompt={
+          <>
+            לסיים את השאלון עכשיו לכיתה &rdquo;{endConfirm?.class_name}&ldquo;?
+          </>
+        }
+        busy={endConfirm !== null && pending === endConfirm.class_id}
+        onConfirm={() => endConfirm && endQuiz(endConfirm.class_id, endConfirm.available_from)}
+        onClose={() => setEndConfirm(null)}
       />
     </GlassCard>
   );
