@@ -11,13 +11,17 @@ import type { QuizAllocationTags } from "@/lib/allocations";
 
 // ── Sort ─────────────────────────────────────────────────────────────────────
 
-export type SortOption = "date_desc" | "date_asc" | "count_desc" | "count_asc";
+/**
+ * Recency is the only ordering the library offers: a teacher looks for the quiz
+ * they just built, or the one from last term. Ordering by number of questions
+ * answered no real question ("which quiz has 9 questions?") and cost the
+ * library a whole control's worth of attention.
+ */
+export type SortOption = "date_desc" | "date_asc";
 
 export const SORT_LABELS: Record<SortOption, string> = {
-  date_desc: "תאריך יצירה (החדש קודם)",
-  date_asc: "תאריך יצירה (הישן קודם)",
-  count_desc: "מספר שאלות (מהרב למעט)",
-  count_asc: "מספר שאלות (מהמעט לרב)",
+  date_desc: "החדש קודם",
+  date_asc: "הישן קודם",
 };
 
 export const SORT_OPTIONS = Object.keys(SORT_LABELS) as SortOption[];
@@ -26,24 +30,39 @@ export const SORT_OPTIONS = Object.keys(SORT_LABELS) as SortOption[];
  * Returns a NEW sorted array (never mutates `quizzes`) so callers can safely
  * use it inside a `useMemo` alongside the object it was given.
  */
-export function sortQuizzes<T extends { created_at: string; question_count: number }>(
+export function sortQuizzes<T extends { created_at: string }>(
   quizzes: T[],
   sort: SortOption
 ): T[] {
   const sorted = [...quizzes];
-  sorted.sort((a, b) => {
-    switch (sort) {
-      case "date_desc":
-        return b.created_at.localeCompare(a.created_at);
-      case "date_asc":
-        return a.created_at.localeCompare(b.created_at);
-      case "count_desc":
-        return b.question_count - a.question_count;
-      case "count_asc":
-        return a.question_count - b.question_count;
-    }
-  });
+  sorted.sort((a, b) =>
+    sort === "date_desc"
+      ? b.created_at.localeCompare(a.created_at)
+      : a.created_at.localeCompare(b.created_at)
+  );
   return sorted;
+}
+
+// ── Visibility ───────────────────────────────────────────────────────────────
+
+/** Library visibility axis: everything, or one of the two stored values. */
+export type VisibilityFilter = "all" | "private" | "shared";
+
+export const VISIBILITY_SEGMENTS: ReadonlyArray<{
+  value: VisibilityFilter;
+  label: string;
+}> = [
+  { value: "all", label: "הכל" },
+  { value: "private", label: "פרטי" },
+  { value: "shared", label: "משותף" },
+];
+
+/** `all` matches everything; otherwise the quiz's own visibility must match. */
+export function matchesVisibility(
+  filter: VisibilityFilter,
+  visibility: "private" | "shared"
+): boolean {
+  return filter === "all" || filter === visibility;
 }
 
 // ── Search ───────────────────────────────────────────────────────────────────

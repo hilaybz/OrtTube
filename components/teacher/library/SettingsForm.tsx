@@ -92,10 +92,6 @@ export function SettingsForm({ profile }: { profile: ProfileView }) {
           </option>
         ))}
       </Select>
-      <p className="text-sm text-[var(--body-subtle)]">
-        קובע את השפה שבה יוצגו לך שאלות החידון. ללא בחירה, נעשה שימוש בשפת הכיתה.
-      </p>
-
       {status === "error" && error && <Alert variant="danger">{error}</Alert>}
       {status === "saved" && !dirty && (
         <Alert variant="success">ההעדפה נשמרה.</Alert>

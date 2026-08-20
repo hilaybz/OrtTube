@@ -161,8 +161,12 @@ describe("QuizLibrary — preview before cloning", () => {
     const dialog = await screen.findByRole("dialog");
     await screen.findByText("מה מהירות האור?");
     const inDialog = within(dialog);
-    expect(inDialog.queryByRole("button", { name: "עריכה" })).not.toBeInTheDocument();
-    expect(inDialog.queryByRole("button", { name: "מחיקה" })).not.toBeInTheDocument();
+    expect(
+      inDialog.queryByRole("button", { name: "עריכת השאלה" })
+    ).not.toBeInTheDocument();
+    expect(
+      inDialog.queryByRole("button", { name: "מחיקת השאלה" })
+    ).not.toBeInTheDocument();
 
     // Markers only render once the (stubbed) player reports a duration.
     await userEvent.click(screen.getByRole("button", { name: "report-ready" }));

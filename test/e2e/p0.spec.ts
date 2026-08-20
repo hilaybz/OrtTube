@@ -5,12 +5,13 @@ import AxeBuilder from "@axe-core/playwright";
 // bounces unauthenticated users out of the protected areas. Behavior is asserted
 // against the DOM / URL, not screenshots.
 
-test("landing shows both audience CTAs", async ({ page }) => {
+test("the root path forwards a signed-out visitor to the sign-in screen", async ({
+  page,
+}) => {
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "התחברות" })).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /הצטרפות עם קוד הזמנה/ })
-  ).toBeVisible();
+  await expect(page).toHaveURL(/\/sign-in/);
+  // Accounts are provisioned by the school — no self-signup path is offered.
+  await expect(page.getByRole("link", { name: /יצירת חשבון/ })).toHaveCount(0);
 });
 
 test("sign-in renders and has no serious/critical a11y violations", async ({ page }) => {

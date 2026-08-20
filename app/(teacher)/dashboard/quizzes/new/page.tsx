@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { Icon } from "@/components/ui/Icon";
+import { BackLink } from "@/components/ui/BackLink";
 import { NewQuizForm } from "@/components/teacher/editor/NewQuizForm";
 
 /**
@@ -10,17 +9,13 @@ import { NewQuizForm } from "@/components/teacher/editor/NewQuizForm";
 export default function NewQuizPage() {
   return (
     <div className="mx-auto max-w-2xl py-2">
-      <Link
-        href="/dashboard/quizzes"
-        className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--fg-brand)] hover:underline"
-      >
-        <Icon name="arrow" size={16} />
-        חזרה לחידונים שלי
-      </Link>
-      <h1 className="mb-1 text-3xl font-bold tracking-tight">חידון חדש</h1>
-      <p className="mb-6 text-[var(--body)]">
-        הדביקו קישור לסרטון YouTube ובחרו את שפת המקור — נתחיל לבנות את החידון.
-      </p>
+      <header className="mb-6 flex flex-col gap-2">
+        <BackLink href="/dashboard/quizzes" label="החידונים שלי" />
+        <h1 className="text-3xl font-bold tracking-tight">חידון חדש</h1>
+        <p className="text-[var(--body)]">
+          שני שלבים: הסרטון שעליו נבנה החידון, והשם שהתלמידים יראו.
+        </p>
+      </header>
       <NewQuizForm />
     </div>
   );

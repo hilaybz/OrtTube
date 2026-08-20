@@ -371,7 +371,9 @@ describe("CheckpointTimeline", () => {
         onSeek={vi.fn()}
       />
     );
-    const playhead = container.querySelector('[aria-hidden="true"]') as HTMLElement;
+    const playhead = container.querySelector(
+      '[data-testid="timeline-playhead"]'
+    ) as HTMLElement;
     expect(playhead.style.left).toBe("100%");
   });
 
@@ -623,5 +625,103 @@ describe("CheckpointTimeline", () => {
       expect(menu.className).toContain("start-1/2");
       expect(menu.className).toContain("-translate-x-1/2");
     });
+  });
+});
+
+describe("CheckpointTimeline — readOnly (the student player's progress display)", () => {
+  const played: TimelineMarker[] = [
+    { id: "q1", seconds: 53, label: "שאלה 1", state: "done" },
+    { id: "q2", seconds: 800, label: "שאלה 2", state: "current" },
+  ];
+
+  function renderReadOnly(
+    props: Partial<React.ComponentProps<typeof CheckpointTimeline>> = {}
+  ) {
+    return render(
+      <CheckpointTimeline
+        readOnly
+        label="נקודות העצירה בחידון"
+        durationSeconds={900}
+        currentSeconds={120}
+        markers={played}
+        {...props}
+      />
+    );
+  }
+
+  it("positions every checkpoint proportionally and fills the bar to the playhead", () => {
+    renderReadOnly();
+    const [first, second] = screen.getAllByTestId("checkpoint-marker");
+    expect((first.parentElement as HTMLElement).style.left).toBe(
+      `${(53 / 900) * 100}%`
+    );
+    expect((second.parentElement as HTMLElement).style.left).toBe(
+      `${(800 / 900) * 100}%`
+    );
+    expect(screen.getByTestId("timeline-progress").style.width).toBe(
+      `${(120 / 900) * 100}%`
+    );
+  });
+
+  it("carries each checkpoint's state visually and in words", () => {
+    renderReadOnly();
+    const [first, second] = screen.getAllByTestId("checkpoint-marker");
+    expect(first).toHaveAttribute("data-state", "done");
+    expect(first).toHaveTextContent("שאלה 1 · 0:53 · נענתה");
+    expect(second).toHaveAttribute("data-state", "current");
+    expect(second).toHaveTextContent("שאלה 2 · 13:20 · השאלה הנוכחית");
+  });
+
+  it("is inert: no track seek, no marker buttons, no cluster popover", async () => {
+    const onSeek = vi.fn();
+    const onMarkerClick = vi.fn();
+    renderReadOnly({
+      markers: [
+        { id: "q1", seconds: 100, label: "שאלה 1", state: "upcoming" },
+        { id: "q2", seconds: 100, label: "שאלה 2", state: "upcoming" },
+      ],
+      onSeek,
+      onMarkerClick,
+    });
+    const track = stubTrackRect();
+
+    fireEvent.pointerDown(track, { clientX: 150 });
+    await userEvent.click(screen.getByTestId("checkpoint-marker"));
+
+    expect(onSeek).not.toHaveBeenCalled();
+    expect(onMarkerClick).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("stacks near-simultaneous checkpoints into one node that still names both", () => {
+    renderReadOnly({
+      markers: [
+        { id: "q1", seconds: 100, label: "שאלה 1", state: "done" },
+        { id: "q2", seconds: 100, label: "שאלה 2", state: "current" },
+      ],
+    });
+    const nodes = screen.getAllByTestId("checkpoint-marker");
+    expect(nodes).toHaveLength(1);
+    // The unanswered one is what the student is on, so that is the state shown.
+    expect(nodes[0]).toHaveAttribute("data-state", "current");
+    expect(nodes[0]).toHaveTextContent("שאלה 1 · 1:40 · נענתה");
+    expect(nodes[0]).toHaveTextContent("שאלה 2 · 1:40 · השאלה הנוכחית");
+  });
+
+  it("shows no markers and no fill until the player reports a duration", () => {
+    renderReadOnly({ durationSeconds: null });
+    expect(screen.getByRole("list", { name: "נקודות העצירה בחידון" })).toHaveAttribute(
+      "aria-busy",
+      "true"
+    );
+    expect(screen.queryAllByTestId("checkpoint-marker")).toHaveLength(0);
+    expect(screen.queryByTestId("timeline-progress")).not.toBeInTheDocument();
+  });
+
+  it("treats a zero duration as unknown rather than dividing by it", () => {
+    renderReadOnly({ durationSeconds: 0 });
+    expect(screen.queryAllByTestId("checkpoint-marker")).toHaveLength(0);
+    expect(screen.queryByTestId("timeline-progress")).not.toBeInTheDocument();
   });
 });

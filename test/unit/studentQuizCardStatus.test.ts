@@ -47,14 +47,14 @@ describe("badgeFor", () => {
     });
   });
 
-  it("completed → success, rounded percentage", () => {
+  it("completed → success, the grade out of 100 (never a percentage)", () => {
     const badge = badgeFor(
       item({ status: "completed", last_num_correct: 1, last_num_questions: 3 })
     );
-    expect(badge).toEqual({ text: "33%", variant: "success" });
+    expect(badge).toEqual({ text: "ציון 33", variant: "success" });
   });
 
-  it("completed with no question counts falls back to a plain label instead of NaN%", () => {
+  it("completed with no question counts falls back to a plain label instead of a meaningless grade", () => {
     const badge = badgeFor(
       item({ status: "completed", last_num_correct: null, last_num_questions: null })
     );

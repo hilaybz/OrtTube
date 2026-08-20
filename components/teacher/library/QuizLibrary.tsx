@@ -4,15 +4,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Tabs } from "@/components/ui/Tabs";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
 import { Spinner } from "@/components/ui/Spinner";
 import { Alert } from "@/components/ui/Alert";
 import { Modal } from "@/components/ui/Modal";
-import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
+import { SegmentedToggle } from "@/components/ui/SegmentedToggle";
 import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
+import { Pager } from "@/components/ui/Pager";
+import { usePagedList, type PagedList } from "@/components/ui/usePagedList";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { MyQuiz } from "@/lib/quiz";
 import type { SharedQuiz } from "@/lib/sharing";
@@ -23,32 +25,33 @@ import {
   sortQuizzes,
   matchesText,
   matchesClassFilter,
+  matchesVisibility,
   UNASSIGNED_CLASS,
   SORT_LABELS,
   SORT_OPTIONS,
+  VISIBILITY_SEGMENTS,
   type SortOption,
+  type VisibilityFilter,
 } from "@/lib/libraryFilters";
-import {
-  QuizCard,
-  cardHeading,
-  VideoLine,
-  QuizMeta,
-  ChannelLine,
-  LANG_LABEL,
-} from "@/components/teacher/QuizCard";
+import { QuizCard, CatalogQuizCard, cardHeading, LANG_LABEL } from "@/components/teacher/QuizCard";
 import { QuizPreviewModal } from "@/components/teacher/library/QuizPreviewModal";
 
 type TabKey = "mine" | "school";
+
+/** A 3-column grid, so a page is a whole number of rows. */
+const PAGE_SIZE = 12;
+const PAGE_SIZE_OPTIONS = [12, 24, 48] as const;
 
 /**
  * The teacher quiz library: their own quizzes plus the same-school shared
  * catalog they can clone. Reads are done server-side (RLS) and handed in;
  * this component owns tab state and the clone mutation (POST /api/quizzes/share).
  *
- * Search/filter/sort (backlog 1.4) live entirely client-side — neither
- * `list_my_quizzes` nor `list_shared_quizzes` paginates, so the full list is
- * already here. Each tab keeps its OWN state (search box, filters, sort);
- * switching tabs never carries one tab's filtering into the other.
+ * Search/filter/sort live entirely client-side — neither `list_my_quizzes` nor
+ * `list_shared_quizzes` paginates, so the full list is already here, and the
+ * grid pages over the FILTERED result. Each tab keeps its OWN state (search
+ * box, filters, sort); switching tabs never carries one tab's filtering into
+ * the other.
  */
 export function QuizLibrary({
   myQuizzes,
@@ -58,7 +61,7 @@ export function QuizLibrary({
 }: {
   myQuizzes: MyQuiz[];
   sharedQuizzes: SharedQuiz[];
-  /** quiz_id → allocation tags (backlog 1.5), keyed for O(1) lookup per card. */
+  /** quiz_id → allocation tags, keyed for O(1) lookup per card. */
   allocationTags: Record<string, QuizAllocationTags>;
   /** The teacher's full class roster — options for the "My quizzes" class filter. */
   classes?: ClassRow[];
@@ -90,6 +93,65 @@ export function QuizLibrary({
 const LANGUAGE_OPTIONS = (["he", "ar", "en"] as const satisfies readonly Language[]).map(
   (l) => ({ value: l, label: LANG_LABEL[l] })
 );
+
+/**
+ * One glass strip: a wide search box, then the narrow filters, then the sort,
+ * then a clear-filters icon that only exists while something is filtered — so
+ * the bar's default state is a search box and nothing to dismiss.
+ */
+function FilterBar({
+  children,
+  dirty,
+  onClear,
+}: {
+  children: React.ReactNode;
+  dirty: boolean;
+  onClear: () => void;
+}) {
+  return (
+    <div className="glass flex flex-wrap items-end gap-3 p-4">
+      {children}
+      {dirty && (
+        <IconButton
+          name="filterOff"
+          label="נקה מסננים"
+          onClick={onClear}
+          className="mb-0.5"
+        />
+      )}
+    </div>
+  );
+}
+
+/** The search box: a magnifier inside a label-less input, so the bar stays low. */
+function SearchBox({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <label className="flex min-w-[220px] flex-1 flex-col gap-2">
+      <span className="text-sm font-medium text-[var(--heading)]">חיפוש</span>
+      <span className="relative flex items-center">
+        <Icon
+          name="search"
+          size={16}
+          className="pointer-events-none absolute start-3 text-[var(--body-subtle)]"
+        />
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded-[var(--radius)] border border-[var(--glass-border)] bg-[var(--glass-bg)] py-2.5 pe-3 ps-9 text-sm text-[var(--heading)] outline-none backdrop-blur-[20px] transition-colors placeholder:text-[var(--body-subtle)] focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+        />
+      </span>
+    </label>
+  );
+}
 
 function LanguageFilter({
   selected,
@@ -136,12 +198,33 @@ function SortSelect({
 /** Shown instead of the grid when filters/search narrow a non-empty list to zero. */
 function NoMatches({ onClear }: { onClear: () => void }) {
   return (
-    <GlassCard className="flex flex-col items-start gap-3">
+    <GlassCard className="flex flex-col items-center gap-3 py-10 text-center">
+      <Icon name="search" size={28} className="text-[var(--body-subtle)]" />
       <p className="text-[var(--body)]">אין חידונים התואמים את החיפוש.</p>
-      <Button variant="ghost" size="sm" onClick={onClear}>
-        נקה מסננים
-      </Button>
+      <IconButton name="filterOff" label="נקה מסננים" onClick={onClear} />
     </GlassCard>
+  );
+}
+
+/** The grid + its pager — one layout for both tabs. */
+function QuizGrid({
+  children,
+  paged,
+}: {
+  children: React.ReactNode;
+  paged: PagedList<unknown>;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {children}
+      </div>
+      <Pager
+        {...paged}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        label="ניווט בין חידונים"
+      />
+    </div>
   );
 }
 
@@ -164,12 +247,20 @@ function MineTab({
   const [search, setSearch] = useState("");
   const [languages, setLanguages] = useState<Set<Language>>(new Set());
   const [classFilter, setClassFilter] = useState<Set<string>>(new Set());
+  const [visibility, setVisibility] = useState<VisibilityFilter>("all");
   const [sort, setSort] = useState<SortOption>("date_desc");
+
+  const dirty =
+    search !== "" ||
+    languages.size > 0 ||
+    classFilter.size > 0 ||
+    visibility !== "all";
 
   function clearFilters() {
     setSearch("");
     setLanguages(new Set());
     setClassFilter(new Set());
+    setVisibility("all");
   }
 
   const visibleQuizzes = useMemo(() => {
@@ -177,10 +268,16 @@ function MineTab({
       (q) =>
         matchesText([q.title, q.video_title, q.channel_name], search) &&
         (languages.size === 0 || languages.has(q.base_language)) &&
+        matchesVisibility(visibility, q.visibility) &&
         matchesClassFilter(classFilter, allocationTags[q.quiz_id])
     );
     return sortQuizzes(filtered, sort);
-  }, [quizzes, search, languages, classFilter, sort, allocationTags]);
+  }, [quizzes, search, languages, visibility, classFilter, sort, allocationTags]);
+
+  const paged = usePagedList(visibleQuizzes, {
+    pageSize: PAGE_SIZE,
+    resetKey: `${search}|${[...languages].sort().join()}|${[...classFilter].sort().join()}|${visibility}|${sort}`,
+  });
 
   async function confirmDelete() {
     if (!pendingDelete) return;
@@ -202,31 +299,35 @@ function MineTab({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex justify-end">
-        <Link href="/dashboard/quizzes/new">
-          <Button>
-            <Icon name="sparkle" size={16} />
-            חידון חדש
-          </Button>
-        </Link>
-      </div>
       {error && <Alert variant="danger">{error}</Alert>}
       {quizzes.length === 0 ? (
-        <GlassCard>
+        <GlassCard className="flex flex-col items-center gap-3 py-12 text-center">
+          <Icon name="quiz" size={32} className="text-[var(--body-subtle)]" />
           <p className="text-[var(--body)]">
             עדיין לא יצרת חידונים. צרו חידון חדש כדי להתחיל.
           </p>
+          <Link href="/dashboard/quizzes/new">
+            <Button>
+              <Icon name="plus" size={16} />
+              חידון חדש
+            </Button>
+          </Link>
         </GlassCard>
       ) : (
         <>
-          <GlassCard className="flex flex-wrap items-end gap-4">
-            <div className="min-w-[220px] flex-1">
-              <Field
-                label="חיפוש"
-                name="mine-search"
-                placeholder="לפי כותרת, שם הסרטון או היוצר"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+          <FilterBar dirty={dirty} onClear={clearFilters}>
+            <SearchBox
+              value={search}
+              onChange={setSearch}
+              placeholder="לפי כותרת, שם הסרטון או היוצר"
+            />
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-[var(--heading)]">נראות</span>
+              <SegmentedToggle<VisibilityFilter>
+                segments={VISIBILITY_SEGMENTS}
+                value={visibility}
+                onChange={setVisibility}
+                ariaLabel="נראות"
               />
             </div>
             <LanguageFilter selected={languages} onChange={setLanguages} />
@@ -242,12 +343,12 @@ function MineTab({
               />
             )}
             <SortSelect value={sort} onChange={setSort} name="mine-sort" />
-          </GlassCard>
+          </FilterBar>
           {visibleQuizzes.length === 0 ? (
             <NoMatches onClear={clearFilters} />
           ) : (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {visibleQuizzes.map((q) => (
+            <QuizGrid paged={paged}>
+              {paged.slice.map((q) => (
                 <QuizCard
                   key={q.quiz_id}
                   quiz={q}
@@ -255,7 +356,7 @@ function MineTab({
                   onRequestDelete={setPendingDelete}
                 />
               ))}
-            </div>
+            </QuizGrid>
           )}
         </>
       )}
@@ -302,6 +403,8 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
   const [languages, setLanguages] = useState<Set<Language>>(new Set());
   const [sort, setSort] = useState<SortOption>("date_desc");
 
+  const dirty = search !== "" || languages.size > 0;
+
   function clearFilters() {
     setSearch("");
     setLanguages(new Set());
@@ -315,6 +418,11 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
     );
     return sortQuizzes(filtered, sort);
   }, [quizzes, search, languages, sort]);
+
+  const paged = usePagedList(visibleQuizzes, {
+    pageSize: PAGE_SIZE,
+    resetKey: `${search}|${[...languages].sort().join()}|${sort}`,
+  });
 
   async function clone(sourceQuizId: string) {
     setCloningId(sourceQuizId);
@@ -333,10 +441,9 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
 
   if (quizzes.length === 0) {
     return (
-      <GlassCard>
-        <p className="text-[var(--body)]">
-          אין עדיין חידונים משותפים בבית הספר שלך.
-        </p>
+      <GlassCard className="flex flex-col items-center gap-3 py-12 text-center">
+        <Icon name="users" size={32} className="text-[var(--body-subtle)]" />
+        <p className="text-[var(--body)]">אין עדיין חידונים משותפים בבית הספר שלך.</p>
       </GlassCard>
     );
   }
@@ -344,75 +451,30 @@ function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
   return (
     <div className="flex flex-col gap-5">
       {error && <Alert variant="danger">{error}</Alert>}
-      <GlassCard className="flex flex-wrap items-end gap-4">
-        <div className="min-w-[220px] flex-1">
-          <Field
-            label="חיפוש"
-            name="school-search"
-            placeholder="לפי כותרת, שם הסרטון, היוצר או שם המורה"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+      <FilterBar dirty={dirty} onClear={clearFilters}>
+        <SearchBox
+          value={search}
+          onChange={setSearch}
+          placeholder="לפי כותרת, שם הסרטון, היוצר או שם המורה"
+        />
         <LanguageFilter selected={languages} onChange={setLanguages} />
         <SortSelect value={sort} onChange={setSort} name="school-sort" />
-      </GlassCard>
+      </FilterBar>
       {visibleQuizzes.length === 0 ? (
         <NoMatches onClear={clearFilters} />
       ) : (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {visibleQuizzes.map((q) => {
-            const busy = cloningId === q.quiz_id;
-            return (
-              <GlassCard key={q.quiz_id} className="flex h-full flex-col gap-3">
-                <div className="flex items-start gap-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`https://i.ytimg.com/vi/${q.youtube_video_id}/mqdefault.jpg`}
-                    alt=""
-                    className="h-10 w-16 flex-none rounded-[var(--radius-sm)] object-cover"
-                  />
-                  <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
-                    <h3 className="min-w-0 truncate font-semibold text-[var(--heading)]">
-                      {cardHeading(q)}
-                    </h3>
-                    {q.is_own && <Badge variant="brand">שלי</Badge>}
-                  </div>
-                </div>
-                <VideoLine quiz={q} />
-                <ChannelLine channelName={q.channel_name} />
-                {q.author_name && (
-                  <p className="text-xs text-[var(--body-subtle)]">
-                    מאת {q.author_name}
-                  </p>
-                )}
-                <QuizMeta
-                  baseLanguage={q.base_language}
-                  questionCount={q.question_count}
-                />
-                <div className="mt-auto flex items-center gap-2 pt-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setPreviewQuizId(q.quiz_id)}
-                  >
-                    <Icon name="play" size={16} />
-                    תצוגה מקדימה
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => clone(q.quiz_id)}
-                    disabled={cloningId !== null}
-                  >
-                    {busy ? <Spinner size={16} /> : <Icon name="grid" size={16} />}
-                    שכפול
-                  </Button>
-                </div>
-              </GlassCard>
-            );
-          })}
-        </div>
+        <QuizGrid paged={paged}>
+          {paged.slice.map((q) => (
+            <CatalogQuizCard
+              key={q.quiz_id}
+              quiz={q}
+              onPreview={setPreviewQuizId}
+              onClone={clone}
+              cloning={cloningId === q.quiz_id}
+              cloneDisabled={cloningId !== null && cloningId !== q.quiz_id}
+            />
+          ))}
+        </QuizGrid>
       )}
 
       <QuizPreviewModal

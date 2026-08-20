@@ -3,12 +3,12 @@
  * the whole card so clicking anywhere opens the editor. The delete control has
  * to sit above that link, which is easy to get wrong here — `.glass > *` in
  * globals.css pins every direct child of a glass card to `z-index: 2`, so a
- * z-index on the button alone is trapped in its row's stacking context and the
- * link keeps swallowing the click.
+ * z-index on the button alone is trapped in its wrapper's stacking context and
+ * the link keeps swallowing the click.
  *
  * jsdom does not do layout or stacking, so this cannot assert paint order. What
  * it can assert is the arrangement that makes the fix work — and, behaviourally,
- * that pressing מחיקה opens the confirmation instead of navigating.
+ * that pressing the trash icon opens the confirmation instead of navigating.
  */
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -49,21 +49,22 @@ describe("QuizLibrary — delete", () => {
   it("opens the confirmation dialog rather than following the card link", async () => {
     renderLibrary();
 
-    await userEvent.click(screen.getByRole("button", { name: "מחיקה" }));
+    await userEvent.click(screen.getByRole("button", { name: "מחיקת החידון" }));
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/למחוק את/)).toBeInTheDocument();
   });
 
-  it("keeps the delete control clickable while its row lets clicks through", () => {
+  it("keeps the delete control clickable while its wrapper lets clicks through", () => {
     renderLibrary();
-    const button = screen.getByRole("button", { name: "מחיקה" });
-    const row = button.parentElement!;
+    const button = screen.getByRole("button", { name: "מחיקת החידון" });
+    // The button is wrapped by its tooltip; the positioned wrapper is above that.
+    const wrapper = button.parentElement!.parentElement!;
 
-    // The row is lifted above the stretched link and made click-through, so only
-    // the button itself intercepts. Losing either half reintroduces the bug.
-    expect(row.className).toContain("pointer-events-none");
-    expect(row.className).toContain("z-20");
+    // The wrapper is lifted above the stretched link and made click-through, so
+    // only the button itself intercepts. Losing either half reintroduces the bug.
+    expect(wrapper.className).toContain("pointer-events-none");
+    expect(wrapper.className).toContain("z-20");
     expect(button.className).toContain("pointer-events-auto");
   });
 
@@ -74,7 +75,7 @@ describe("QuizLibrary — delete", () => {
     );
     renderLibrary();
 
-    await userEvent.click(screen.getByRole("button", { name: "מחיקה" }));
+    await userEvent.click(screen.getByRole("button", { name: "מחיקת החידון" }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "מחיקה" }));
 
@@ -95,7 +96,7 @@ describe("QuizLibrary — delete", () => {
     );
     renderLibrary();
 
-    await userEvent.click(screen.getByRole("button", { name: "מחיקה" }));
+    await userEvent.click(screen.getByRole("button", { name: "מחיקת החידון" }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "מחיקה" }));
 
@@ -103,8 +104,10 @@ describe("QuizLibrary — delete", () => {
     expect(screen.getByRole("alert")).toBeInTheDocument();
   });
 
-  it("shows the video title alongside a quiz that has its own title", () => {
+  it("carries the source video's title on the card when the quiz has its own", () => {
     renderLibrary();
+    // Secondary facts live in the hover panel over the thumbnail — present in
+    // the DOM (and the a11y tree), revealed on hover/focus.
     expect(screen.getByText("But what is a neural network?")).toBeInTheDocument();
   });
 

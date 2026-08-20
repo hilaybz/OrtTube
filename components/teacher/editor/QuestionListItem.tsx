@@ -1,6 +1,6 @@
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/components/ui/cn";
 import type { AuthorQuestion } from "@/lib/quizAuthor";
@@ -27,9 +27,9 @@ export function QuestionListItem({
   active: boolean;
   /** Populates the caller's scroll-into-view ref map (e.g. on a marker click). */
   cardRef?: (el: HTMLLIElement | null) => void;
-  /** Omit for a read-only card — the "עריכה" button then doesn't render. */
+  /** Omit for a read-only card — the edit action then doesn't render. */
   onEdit?: () => void;
-  /** Omit for a read-only card — the "מחיקה" button then doesn't render. */
+  /** Omit for a read-only card — the delete action then doesn't render. */
   onDelete?: () => void;
 }) {
   const correct = q.options.filter((o) => o.is_correct).length;
@@ -55,19 +55,21 @@ export function QuestionListItem({
           {(onEdit || onDelete) && (
             <div className="ms-auto flex items-center gap-1">
               {onEdit && (
-                <Button variant="ghost" size="sm" onClick={onEdit}>
-                  עריכה
-                </Button>
+                <IconButton
+                  name="edit"
+                  label="עריכת השאלה"
+                  size="sm"
+                  onClick={onEdit}
+                />
               )}
               {onDelete && (
-                <Button
-                  variant="ghost"
+                <IconButton
+                  name="trash"
+                  label="מחיקת השאלה"
                   size="sm"
+                  variant="danger"
                   onClick={onDelete}
-                  className="text-[var(--fg-danger)]"
-                >
-                  מחיקה
-                </Button>
+                />
               )}
             </div>
           )}

@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Field } from "@/components/ui/Field";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Button } from "@/components/ui/Button";
@@ -51,12 +50,6 @@ export function SignInForm() {
       <Button type="submit" size="lg" disabled={busy} className="mt-2 w-full">
         {busy ? <Spinner size={18} /> : "התחברות"}
       </Button>
-      <p className="text-center text-sm text-[var(--body)]">
-        תלמיד/ה שהמורה הוסיף/ה לכיתה?{" "}
-        <Link href="/sign-up" className="font-medium text-[var(--fg-brand)] underline">
-          יצירת חשבון
-        </Link>
-      </p>
     </form>
   );
 }

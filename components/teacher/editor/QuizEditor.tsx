@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
+import { IconButton } from "@/components/ui/IconButton";
 import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
+import { Pager } from "@/components/ui/Pager";
+import { usePagedList } from "@/components/ui/usePagedList";
 import { SegmentedToggle, type Segment } from "@/components/ui/SegmentedToggle";
 import type {
   GenerationDifficulty,
@@ -25,20 +27,22 @@ import { AllocationsSection } from "./AllocationsSection";
 import { VideoPreviewPanel, type VideoPreviewPanelHandle } from "./VideoPreviewPanel";
 import { QuestionListItem } from "./QuestionListItem";
 import { updateQuizMeta, deleteQuestion, MutationError } from "./mutations";
-import { LANGUAGE_LABELS } from "./format";
+import { LANGUAGE_LABELS, formatTime } from "./format";
 
 // How long a marker-click highlight lingers on the matching question card.
 const HIGHLIGHT_MS = 1600;
 
-// `unavailable` records that the last attempt found no usable captions — which
-// may mean the video has none, or that the fetch was blocked. The label must not
-// assert either, because we frequently cannot tell them apart, and the verdict
-// expires so a retry is worth offering.
-const TRANSCRIPT_LABEL: Record<AuthorQuiz["transcript_status"], string> = {
-  ready: "תמליל מוכן",
-  pending: "תמליל טרם נטען",
-  unavailable: "לא נמצאו כתוביות בניסיון האחרון",
-};
+// The quiz's own two states, shown as the choice itself rather than as a
+// labelled "נראות" field — the two labels say what they mean.
+const VISIBILITY_SEGMENTS: ReadonlyArray<Segment<QuizVisibility>> = [
+  { value: "private", label: "פרטי" },
+  { value: "shared", label: "משותף לביה\u05f4ס" },
+];
+
+// A quiz can accumulate questions indefinitely (each AI run adds up to 20), so
+// the list pages. The timeline above it always shows every marker, and picking
+// one jumps to the page its question is on.
+const QUESTIONS_PAGE_SIZE = 8;
 
 // The generate RPC accepts 1–20; keep the UI bounds in lockstep with it.
 const GEN_COUNT_MIN = 1;
@@ -254,6 +258,10 @@ export function QuizEditor({
   // `null` until the player's first progress tick, so the "current time"
   // prefill button never claims a fabricated 0:00 before playback starts.
   const [currentTime, setCurrentTime] = useState<number | null>(null);
+  // The video's length, as the player reports it. `videos.duration_seconds` is
+  // null for most quizzes (the scrape that fills it is blocked), so the player
+  // is the only reliable source — and it only knows once it has booted.
+  const [duration, setDuration] = useState<number | null>(null);
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
   const videoPanelRef = useRef<VideoPreviewPanelHandle>(null);
   const cardRefs = useRef<Map<string, HTMLLIElement>>(new Map());
@@ -265,6 +273,7 @@ export function QuizEditor({
   }, []);
 
   const questions = initial.questions;
+  const paged = usePagedList(questions, { pageSize: QUESTIONS_PAGE_SIZE });
   const nextOrderIndex =
     questions.reduce((max, q) => Math.max(max, q.order_index), -1) + 1;
   const transcriptReady = initial.transcript_status === "ready";
@@ -279,12 +288,14 @@ export function QuizEditor({
   }
 
   async function saveTitle() {
+    // A title is required (same form-level rule as the create form): the RPC
+    // still accepts an empty string and stores NULL, but a quiz with no title
+    // is indistinguishable from any other quiz on the same video wherever it
+    // is listed. The button is disabled in this state; this is the backstop.
+    if (title.trim() === "") return;
     setBanner(null);
     setMetaBusy(true);
     try {
-      // Send the trimmed string, empty included: an empty title is the teacher
-      // clearing it, which the RPC stores as NULL so the card falls back to the
-      // video's title. Sending null here would read as "unchanged" instead.
       await updateQuizMeta(quizId, { title: title.trim() });
       setTitleDirty(false);
       refresh();
@@ -319,9 +330,9 @@ export function QuizEditor({
     }
   }
 
-  async function toggleVisibility() {
+  async function changeVisibility(next: QuizVisibility) {
+    if (next === visibility) return;
     setBanner(null);
-    const next: QuizVisibility = visibility === "private" ? "shared" : "private";
     setMetaBusy(true);
     try {
       await updateQuizMeta(quizId, { visibility: next });
@@ -399,12 +410,26 @@ export function QuizEditor({
 
   /** A timeline marker (or a cluster popover item) was picked: point the
    * question list at it with a transient highlight. Seeking the player
-   * itself is VideoPreviewPanel's own responsibility. */
+   * itself is VideoPreviewPanel's own responsibility.
+   *
+   * The timeline always carries every marker while the list below is paged, so
+   * the picked question may live on another page — switch to it first, and let
+   * the card mount before scrolling to it. */
   function handleMarkerSelect(q: AuthorQuestion) {
     setActiveQuestionId(q.id);
-    cardRefs.current.get(q.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
     if (highlightTimeout.current) clearTimeout(highlightTimeout.current);
     highlightTimeout.current = setTimeout(() => setActiveQuestionId(null), HIGHLIGHT_MS);
+
+    const scroll = () =>
+      cardRefs.current.get(q.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const index = questions.findIndex((x) => x.id === q.id);
+    const targetPage = index < 0 ? paged.page : Math.floor(index / paged.pageSize);
+    if (targetPage === paged.page) {
+      scroll();
+      return;
+    }
+    paged.onPageChange(targetPage);
+    requestAnimationFrame(scroll);
   }
 
   /**
@@ -505,10 +530,51 @@ export function QuizEditor({
     return ok;
   }
 
+  const heading = title.trim() || initial.video.title || "חידון ללא כותרת";
+  // Emptying the box is an unsaveable state, not a way to clear the title.
+  const titleInvalid = titleDirty && title.trim() === "";
+
   return (
-    <div className="mx-auto max-w-4xl py-2">
-      {/* Header */}
-      <GlassCard className="mb-6 flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
+      {/* Page header: what this quiz is, the two facts that describe its size,
+          and the one destructive action — deliberately out of the settings box
+          below, where it used to hide as a text link. */}
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="truncate text-2xl font-semibold text-[var(--heading)]">
+            {heading}
+          </h1>
+          <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[var(--body-subtle)]">
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="quiz" size={14} />
+              <span className="tabular-nums">{questions.length}</span> שאלות
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="clock" size={14} />
+              {duration != null ? (
+                <>
+                  משך <span className="tabular-nums">{formatTime(duration)}</span>
+                </>
+              ) : (
+                "משך הסרטון ייקבע עם טעינת הנגן"
+              )}
+            </span>
+          </p>
+        </div>
+        <IconButton
+          name="trash"
+          label="מחיקת החידון"
+          variant="danger"
+          tooltipPlacement="bottom"
+          disabled={metaBusy || deleting}
+          onClick={() => setDeleteOpen(true)}
+        />
+      </header>
+
+      {banner && <Alert variant={banner.kind}>{banner.msg}</Alert>}
+
+      {/* 1 · Title + who can see the quiz */}
+      <GlassCard className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <label htmlFor="quiz-title" className="text-sm font-medium text-[var(--heading)]">
             כותרת החידון
@@ -525,136 +591,133 @@ export function QuizEditor({
               className="min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--heading)] outline-none backdrop-blur-[20px] transition-colors placeholder:text-[var(--body)] focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
             />
             {titleDirty && (
-              <Button size="sm" onClick={saveTitle} disabled={metaBusy}>
+              <Button
+                size="sm"
+                onClick={saveTitle}
+                disabled={metaBusy || titleInvalid}
+              >
                 {metaBusy ? <Spinner size={16} /> : "שמירה"}
               </Button>
             )}
           </div>
+          {titleInvalid && (
+            <p className="text-sm text-[var(--fg-danger)]">יש להזין כותרת לחידון.</p>
+          )}
         </div>
-
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <Badge variant="gray">שפת מקור: {LANGUAGE_LABELS[initial.base_language]}</Badge>
-          <Badge variant={transcriptReady ? "success" : "warning"}>
-            {TRANSCRIPT_LABEL[initial.transcript_status]}
-          </Badge>
-          <a
-            href={`https://www.youtube.com/watch?v=${initial.video.youtube_video_id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 font-medium text-[var(--fg-brand)] underline"
-          >
-            <Icon name="play" size={14} />
-            {initial.video.title ?? "צפייה בסרטון"}
-          </a>
-          <div className="ms-auto flex items-center gap-2">
-            <span className="text-[var(--body)]">נראות:</span>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={toggleVisibility}
-              disabled={metaBusy}
-            >
-              <Icon name={visibility === "private" ? "lock" : "users"} size={16} />
-              {visibility === "private" ? "פרטי" : "משותף לביה״ס"}
-            </Button>
-            <button
-              type="button"
-              onClick={() => setDeleteOpen(true)}
-              disabled={metaBusy || deleting}
-              className="rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--body-subtle)] hover:bg-[var(--neutral-quaternary)] hover:text-[var(--fg-danger)] disabled:opacity-50"
-            >
-              מחיקת החידון
-            </button>
-          </div>
+        <div className="flex flex-wrap items-center gap-3 border-t border-[var(--glass-border)] pt-4">
+          <SegmentedToggle<QuizVisibility>
+            segments={VISIBILITY_SEGMENTS}
+            value={visibility}
+            onChange={changeVisibility}
+            ariaLabel="מי רואה את החידון"
+          />
+          <span className="text-xs text-[var(--body-subtle)]">
+            {visibility === "private"
+              ? "רק אתם רואים את החידון."
+              : "מורים אחרים בבית הספר יכולים למצוא ולשכפל אותו."}
+          </span>
+          {metaBusy && <Spinner size={16} />}
         </div>
       </GlassCard>
 
+      {/* 2 · The video itself — the real player, with the checkpoint timeline
+          under it. No link out: the quiz is authored against this player. */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold text-[var(--heading)]">הסרטון</h2>
+        <VideoPreviewPanel
+          ref={videoPanelRef}
+          youtubeVideoId={initial.video.youtube_video_id}
+          questions={questions}
+          activeQuestionId={activeQuestionId}
+          onMarkerSelect={handleMarkerSelect}
+          onMarkerMove={handleMarkerMove}
+          onClusterMove={handleClusterMove}
+          onProgress={(current, reportedDuration) => {
+            setCurrentTime(current);
+            // 0 means "not known yet" — never regress a known duration.
+            if (reportedDuration > 0) setDuration(reportedDuration);
+          }}
+        />
+      </section>
+
+      {/* 3 · Questions */}
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-[var(--heading)]">
+            שאלות (<span className="tabular-nums">{questions.length}</span>)
+          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            {questions.length > 0 && !transcriptUnavailable && (
+              <GenerateTrigger
+                hero={false}
+                disabled={genBusy}
+                onOpen={() => setGenModalOpen(true)}
+              />
+            )}
+            <Button onClick={openNew}>
+              <Icon name="plus" size={16} />
+              הוספת שאלה
+            </Button>
+          </div>
+        </div>
+
+        {/* Why the AI action is missing on a quiz that already has questions —
+            the transcript tag that used to carry this is gone, but the reason
+            for a hidden button still has to be legible. */}
+        {questions.length > 0 && transcriptUnavailable && (
+          <p className="flex items-center gap-1.5 text-sm text-[var(--body-subtle)]">
+            <Icon name="info" size={14} className="flex-none" />
+            בניסיון האחרון לא נמצאו כתוביות לסרטון, אז יצירת שאלות עם AI אינה זמינה. אפשר להוסיף שאלות ידנית.
+          </p>
+        )}
+
+        {questions.length === 0 ? (
+          <GlassCard className="flex flex-col items-center gap-4 py-10 text-center">
+            <Icon name="sparkle" size={28} className="text-[var(--body-subtle)]" />
+            <p className="text-[var(--body)]">
+              אין עדיין שאלות. צרו אותן עם AI מתוך תמליל הסרטון, או הוסיפו ידנית.
+            </p>
+            {/* Never disabled on `unavailable`. That verdict can come from a
+                blocked fetch, and disabling the button removed the only way for
+                a teacher to retry — making one bad fetch permanent. */}
+            <GenerateTrigger hero disabled={genBusy} onOpen={() => setGenModalOpen(true)} />
+            {transcriptUnavailable ? (
+              <span className="text-sm text-[var(--body-subtle)]">
+                בניסיון האחרון לא נמצאו כתוביות. אפשר לנסות שוב או להוסיף שאלות ידנית.
+              </span>
+            ) : (
+              !transcriptReady && (
+                <span className="text-sm text-[var(--body-subtle)]">
+                  בלחיצה על ״יצירת שאלות עם AI״ נטען את תמליל הסרטון וניצור שאלות — עשוי להימשך מספר שניות.
+                </span>
+              )
+            )}
+          </GlassCard>
+        ) : (
+          <>
+            <ul className="flex flex-col gap-3">
+              {paged.slice.map((q) => (
+                <QuestionListItem
+                  key={q.id}
+                  question={q}
+                  active={activeQuestionId === q.id}
+                  cardRef={(el) => {
+                    if (el) cardRefs.current.set(q.id, el);
+                    else cardRefs.current.delete(q.id);
+                  }}
+                  onEdit={() => openEdit(q)}
+                  onDelete={() => removeQuestion(q)}
+                />
+              ))}
+            </ul>
+            <Pager {...paged} label="ניווט בין שאלות" />
+          </>
+        )}
+      </section>
+
+      {/* 4 · Allocations */}
       <AllocationsSection quizId={quizId} classes={classes} allocations={allocations} />
 
-      {banner && (
-        <Alert variant={banner.kind} className="mb-6">
-          {banner.msg}
-        </Alert>
-      )}
-
-      {/* AI actions — the hero action on an empty quiz; once the quiz has
-          questions it moves into the questions header as a quiet "add more". */}
-      {questions.length === 0 && (
-        <GlassCard className="mb-6 flex flex-col gap-4">
-          {/* Never disabled on `unavailable`. That verdict can come from a
-              blocked fetch, and disabling the button removed the only way for a
-              teacher to retry — making one bad fetch permanent. Pressing it now
-              forces a real re-check. */}
-          <GenerateTrigger
-            hero
-            disabled={genBusy}
-            onOpen={() => setGenModalOpen(true)}
-          />
-          {transcriptUnavailable ? (
-            <span className="text-sm text-[var(--body)]">
-              בניסיון האחרון לא נמצאו כתוביות. אפשר לנסות שוב או להוסיף שאלות ידנית.
-            </span>
-          ) : (
-            !transcriptReady && (
-              <span className="text-sm text-[var(--body)]">
-                בלחיצה על ״יצירת שאלות עם AI״ נטען את תמליל הסרטון וניצור שאלות — עשוי להימשך מספר שניות.
-              </span>
-            )
-          )}
-        </GlassCard>
-      )}
-
-      <VideoPreviewPanel
-        ref={videoPanelRef}
-        youtubeVideoId={initial.video.youtube_video_id}
-        questions={questions}
-        activeQuestionId={activeQuestionId}
-        onMarkerSelect={handleMarkerSelect}
-        onMarkerMove={handleMarkerMove}
-        onClusterMove={handleClusterMove}
-        onProgress={(current) => setCurrentTime(current)}
-      />
-
-      {/* Questions */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold text-[var(--heading)]">
-          שאלות ({questions.length})
-        </h2>
-        <div className="flex flex-wrap items-center gap-2">
-          {questions.length > 0 && !transcriptUnavailable && (
-            <GenerateTrigger
-              hero={false}
-              disabled={genBusy}
-              onOpen={() => setGenModalOpen(true)}
-            />
-          )}
-          <Button onClick={openNew}>הוספת שאלה</Button>
-        </div>
-      </div>
-
-      {questions.length === 0 ? (
-        <GlassCard>
-          <p className="text-[var(--body)]">
-            אין עדיין שאלות. הוסיפו שאלה ידנית או צרו שאלות עם AI.
-          </p>
-        </GlassCard>
-      ) : (
-        <ul className="flex flex-col gap-3">
-          {questions.map((q) => (
-            <QuestionListItem
-              key={q.id}
-              question={q}
-              active={activeQuestionId === q.id}
-              cardRef={(el) => {
-                if (el) cardRefs.current.set(q.id, el);
-                else cardRefs.current.delete(q.id);
-              }}
-              onEdit={() => openEdit(q)}
-              onDelete={() => removeQuestion(q)}
-            />
-          ))}
-        </ul>
-      )}
 
       <GenerateModal
         open={genModalOpen}

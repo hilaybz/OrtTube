@@ -95,7 +95,7 @@ export const VideoPreviewPanel = forwardRef<VideoPreviewPanelHandle, VideoPrevie
     );
 
     return (
-      <GlassCard className="mb-6 flex shrink-0 flex-col gap-4">
+      <GlassCard className="flex shrink-0 flex-col gap-4">
         <VideoStage ref={stageRef} videoId={youtubeVideoId} maxSeek={null} onProgress={handleProgress} />
         <CheckpointTimeline
           durationSeconds={duration}

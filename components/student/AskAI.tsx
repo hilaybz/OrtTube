@@ -3,9 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
 import { Alert } from "@/components/ui/Alert";
 import { ApiError } from "@/lib/http";
 import { messageForCode } from "@/lib/errors";
+import { MarkdownText } from "./TutorMarkdown";
 
 export interface AskContext {
   positionSeconds: number;
@@ -18,11 +20,43 @@ interface Msg {
   text: string;
 }
 
+/** The AI tutor's product name, everywhere the student sees it. */
+const TUTOR_NAME = "OrtAI";
+
+/** How often streamed text is committed to the transcript (~25fps). */
+const FLUSH_MS = 40;
+
+/**
+ * "OrtAI is writing" — the assistant's own message slot while the first token
+ * is still on its way, so the wait happens where the answer will appear rather
+ * than on the send button.
+ */
+function TypingDots() {
+  return (
+    <span
+      role="status"
+      aria-label={`${TUTOR_NAME} מקליד`}
+      className="flex items-center gap-1 py-1"
+    >
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          style={{ animationDelay: `${i * 160}ms` }}
+          className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--brand)] [animation-duration:1.05s]"
+        />
+      ))}
+    </span>
+  );
+}
+
 /**
  * The AI tutor as a slide-in chat drawer (opens from the left; the nav lives on
  * the right in this RTL app). Hidden entirely when tutor_mode is "off". Each
  * turn streams plain text from POST /api/ask, grounded in what's been watched so
- * far — it never sees the answer key.
+ * far — it never sees the answer key. The answer is rendered through
+ * `MarkdownText`, which turns the model's light Markdown into elements rather
+ * than showing raw `**asterisks**` (and never into HTML).
  */
 export function AskAI({
   classId,
@@ -42,9 +76,23 @@ export function AskAI({
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Jump to the newest turn. Deliberately NOT run per streamed token: the
+   * transcript's trailing sentinel owns `overflow-anchor`, so the browser keeps
+   * the bottom pinned by itself as the answer grows — and leaves the view alone
+   * when the student has scrolled up to re-read something. This only handles the
+   * two moments a jump is genuinely wanted: opening the drawer and asking.
+   */
+  function scrollToLatest() {
+    requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      el?.scrollTo?.({ top: el.scrollHeight, behavior: "smooth" });
+    });
+  }
+
   useEffect(() => {
-    scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
+    if (open) scrollToLatest();
+  }, [open]);
 
   if (tutorMode === "off") return null;
 
@@ -57,6 +105,28 @@ export function AskAI({
     setBusy(true);
     setPrompt("");
     setMessages((m) => [...m, { role: "user", text: q }, { role: "assistant", text: "" }]);
+    scrollToLatest();
+
+    // Streamed text waits here until the next flush tick.
+    let pending = "";
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    function flushPending() {
+      if (flushTimer != null) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (pending === "") return;
+      const delta = pending;
+      pending = "";
+      setMessages((m) => {
+        const last = m[m.length - 1];
+        // The turn was abandoned (an error dropped the bubble) — drop the text
+        // with it rather than appending it to whatever is now last.
+        if (last?.role !== "assistant") return m;
+        return [...m.slice(0, -1), { role: "assistant" as const, text: last.text + delta }];
+      });
+    }
+
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
@@ -80,20 +150,18 @@ export function AskAI({
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        setMessages((m) => {
-          const copy = [...m];
-          copy[copy.length - 1] = {
-            role: "assistant",
-            text: copy[copy.length - 1].text + chunk,
-          };
-          return copy;
-        });
+        pending += decoder.decode(value, { stream: true });
+        // Paint on a steady cadence rather than once per network chunk: the
+        // model's deltas arrive in bursts, and rendering every one of them
+        // makes the answer jitter its way onto the screen.
+        if (flushTimer == null) flushTimer = setTimeout(flushPending, FLUSH_MS);
       }
+      flushPending();
     } catch (err) {
       setMessages((m) => m.slice(0, -1)); // drop the empty assistant bubble
       setError(err instanceof ApiError ? err.message : messageForCode("internal_error"));
     } finally {
+      if (flushTimer != null) clearTimeout(flushTimer);
       setBusy(false);
     }
   }
@@ -102,7 +170,7 @@ export function AskAI({
     <>
       <Button variant="secondary" onClick={() => setOpen(true)}>
         <Icon name="sparkle" size={16} className="text-[var(--fg-brand)]" />
-        שאל/י את המורה
+        {`שאל/י את ${TUTOR_NAME}`}
       </Button>
 
       {/* scrim */}
@@ -118,7 +186,7 @@ export function AskAI({
       {/* drawer — slides in from the physical left */}
       <aside
         role="dialog"
-        aria-label="המורה־AI"
+        aria-label={TUTOR_NAME}
         className={cn(
           "glass fixed inset-y-0 left-0 z-50 flex w-[min(420px,92vw)] flex-col rounded-none p-0 transition-transform duration-300",
           open ? "translate-x-0" : "-translate-x-full"
@@ -129,41 +197,57 @@ export function AskAI({
             <span className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--brand-soft)] bg-[var(--brand-softer)]">
               <Icon name="sparkle" size={15} className="text-[var(--fg-brand)]" />
             </span>
-            המורה־AI
+            {TUTOR_NAME}
           </span>
-          <button
-            type="button"
+          <IconButton
+            name="close"
+            label="סגירה"
+            size="sm"
+            tooltipPlacement="bottom"
             onClick={() => setOpen(false)}
-            aria-label="סגירה"
-            className="rounded-[var(--radius-sm)] p-1.5 text-[var(--body)] hover:bg-[var(--neutral-quaternary)]"
-          >
-            <Icon name="close" size={18} />
-          </button>
+          />
         </header>
 
+        {/* `overflow-anchor` does the sticking: the sentinel below is the anchor
+            while the student is at the bottom, so a growing answer scrolls
+            itself into view; scrolled up, the messages opt out of anchoring so
+            nothing yanks the view around mid-read. */}
         <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
           {messages.length === 0 && !error && (
             <p className="mt-6 text-center text-sm text-[var(--body-subtle)]">
               שאלו כל דבר על מה שראיתם עד עכשיו — אני כאן כדי להדריך, לא לתת תשובות.
             </p>
           )}
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={cn(
-                "max-w-[88%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
-                m.role === "user"
-                  ? "me-auto bg-[var(--brand-softer)] text-[var(--fg-brand-strong)]"
-                  : "ms-auto border border-[var(--glass-border)] bg-white/60 text-[var(--heading)]"
-              )}
-            >
-              {m.text}
-              {m.role === "assistant" && m.text === "" && busy && (
-                <span className="inline-block h-4 w-2 animate-pulse bg-[var(--brand)] align-[-2px]" />
-              )}
+          {messages.map((m, i) => {
+            const waiting = m.role === "assistant" && m.text === "" && busy;
+            return (
+              <div
+                key={i}
+                className={cn(
+                  "max-w-[88%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed [overflow-anchor:none]",
+                  m.role === "user"
+                    ? "me-auto bg-[var(--brand-softer)] text-[var(--fg-brand-strong)]"
+                    : "ms-auto border border-[var(--glass-border)] bg-white/60 text-[var(--heading)]"
+                )}
+              >
+                {m.role === "assistant" ? (
+                  waiting ? (
+                    <TypingDots />
+                  ) : (
+                    <MarkdownText text={m.text} />
+                  )
+                ) : (
+                  <p className="whitespace-pre-wrap">{m.text}</p>
+                )}
+              </div>
+            );
+          })}
+          {error && (
+            <div className="[overflow-anchor:none]">
+              <Alert variant="danger">{error}</Alert>
             </div>
-          ))}
-          {error && <Alert variant="danger">{error}</Alert>}
+          )}
+          <div aria-hidden="true" className="h-px flex-none [overflow-anchor:auto]" />
         </div>
 
         <div className="border-t border-[var(--glass-border-subtle)] p-4">
@@ -186,9 +270,15 @@ export function AskAI({
               placeholder="מה תרצו לשאול על מה שראיתם עד עכשיו?"
               className="flex-1 resize-none rounded-[var(--radius-d)] border border-[var(--glass-border)] bg-[var(--glass-bg)] p-2.5 text-sm outline-none focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
             />
-            <Button type="submit" disabled={busy || !prompt.trim()}>
-              שליחה
-            </Button>
+            <IconButton
+              type="submit"
+              name="send"
+              label="שליחה"
+              variant="brand"
+              size="lg"
+              busy={busy}
+              disabled={!prompt.trim()}
+            />
           </form>
         </div>
       </aside>

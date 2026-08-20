@@ -1,17 +1,24 @@
 "use client";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/components/ui/cn";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
+import { BackLink } from "@/components/ui/BackLink";
 import { Spinner } from "@/components/ui/Spinner";
 import { Alert } from "@/components/ui/Alert";
 import { apiFetch, ApiError } from "@/lib/http";
 import { gateDecision } from "@/components/video/gate";
 import { AskAI } from "./AskAI";
+import { QuizProgress } from "./QuizProgress";
+import { gradeOf } from "./grade";
 import { VideoStage, type VideoStageHandle } from "@/components/video/VideoStage";
+import {
+  CheckpointTimeline,
+  type TimelineMarker,
+} from "@/components/video/CheckpointTimeline";
 import type {
   StudentAttemptState,
   StudentQuiz,
@@ -41,6 +48,10 @@ function byVideoTime(a: StudentQuestion, b: StudentQuestion): number {
 
 type Phase = "intro" | "playing" | "done";
 
+/** Where the back affordance goes on every screen of the player. */
+const FEED_HREF = "/student";
+const FEED_LABEL = "הפיד שלי";
+
 export function QuizPlayer({
   classId,
   quizId,
@@ -62,6 +73,10 @@ export function QuizPlayer({
   const [answered, setAnswered] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string[]>([]);
   const [playhead, setPlayhead] = useState(0);
+  // Seeded from the video row so the checkpoint timeline is proportional from
+  // the first frame, then corrected by whatever the player itself reports —
+  // `videos.duration_seconds` is null for plenty of rows, and can be stale.
+  const [duration, setDuration] = useState<number | null>(state.duration_seconds);
   const [summary, setSummary] = useState<AttemptSummary | null>(null);
   // Set only when the "done" screen was reached via the deadline timer rather
   // than by answering every question — swaps the heading/copy so the student
@@ -79,7 +94,12 @@ export function QuizPlayer({
     () => new Date(state.server_now).getTime() - Date.now()
   );
   // Stable so VideoStage's poll effect isn't torn down/recreated every render.
-  const onProgress = useCallback((c: number) => setPlayhead(c), []);
+  const onProgress = useCallback((current: number, reported: number) => {
+    setPlayhead(current);
+    // 0 means "not known yet" (the player is still booting) — never regress an
+    // already-known duration back to unknown, which would blank the timeline.
+    if (reported > 0) setDuration(reported);
+  }, []);
 
   // `current` is the first UNANSWERED question in list order, and the video is
   // gated at its timestamp — so the list order has to be video order or the gate
@@ -231,7 +251,8 @@ export function QuizPlayer({
     const noAttemptsLeft =
       state.attempts_left != null && state.attempts_left <= 0 && !state.in_progress;
     return (
-      <div className="mx-auto max-w-2xl py-6">
+      <div className="mx-auto flex max-w-2xl flex-col gap-3 py-6">
+        <BackLink href={FEED_HREF} label={FEED_LABEL} />
         <GlassCard className="overflow-hidden p-0">
           <div className="aspect-video bg-black">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -266,8 +287,10 @@ export function QuizPlayer({
 
   // ── DONE ─────────────────────────────────────────────────────────────────
   if (phase === "done" && summary) {
+    const grade = gradeOf(summary.num_correct, summary.num_questions);
     return (
-      <div className="mx-auto max-w-lg py-10">
+      <div className="mx-auto flex max-w-lg flex-col gap-3 py-10">
+        <BackLink href={FEED_HREF} label={FEED_LABEL} />
         <GlassCard className="flex flex-col items-center gap-4 text-center">
           <span className="grid h-16 w-16 place-items-center rounded-full bg-[var(--brand-softer)]">
             <Icon
@@ -285,12 +308,17 @@ export function QuizPlayer({
               המבחן הוגש באופן אוטומטי עם התשובות שכבר שמרת.
             </p>
           )}
-          <p className="text-lg text-[var(--body)]">
-            ענית נכון על{" "}
-            <b className="text-[var(--heading)]">
-              {summary.num_correct}/{summary.num_questions}
-            </b>{" "}
-            שאלות
+          {grade != null && (
+            <p className="flex flex-col items-center leading-none">
+              <span className="text-xs font-medium uppercase tracking-wide text-[var(--body-subtle)]">
+                ציון
+              </span>
+              <span className="mt-1 text-5xl font-bold text-[var(--heading)]">{grade}</span>
+              <span className="mt-1.5 text-xs text-[var(--body-subtle)]">מתוך 100</span>
+            </p>
+          )}
+          <p className="text-sm text-[var(--body)]">
+            ענית נכון על {summary.num_correct} מתוך {summary.num_questions} שאלות
           </p>
           <Button size="lg" onClick={() => router.push(resultsHref)} className="mt-2">
             צפייה בסיכום
@@ -301,12 +329,13 @@ export function QuizPlayer({
   }
 
   // ── PLAYING ──────────────────────────────────────────────────────────────
-  const markers = questions.map((q, i) => ({
+  // Each checkpoint sits at its own instant on the timeline, so the marker's
+  // position is video time — never question order.
+  const markers: TimelineMarker[] = questions.map((q, i) => ({
     id: q.id,
     seconds: q.position_seconds,
-    done: answered.has(q.id),
-    current: q.id === current?.id,
-    index: i,
+    label: `שאלה ${i + 1}`,
+    state: answered.has(q.id) ? "done" : q.id === current?.id ? "current" : "upcoming",
   }));
 
   const overlay =
@@ -373,7 +402,7 @@ export function QuizPlayer({
                         : "border-[var(--glass-border)] text-[var(--body)]"
                     )}
                   >
-                    {active ? "✓" : ("אבגדה"[i] ?? String(i + 1))}
+                    {active ? <Icon name="check" size={14} /> : ("אבגדה"[i] ?? String(i + 1))}
                   </span>
                   <span>{o.text}</span>
                 </button>
@@ -389,20 +418,21 @@ export function QuizPlayer({
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-3 py-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-[var(--body)]">
-          {answered.size} / {questions.length} שאלות
-        </span>
-        <AskAI
-          classId={classId}
-          quizId={quizId}
-          tutorMode={state.tutor_mode}
-          context={{
-            positionSeconds: playhead,
-            attemptId,
-            activeQuestionId: current?.id ?? null,
-          }}
-        />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <BackLink href={FEED_HREF} label={FEED_LABEL} />
+        <div className="flex items-center gap-3">
+          <QuizProgress answered={answered.size} total={questions.length} />
+          <AskAI
+            classId={classId}
+            quizId={quizId}
+            tutorMode={state.tutor_mode}
+            context={{
+              positionSeconds: playhead,
+              attemptId,
+              activeQuestionId: current?.id ?? null,
+            }}
+          />
+        </div>
       </div>
 
       {error && <Alert variant="danger">{error}</Alert>}
@@ -415,11 +445,26 @@ export function QuizPlayer({
         onProgress={onProgress}
       />
 
-      <CheckpointStepper markers={markers} />
+      {/* Checkpoints on the video's own time axis, with the watched portion
+          filled — a question at 0:53 of a 15-minute video belongs right at the
+          start of the bar, not a fifth of the way along it. Read-only: seeking
+          is the block-skip gate's business. */}
+      <div className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-white/50 px-5 py-2">
+        <CheckpointTimeline
+          readOnly
+          label="נקודות העצירה בחידון"
+          durationSeconds={duration}
+          currentSeconds={playhead}
+          markers={markers}
+        />
+      </div>
 
       {allAnswered && (
         <GlassCard className="flex flex-col items-center gap-3 text-center">
-          <h2 className="text-lg font-semibold">ענית על כל השאלות 🎉</h2>
+          <span className="grid h-11 w-11 place-items-center rounded-full bg-[var(--brand-softer)]">
+            <Icon name="checkCircle" size={24} className="text-[var(--fg-brand)]" />
+          </span>
+          <h2 className="text-lg font-semibold">ענית על כל השאלות</h2>
           <Button size="lg" onClick={finish} disabled={busy}>
             {busy ? <Spinner size={18} /> : "סיום החידון"}
           </Button>
@@ -428,84 +473,3 @@ export function QuizPlayer({
     </div>
   );
 }
-
-interface RailMarker {
-  /** Identity for React. A timestamp cannot serve: two questions may share one. */
-  id: string;
-  seconds: number;
-  done: boolean;
-  current: boolean;
-  index: number;
-}
-
-/** What a marker's appearance means, spelled out for assistive tech. */
-const MARKER_STATE_LABEL = {
-  done: "נענתה",
-  current: "השאלה הנוכחית",
-  upcoming: "טרם נפתחה",
-} as const;
-
-/**
- * The quiz-checkpoint stepper below the player. Numbered nodes in QUESTION order
- * (not time position, so they never cluster on a long video), connected by a
- * progress line — done ✓, the current one ringed, upcoming ones locked. A caption
- * shows when the next checkpoint is.
- *
- * The stepper is a read-only progress display, not a navigation control: it tells
- * a student where the questions are and how far along they are, but seeking is
- * owned entirely by the block-skip gate. So the nodes are non-interactive, and
- * each one's accessible name describes its state rather than an action.
- */
-function CheckpointStepper({ markers }: { markers: RailMarker[] }) {
-  if (markers.length === 0) return null;
-  const currentSeconds = markers.find((m) => m.current)?.seconds ?? null;
-  return (
-    <div className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-white/50 px-5 py-4">
-      {/* LTR: question 1 on the left, progressing right (like a video timeline). */}
-      <div dir="ltr" role="list" aria-label="נקודות העצירה בחידון" className="flex items-center">
-        {markers.map((m, i) => {
-          const state = m.done ? "done" : m.current ? "current" : "upcoming";
-          return (
-            <Fragment key={m.id}>
-              {i > 0 && (
-                <div
-                  aria-hidden="true"
-                  className={cn(
-                    "h-0.5 flex-1",
-                    markers[i - 1].done
-                      ? "bg-[var(--brand)]"
-                      : "bg-[var(--neutral-quaternary)]"
-                  )}
-                />
-              )}
-              <span
-                role="listitem"
-                data-testid="checkpoint-marker"
-                data-state={state}
-                className={cn(
-                  "grid h-7 w-7 flex-none place-items-center rounded-full border-2 text-xs font-bold transition",
-                  m.done
-                    ? "border-[var(--brand)] bg-[var(--brand)] text-white"
-                    : m.current
-                      ? "border-[var(--brand)] bg-white text-[var(--fg-brand)] ring-4 ring-[var(--brand-softer)]"
-                      : "border-[var(--neutral-quaternary)] bg-white text-[var(--body-subtle)]"
-                )}
-              >
-                <span aria-hidden="true">{m.done ? "✓" : m.index + 1}</span>
-                <span className="sr-only">
-                  {`שאלה ${m.index + 1} · ${mmss(m.seconds)} · ${MARKER_STATE_LABEL[state]}`}
-                </span>
-              </span>
-            </Fragment>
-          );
-        })}
-      </div>
-      <p className="mt-3 text-center text-xs font-medium text-[var(--fg-brand-strong)]">
-        {currentSeconds != null
-          ? `השאלה הבאה · ${mmss(currentSeconds)}`
-          : "כל השאלות נענו 🎉"}
-      </p>
-    </div>
-  );
-}
-

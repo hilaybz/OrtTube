@@ -1,24 +1,27 @@
-import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getClassQuizAnalytics, type ClassQuizAnalytics } from "@/lib/analytics";
 import { Alert } from "@/components/ui/Alert";
-import { Icon } from "@/components/ui/Icon";
-import { StatTile } from "@/components/teacher/StatTile";
-import { ScoreDistribution } from "@/components/teacher/analytics/ScoreDistribution";
+import { BackLink } from "@/components/ui/BackLink";
+import { MetricRow, MetricTile } from "@/components/teacher/analytics/MetricTile";
+import { ClassQuizCharts } from "@/components/teacher/analytics/ClassQuizCharts";
 import { QuestionBreakdown } from "@/components/teacher/analytics/QuestionBreakdown";
-
-/** Render a 0..1 fraction as a whole-percent string, or an em dash when null. */
-function pct(fraction: number | null): string {
-  return fraction == null ? "—" : `${Math.round(fraction * 100)}%`;
-}
+import { grade } from "@/components/teacher/analytics/chartTheme";
 
 /**
- * One quiz's analytics WITHIN one class: headline stat tiles, a score
- * distribution, and a per-question/per-option breakdown — all scored from
- * each student's latest completed attempt (`class_quiz_analytics`), never
- * best-of and never every retake, so this always agrees with the grade a
- * student is shown on their own results page.
+ * One quiz's analytics WITHIN one class — the per-(class, quiz) view the hub's
+ * class table and the student table both link into, and the deepest analytics
+ * screen in the product.
+ *
+ * Everything here is scored from each student's LATEST completed attempt
+ * (`class_quiz_analytics`), never best-of and never every retake, so it always
+ * agrees with the grade a student is shown on their own results page — and with
+ * the class view one level up, which uses the same basis.
+ *
+ * The back affordance names the class's analytics view rather than the class
+ * page: this is an analytics screen, and a reader who drilled in from either
+ * place is looking for the level above THIS number, not for wherever their
+ * browser history happens to point.
  */
 export default async function ClassQuizAnalyticsPage({
   params,
@@ -29,31 +32,28 @@ export default async function ClassQuizAnalyticsPage({
   const client = (await createClient()) as unknown as SupabaseClient;
 
   let analytics: ClassQuizAnalytics | null = null;
-  let failed = false;
   try {
     analytics = await getClassQuizAnalytics(client, classId, quizId);
   } catch {
-    failed = true;
+    analytics = null;
   }
 
-  const backLink = (
-    <Link
-      href={`/dashboard/classes/${classId}`}
-      className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-[var(--fg-brand)]"
-    >
-      <Icon name="arrow" size={16} />
-      חזרה לכיתה
-    </Link>
+  const back = (
+    <BackLink
+      href={`/dashboard/analytics?scope=class&id=${classId}`}
+      label="אנליטיקה של הכיתה"
+    />
   );
 
-  if (failed || !analytics) {
+  if (!analytics) {
     return (
       <div className="mx-auto max-w-4xl py-2">
-        {backLink}
-        <h1 className="mb-1 text-3xl font-bold tracking-tight">אנליטיקת חידון</h1>
+        <header className="mb-4 flex flex-col gap-2">
+          {back}
+          <h1 className="text-3xl font-bold tracking-tight">אנליטיקת חידון</h1>
+        </header>
         <Alert variant="danger" title="לא ניתן לטעון את נתוני החידון">
-          ייתכן שהחידון אינו מוקצה לכיתה זו או שאין לך הרשאה לצפות בו. נסו לחזור
-          לכיתה.
+          ייתכן שהחידון אינו מוקצה לכיתה זו או שאין לך הרשאה לצפות בו.
         </Alert>
       </div>
     );
@@ -61,31 +61,45 @@ export default async function ClassQuizAnalyticsPage({
 
   return (
     <div className="mx-auto max-w-4xl py-2">
-      {backLink}
-      <h1 className="mb-1 text-3xl font-bold tracking-tight">
-        {analytics.title ?? "אנליטיקת חידון"}
-      </h1>
-      <p className="mb-6 text-[var(--body)]">ביצועי הכיתה בחידון זה.</p>
+      <header className="mb-6 flex flex-col gap-2">
+        {back}
+        <h1 className="text-3xl font-bold tracking-tight">
+          {analytics.title ?? "אנליטיקת חידון"}
+        </h1>
+        <p className="text-[var(--body)]">ביצועי הכיתה בחידון זה.</p>
+      </header>
 
-      <div className="flex flex-col gap-6">
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatTile
+      <div className="flex flex-col gap-8">
+        <MetricRow>
+          <MetricTile
             label="תלמידים שסיימו"
             value={analytics.students_completed}
             hint={`מתוך ${analytics.member_count} בכיתה`}
+            icon="checkCircle"
           />
-          <StatTile label="ניסיונות" value={analytics.attempt_count} />
-          <StatTile label="ציון ממוצע" value={pct(analytics.average_score)} />
-          <StatTile label="שאלות" value={analytics.question_count} />
-        </div>
+          <MetricTile
+            label="ציון ממוצע"
+            value={grade(analytics.average_score)}
+            hint="מתוך 100"
+            icon="percent"
+          />
+          <MetricTile
+            label="שאלות"
+            value={analytics.question_count}
+            icon="quiz"
+          />
+          <MetricTile
+            label="הגשות"
+            value={analytics.completion_count}
+            hint="כולל ניסיונות חוזרים"
+            icon="checkCircle"
+          />
+        </MetricRow>
 
-        <ScoreDistribution
-          buckets={analytics.score_distribution}
-          studentsCompleted={analytics.students_completed}
-        />
+        <ClassQuizCharts data={analytics} />
 
-        <section>
-          <h2 className="mb-3 text-xl font-semibold text-[var(--heading)]">
+        <section className="flex flex-col gap-3">
+          <h2 className="text-xl font-semibold text-[var(--heading)]">
             לפי שאלה
           </h2>
           <QuestionBreakdown questions={analytics.questions} />

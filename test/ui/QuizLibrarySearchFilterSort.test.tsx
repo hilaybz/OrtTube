@@ -139,6 +139,15 @@ async function openFilter(label: string) {
   await userEvent.click(screen.getByRole("button", { name: label }));
 }
 
+/**
+ * Press "clear filters". Two of them can be on screen at once — the filter
+ * bar's, and the one the no-matches card offers where the reader is already
+ * looking — and both do the same thing, so pressing the first is enough.
+ */
+async function clearFilters() {
+  await userEvent.click(screen.getAllByRole("button", { name: "נקה מסננים" })[0]);
+}
+
 describe("QuizLibrary — My quizzes search/filter/sort", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
@@ -206,7 +215,7 @@ describe("QuizLibrary — My quizzes search/filter/sort", () => {
     await openFilter("כיתה משויכת");
     await userEvent.click(screen.getByRole("checkbox", { name: "כיתה א" }));
     await userEvent.type(screen.getByLabelText("חיפוש"), "רומא");
-    await userEvent.click(screen.getByRole("button", { name: "נקה מסננים" }));
+    await clearFilters();
     expect(headings().sort()).toEqual(
       ["חידון אלגברה", "היסטוריה של רומא", "חידון גיאומטריה"].sort()
     );
@@ -215,22 +224,40 @@ describe("QuizLibrary — My quizzes search/filter/sort", () => {
   it("sorts by creation date, newest first (default) then oldest first", async () => {
     renderLibrary();
     expect(headings()).toEqual(["היסטוריה של רומא", "חידון גיאומטריה", "חידון אלגברה"]);
-    await userEvent.selectOptions(screen.getByLabelText("מיון"), "תאריך יצירה (הישן קודם)");
+    await userEvent.selectOptions(screen.getByLabelText("מיון"), "הישן קודם");
     expect(headings()).toEqual(["חידון אלגברה", "חידון גיאומטריה", "היסטוריה של רומא"]);
   });
 
-  it("sorts by question count, both directions", async () => {
-    renderLibrary();
-    await userEvent.selectOptions(
-      screen.getByLabelText("מיון"),
-      "מספר שאלות (מהרב למעט)"
+  it("filters by visibility, private and shared each on their own", async () => {
+    renderLibrary({
+      myQuizzes: [Q1, { ...Q2, visibility: "shared" }, Q3],
+    });
+    await userEvent.click(screen.getByRole("radio", { name: "משותף" }));
+    expect(headings()).toEqual(["היסטוריה של רומא"]);
+    await userEvent.click(screen.getByRole("radio", { name: "פרטי" }));
+    expect(headings().sort()).toEqual(["חידון אלגברה", "חידון גיאומטריה"].sort());
+    await userEvent.click(screen.getByRole("radio", { name: "הכל" }));
+    expect(headings()).toHaveLength(3);
+  });
+});
+
+describe("QuizLibrary — paging", () => {
+  it("pages the grid at 12 cards and moves to the rest on the next page", async () => {
+    // 13 quizzes, distinct titles, newest first by construction.
+    const many = Array.from({ length: 13 }, (_, i) =>
+      myQuiz({
+        quiz_id: `p${i}`,
+        title: `חידון ${String(i).padStart(2, "0")}`,
+        created_at: `2026-02-${String(i + 1).padStart(2, "0")}T00:00:00.000Z`,
+      })
     );
-    expect(headings()).toEqual(["היסטוריה של רומא", "חידון אלגברה", "חידון גיאומטריה"]);
-    await userEvent.selectOptions(
-      screen.getByLabelText("מיון"),
-      "מספר שאלות (מהמעט לרב)"
-    );
-    expect(headings()).toEqual(["חידון גיאומטריה", "חידון אלגברה", "היסטוריה של רומא"]);
+    renderLibrary({ myQuizzes: many, allocationTags: {} });
+
+    expect(headings()).toHaveLength(12);
+    expect(screen.queryByText("חידון 00")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "העמוד הבא" }));
+    expect(headings()).toEqual(["חידון 00"]);
   });
 });
 
@@ -279,7 +306,7 @@ describe("QuizLibrary — School catalog search/filter/sort", () => {
     expect(
       screen.getByText("אין חידונים התואמים את החיפוש.")
     ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "נקה מסננים" }));
+    await clearFilters();
     expect(headings().sort()).toEqual(["חידון פיזיקה", "מבוא לכימיה"].sort());
   });
 });

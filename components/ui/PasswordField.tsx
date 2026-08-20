@@ -1,14 +1,16 @@
 "use client";
 import { useState } from "react";
 import { Field } from "./Field";
+import { IconButton } from "./IconButton";
 
 /**
  * Password input with a show/hide toggle.
  *
- * Typing a password blind is the usual cause of a failed sign-in, so both auth
- * forms use this rather than a bare `type="password"` field. The toggle is a
- * `type="button"` so it can never submit the form it sits inside, and its
- * `aria-label` reflects the action it will perform.
+ * Typing a password blind is the usual cause of a failed sign-in, so the auth
+ * form uses this rather than a bare `type="password"` field. The toggle is the
+ * conventional eye / eye-with-slash icon (an `IconButton`, hence `type="button"`
+ * — it can never submit the form it sits inside), and its accessible name states
+ * the action it will perform rather than the current state.
  */
 export function PasswordField({
   label,
@@ -28,15 +30,13 @@ export function PasswordField({
       name={name}
       type={visible ? "text" : "password"}
       trailing={
-        <button
-          type="button"
-          onClick={() => setVisible((v) => !v)}
-          aria-label={visible ? "הסתר סיסמה" : "הצג סיסמה"}
+        <IconButton
+          name={visible ? "eyeOff" : "eye"}
+          label={visible ? "הסתר סיסמה" : "הצג סיסמה"}
+          size="sm"
           aria-pressed={visible}
-          className="rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--body)] hover:bg-[var(--neutral-quaternary)] hover:text-[var(--heading)]"
-        >
-          {visible ? "הסתר" : "הצג"}
-        </button>
+          onClick={() => setVisible((v) => !v)}
+        />
       }
     />
   );

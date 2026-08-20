@@ -1,64 +1,110 @@
-import Link from "next/link";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/server";
-import { listMyClasses, type ClassRow } from "@/lib/classes";
+import { Suspense } from "react";
+import { BackLink } from "@/components/ui/BackLink";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
+import { Spinner } from "@/components/ui/Spinner";
+import { AnalyticsSearch } from "@/components/teacher/analytics/AnalyticsSearch";
+import { ClassAnalyticsView } from "@/components/teacher/analytics/ClassAnalyticsView";
+import { StudentAnalyticsView } from "@/components/teacher/analytics/StudentAnalyticsView";
+import { QuizAnalyticsView } from "@/components/teacher/analytics/QuizAnalyticsView";
+import type { AnalyticsScope } from "@/lib/analytics";
 
 /**
- * Analytics home: the teacher's classes as glass cards linking to each class's
- * analytics screen. Reads go through `@/lib` with the caller's session (RLS).
+ * The analytics hub.
+ *
+ * ONE route renders all three entity views, selected by the URL:
+ * `/dashboard/analytics?scope=student|class|quiz&id=<uuid>`. That contract is
+ * what the rest of the app links into — `components/teacher/classes/
+ * analyticsLinks.ts` builds every such href — so it is deliberately narrow and
+ * deliberately stable: a scope plus an id, nothing positional, nothing nested.
+ * A view is therefore linkable, refresh-safe, and shareable, while the search
+ * QUERY stays client state, because turning every keystroke into a server
+ * navigation would be the wrong trade for something nobody bookmarks.
+ *
+ * `scope` is validated and `id` must look like a uuid, so a hand-edited URL
+ * lands on the search screen rather than a failed read.
  */
-export default async function AnalyticsHomePage() {
-  const client = (await createClient()) as unknown as SupabaseClient;
 
-  let classes: ClassRow[] = [];
-  let failed = false;
-  try {
-    classes = await listMyClasses(client);
-  } catch {
-    failed = true;
+const SCOPES: AnalyticsScope[] = ["student", "class", "quiz"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function normalizeScope(raw: string | string[] | undefined): AnalyticsScope {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return SCOPES.includes(value as AnalyticsScope)
+    ? (value as AnalyticsScope)
+    : "class";
+}
+
+function normalizeId(raw: string | string[] | undefined): string | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value && UUID.test(value) ? value : null;
+}
+
+const SCOPE_TITLE: Record<AnalyticsScope, string> = {
+  student: "אנליטיקה של תלמיד/ה",
+  class: "אנליטיקה של כיתה",
+  quiz: "אנליטיקה של חידון",
+};
+
+export default async function AnalyticsHubPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const params = await searchParams;
+  const scope = normalizeScope(params.scope);
+  const id = normalizeId(params.id);
+
+  if (!id) {
+    return (
+      <div className="mx-auto max-w-3xl py-2">
+        <h1 className="mb-1 text-3xl font-bold tracking-tight">אנליטיקה</h1>
+        <p className="mb-6 text-[var(--body)]">
+          חפשו תלמיד/ה, כיתה או חידון כדי לראות את הנתונים שלו.
+        </p>
+        <GlassCard>
+          <AnalyticsSearch scope={scope} selectedId={null} />
+        </GlassCard>
+      </div>
+    );
   }
 
   return (
     <div className="mx-auto max-w-6xl py-2">
-      <h1 className="mb-1 text-3xl font-bold tracking-tight">אנליטיקה</h1>
-      <p className="mb-6 text-[var(--body)]">
-        בחרו כיתה כדי לראות התקדמות תלמידים, השלמות וניתוח הנושאים שנשאלו.
-      </p>
+      <header className="mb-6 flex flex-col gap-2">
+        <BackLink
+          href={`/dashboard/analytics?scope=${scope}`}
+          label="חיפוש באנליטיקה"
+        />
+        <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
+          <Icon
+            name="chartLine"
+            size={26}
+            className="flex-none text-[var(--fg-brand)]"
+          />
+          {SCOPE_TITLE[scope]}
+        </h1>
+      </header>
 
-      {failed ? (
-        <Alert variant="danger" title="לא ניתן לטעון את הכיתות">
-          אירעה שגיאה בטעינת הכיתות שלך. נסו לרענן את הדף.
-        </Alert>
-      ) : classes.length === 0 ? (
-        <GlassCard>
-          <p className="text-[var(--body)]">
-            עדיין אין לך כיתות. לאחר יצירת כיתה והקצאת חידונים, האנליטיקה תופיע כאן.
-          </p>
-        </GlassCard>
-      ) : (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {classes.map((c) => (
-            <Link
-              key={c.id}
-              href={`/dashboard/analytics/${c.id}`}
-              className="group block focus-visible:outline-none"
-            >
-              <GlassCard interactive className="flex h-full items-center justify-between gap-3">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <h2 className="truncate text-lg font-semibold text-[var(--heading)]">
-                    {c.name}
-                  </h2>
-                  <span className="text-sm text-[var(--fg-brand)]">צפייה באנליטיקה</span>
-                </div>
-                <Icon name="chart" size={22} className="shrink-0 text-[var(--body)]" />
-              </GlassCard>
-            </Link>
-          ))}
-        </div>
-      )}
+      <Suspense key={`${scope}:${id}`} fallback={<ViewSkeleton />}>
+        {scope === "student" ? (
+          <StudentAnalyticsView studentId={id} />
+        ) : scope === "quiz" ? (
+          <QuizAnalyticsView quizId={id} />
+        ) : (
+          <ClassAnalyticsView classId={id} />
+        )}
+      </Suspense>
+    </div>
+  );
+}
+
+/** Held-frame loading state: the page chrome stays, the data area says so. */
+function ViewSkeleton() {
+  return (
+    <div className="glass flex items-center justify-center gap-2 p-12 text-sm text-[var(--body-subtle)]">
+      <Spinner size={20} />
+      טוען נתונים…
     </div>
   );
 }

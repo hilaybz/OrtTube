@@ -4,11 +4,14 @@ import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
 import { Spinner } from "@/components/ui/Spinner";
 import { Alert } from "@/components/ui/Alert";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { Field } from "@/components/ui/Field";
+import { Pager } from "@/components/ui/Pager";
+import { usePagedList } from "@/components/ui/usePagedList";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { ClassRow, TutorMode } from "@/lib/classes";
 import { allocationState } from "@/lib/allocationState";
@@ -22,6 +25,9 @@ import {
   toDatetimeLocalValue,
   fromDatetimeLocalValue,
 } from "@/components/teacher/scheduleFormat";
+
+// Allocation rows are tall (name, state, settings line), so a page is short.
+const ALLOCATIONS_PAGE_SIZE = 5;
 
 /**
  * Allocation management for a quiz, on the editor page (Epic 2A.3): every
@@ -50,6 +56,8 @@ export function AllocationsSection({
   const [rowError, setRowError] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editing, setEditing] = useState<QuizAllocation | null>(null);
+  const [unassigning, setUnassigning] = useState<QuizAllocation | null>(null);
+  const paged = usePagedList(allocations, { pageSize: ALLOCATIONS_PAGE_SIZE });
 
   async function togglePublished(classId: string, next: boolean) {
     setPending(classId);
@@ -67,14 +75,20 @@ export function AllocationsSection({
     }
   }
 
-  async function unassign(classId: string) {
-    setPending(classId);
+  async function confirmUnassign() {
+    const target = unassigning;
+    if (!target) return;
+    setPending(target.class_id);
     setRowError("");
     try {
-      await apiFetch(`/api/classes/${classId}/quizzes/${quizId}`, { method: "DELETE" });
+      await apiFetch(`/api/classes/${target.class_id}/quizzes/${quizId}`, {
+        method: "DELETE",
+      });
+      setUnassigning(null);
       router.refresh();
     } catch (e) {
       setRowError(e instanceof ApiError ? e.message : "ביטול ההקצאה נכשל.");
+      setUnassigning(null);
     } finally {
       setPending(null);
     }
@@ -84,12 +98,23 @@ export function AllocationsSection({
   const candidates = classes.filter((c) => !assignedClassIds.has(c.id));
 
   return (
-    <GlassCard className="mb-6 flex flex-col gap-4">
+    <GlassCard className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-[var(--heading)]">הקצאות</h2>
-        <Button size="sm" onClick={() => setBulkOpen(true)} disabled={classes.length === 0}>
-          הקצאה לכיתות
-        </Button>
+        <h2 className="text-lg font-semibold text-[var(--heading)]">
+          הקצאות
+          {allocations.length > 0 && (
+            <span className="ms-2 text-sm font-normal text-[var(--body-subtle)] tabular-nums">
+              {allocations.length}
+            </span>
+          )}
+        </h2>
+        <IconButton
+          name="plus"
+          label="הקצאה לכיתות"
+          variant="brand"
+          onClick={() => setBulkOpen(true)}
+          disabled={classes.length === 0}
+        />
       </div>
 
       {rowError && <Alert variant="danger">{rowError}</Alert>}
@@ -101,77 +126,71 @@ export function AllocationsSection({
             : "החידון עדיין לא הוקצה לאף כיתה."}
         </p>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {allocations.map((a) => {
-            const state = allocationState(a);
-            const busy = pending === a.class_id;
-            return (
-              <li
-                key={a.class_id}
-                className="rounded-[var(--radius)] border border-[var(--glass-border)] p-3"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-[var(--heading)]">
-                        {a.class_name}
-                      </span>
-                      <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
-                      <Badge variant="brand">
-                        מורה־AI: {TUTOR_MODE_LABELS[a.tutor_mode]}
-                      </Badge>
-                      <Badge variant="gray">
-                        {a.max_attempts == null
-                          ? "ניסיונות ללא הגבלה"
-                          : `${a.max_attempts} ניסיונות`}
-                      </Badge>
-                    </div>
-                    {(a.available_from || a.available_until) && (
+        <>
+          <ul className="flex flex-col gap-3">
+            {paged.slice.map((a) => {
+              const state = allocationState(a);
+              const busy = pending === a.class_id;
+              return (
+                <li
+                  key={a.class_id}
+                  className="rounded-[var(--radius)] border border-[var(--glass-border)] p-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-[var(--heading)]">
+                          {a.class_name}
+                        </span>
+                        <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
+                      </div>
+                      {/* The settings behind the row, as one quiet line rather
+                          than a badge wall: they are context, not status. */}
                       <p className="text-xs text-[var(--body-subtle)]">
-                        {a.available_from && `מ־${formatWindowPart(a.available_from)}`}
-                        {a.available_from && a.available_until && " · "}
-                        {a.available_until && `עד ${formatWindowPart(a.available_until)}`}
+                        {[
+                          `מורה־AI: ${TUTOR_MODE_LABELS[a.tutor_mode]}`,
+                          a.max_attempts == null
+                            ? "ניסיונות ללא הגבלה"
+                            : `${a.max_attempts} ניסיונות`,
+                          a.available_from
+                            ? `מ־${formatWindowPart(a.available_from)}`
+                            : null,
+                          a.available_until
+                            ? `עד ${formatWindowPart(a.available_until)}`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </p>
-                    )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <IconButton
+                        name={a.published ? "eyeOff" : "eye"}
+                        label={a.published ? "הסתרה מתלמידים" : "הצגה לתלמידים"}
+                        busy={busy}
+                        onClick={() => togglePublished(a.class_id, !a.published)}
+                      />
+                      <IconButton
+                        name="edit"
+                        label="עריכת ההקצאה"
+                        disabled={busy}
+                        onClick={() => setEditing(a)}
+                      />
+                      <IconButton
+                        name="trash"
+                        label="ביטול הקצאה"
+                        variant="danger"
+                        disabled={busy}
+                        onClick={() => setUnassigning(a)}
+                      />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => togglePublished(a.class_id, !a.published)}
-                    >
-                      {busy ? (
-                        <Spinner size={16} />
-                      ) : a.published ? (
-                        "הסתרה מתלמידים"
-                      ) : (
-                        "הצגה לתלמידים"
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => setEditing(a)}
-                    >
-                      עריכה
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-[var(--fg-danger)]"
-                      disabled={busy}
-                      onClick={() => unassign(a.class_id)}
-                    >
-                      ביטול הקצאה
-                    </Button>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                </li>
+              );
+            })}
+          </ul>
+          <Pager {...paged} label="ניווט בין הקצאות" />
+        </>
       )}
 
       <BulkAssignModal
@@ -181,6 +200,32 @@ export function AllocationsSection({
         onClose={() => setBulkOpen(false)}
         onAssigned={() => router.refresh()}
       />
+
+      <Modal
+        open={unassigning !== null}
+        title="ביטול הקצאה"
+        onClose={() => {
+          if (pending === null) setUnassigning(null);
+        }}
+      >
+        <p className="text-sm text-[var(--body)]">
+          לבטל את ההקצאה של החידון ל{unassigning?.class_name}? התלמידים לא יראו
+          אותו יותר. תשובות ונתוני אנליטיקה של תלמידים שכבר פתרו אותו יישמרו.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setUnassigning(null)}
+            disabled={pending !== null}
+          >
+            השארת ההקצאה
+          </Button>
+          <Button variant="danger" onClick={confirmUnassign} disabled={pending !== null}>
+            {pending !== null && <Spinner size={16} />}
+            ביטול הקצאה
+          </Button>
+        </div>
+      </Modal>
 
       <EditAllocationModal
         allocation={editing}

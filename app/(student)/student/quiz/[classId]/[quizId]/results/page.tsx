@@ -12,22 +12,36 @@ import {
 } from "@/lib/attempts";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Icon } from "@/components/ui/Icon";
+import { BackLink } from "@/components/ui/BackLink";
 import { ReviewList, type ReviewItem } from "@/components/student/ReviewList";
+import { gradeOf } from "@/components/student/grade";
 
+/**
+ * The score, presented the way a student reads a score: a grade out of 100,
+ * with the raw "how many did I get right" underneath it. `gradeOf` returns null
+ * only when the attempt recorded no questions, and then there is no grade to
+ * claim.
+ */
 function ScoreHeader({ correct, total }: { correct: number; total: number }) {
-  const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
+  const grade = gradeOf(correct, total);
   return (
-    <GlassCard className="flex flex-col items-center gap-2 text-center">
-      <span className="grid h-16 w-16 place-items-center rounded-full bg-[var(--brand-softer)]">
-        <Icon name="check" size={28} label="ציון" className="text-[var(--fg-brand)]" />
-      </span>
+    <GlassCard className="flex flex-col items-center gap-3 text-center">
       <h1 className="text-2xl font-bold">הסיכום שלך</h1>
-      <p className="text-lg text-[var(--body)]">
-        ענית נכון על{" "}
-        <b className="text-[var(--heading)]">
-          {correct}/{total}
-        </b>{" "}
-        שאלות ({pct}%)
+      {grade != null ? (
+        <p className="flex flex-col items-center leading-none">
+          <span className="text-xs font-medium uppercase tracking-wide text-[var(--body-subtle)]">
+            ציון
+          </span>
+          <span className="mt-1.5 text-6xl font-bold text-[var(--heading)]">{grade}</span>
+          <span className="mt-2 text-xs text-[var(--body-subtle)]">מתוך 100</span>
+        </p>
+      ) : (
+        <span className="grid h-14 w-14 place-items-center rounded-full bg-[var(--brand-softer)]">
+          <Icon name="check" size={26} label="הושלם" className="text-[var(--fg-brand)]" />
+        </span>
+      )}
+      <p className="text-sm text-[var(--body)]">
+        ענית נכון על {correct} מתוך {total} שאלות
       </p>
     </GlassCard>
   );
@@ -43,7 +57,10 @@ export default async function ResultsPage({
   const playerHref = `/student/quiz/${classId}/${quizId}`;
 
   const wrap = (children: React.ReactNode) => (
-    <div className="mx-auto flex max-w-2xl flex-col gap-5 py-6">{children}</div>
+    <div className="mx-auto flex max-w-2xl flex-col gap-5 py-6">
+      <BackLink href="/student" label="הפיד שלי" />
+      {children}
+    </div>
   );
 
   // The common path: the allocation is (or was recently) live, so the full

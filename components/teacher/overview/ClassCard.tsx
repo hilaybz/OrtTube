@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Icon } from "@/components/ui/Icon";
-import { pct, type ClassSummary } from "./aggregate";
+import { classAnalyticsHref } from "@/components/teacher/analyticsLinks";
+import type { ClassSummary } from "./aggregate";
 
 /** One labelled metric inside a class card. */
 function Metric({ label, value }: { label: string; value: string | number }) {
@@ -16,13 +17,15 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 }
 
 /**
- * A glass card summarising one class — name, roster size, assigned-quiz count,
- * and completion-weighted average score — linking to the class analytics page.
+ * A glass card summarising one class — name, roster size, assigned-quiz count
+ * and completions — linking to that class's view in the analytics hub. No
+ * average grade: a single cross-quiz mean flattens exactly the differences a
+ * teacher opens analytics to see.
  */
 export function ClassCard({ summary }: { summary: ClassSummary }) {
   return (
     <Link
-      href={`/dashboard/analytics/${summary.id}`}
+      href={classAnalyticsHref(summary.id)}
       className="group block focus-visible:outline-none"
     >
       <GlassCard interactive className="flex h-full flex-col gap-4">
@@ -36,7 +39,7 @@ export function ClassCard({ summary }: { summary: ClassSummary }) {
         <div className="grid grid-cols-3 gap-3">
           <Metric label="תלמידים" value={summary.memberCount} />
           <Metric label="חידונים" value={summary.assignedCount} />
-          <Metric label="ציון ממוצע" value={pct(summary.avgScore)} />
+          <Metric label="השלמות" value={summary.completions} />
         </div>
 
         <span className="mt-auto text-sm font-medium text-[var(--fg-brand)]">
