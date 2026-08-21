@@ -38,16 +38,21 @@ const EXIT_TIMEOUT_MS = 15_000;
 const CONNECT_TIMEOUT_MS = 5_000;
 
 /**
- * After a sweep in which no exit answered, stop sweeping for this long and try
- * only the preferred exit.
+ * After a sweep in which no exit answered, stop sweeping that ENDPOINT for this
+ * long and try only the preferred exit.
  *
  * Two situations produce a fully-refused sweep, and they are indistinguishable
- * from inside: the pool is burned, or the video is genuinely login-gated
- * (age-restricted, private, members-only), where every IP on earth returns
- * LOGIN_REQUIRED. Telling them apart requires sweeping the whole pool, so the
- * first sweep pays for it — but a teacher retrying an age-gated video must not
- * re-sweep ten exits at ~1.2MB each, three times over (scrape, duration, and
- * the package's own web fallback), on metered bandwidth.
+ * from inside: the pool is burned, or the resource is genuinely gated — an
+ * age-restricted video returns LOGIN_REQUIRED from every IP on earth, and
+ * YouTube walls `api/timedtext` on datacenter IPs while serving the watch page
+ * and the player endpoint from the very same address. Telling them apart
+ * requires sweeping, so the first sweep pays for it.
+ *
+ * Keyed per host+path, NOT globally: a single counter is cleared by the next
+ * success anywhere, and since the endpoints that work are interleaved with the
+ * one that doesn't, that reset it before it could ever apply. Observed in
+ * production as two full 10-exit sweeps of `api/timedtext` inside one attempt —
+ * 20 requests, every one of them a bot wall.
  */
 const SWEEP_COOLDOWN_MS = 60_000;
 
@@ -75,8 +80,18 @@ let poolSource: string | undefined;
  */
 let preferred = 0;
 
-/** Epoch ms until which a full sweep is suppressed; 0 when not cooling down. */
-let sweepSuppressedUntil = 0;
+/** endpoint (`host/path`) → epoch ms until which a full sweep is suppressed. */
+const sweepSuppressedUntil = new Map<string, number>();
+
+/** Cooldowns are per-endpoint, so the key ignores the query string. */
+function endpointKey(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.host}${u.pathname}`;
+  } catch {
+    return url;
+  }
+}
 
 /**
  * Accepts both `http://user:pass@host:port` and the `host:port:user:pass` form
@@ -132,7 +147,7 @@ function proxies(): Exit[] {
   pool = built;
   poolSource = configured;
   preferred = 0;
-  sweepSuppressedUntil = 0;
+  sweepSuppressedUntil.clear();
   return pool;
 }
 
@@ -211,9 +226,11 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
       throw new Error("proxiedFetch: only string bodies are supported.");
     }
     const url = String(input);
+    const key = endpointKey(url);
 
-    // Cooling down after a fully-refused sweep: try the preferred exit only.
-    const cooling = Date.now() < sweepSuppressedUntil;
+    // Cooling down after a fully-refused sweep of THIS endpoint: try the
+    // preferred exit only.
+    const cooling = Date.now() < (sweepSuppressedUntil.get(key) ?? 0);
     const attempts = cooling ? 1 : exits.length;
 
     const notes: string[] = [];
@@ -248,7 +265,7 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
         );
         if (!refused(res.status, body)) {
           preferred = index;
-          sweepSuppressedUntil = 0;
+          sweepSuppressedUntil.delete(key);
           if (trace && notes.length) {
             trace.push(`egress → ${notes.join(", ")}, ${label} ok`);
           }
@@ -262,9 +279,9 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
       }
     }
 
-    // Nothing answered. Suppress the next sweep so a retry on a login-gated
-    // video (or a burned pool) costs one request instead of another full pass.
-    if (!cooling) sweepSuppressedUntil = Date.now() + SWEEP_COOLDOWN_MS;
+    // Nothing answered. Suppress the next sweep of this endpoint so a retry
+    // costs one request instead of another full pass.
+    if (!cooling) sweepSuppressedUntil.set(key, Date.now() + SWEEP_COOLDOWN_MS);
     if (trace) {
       trace.push(
         `egress → ${cooling ? "cooldown, " : ""}no exit answered: ${notes.join(", ")}`

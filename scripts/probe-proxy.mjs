@@ -147,9 +147,15 @@ async function probeWatchPage(dispatcher) {
 }
 
 /**
- * Step 3 — the InnerTube POST. THE verdict that matters: since the dead
- * `api/timedtext` path was deleted (852b3d0), this is the only route that
- * actually downloads a transcript in production.
+ * Step 3 — the InnerTube POST, which returns the caption track list.
+ *
+ * NOTE this is metadata, not captions. An exit can pass here and still be
+ * unable to fetch a single subtitle — see `probeCaptionDownload`, which is the
+ * step that actually decides whether a proxy is usable. Treating this as the
+ * verdict is exactly the mistake that made an earlier run of this script report
+ * a pool as working when no transcript could be downloaded through any of it.
+ *
+ * Returns the winning track's `baseUrl` so the download step can use it.
  */
 async function probeInnerTube(dispatcher) {
   try {
@@ -166,11 +172,46 @@ async function probeInnerTube(dispatcher) {
     const playability = text.match(/"playabilityStatus":\{[^}]*"status":"([A-Z_]+)"/)?.[1] ?? null;
     const trackCount = (text.match(/"baseUrl":"https:\/\/www\.youtube\.com\/api\/timedtext/g) ?? [])
       .length;
+    const captionUrl = text
+      .match(/"baseUrl":"(https:\/\/www\.youtube\.com\/api\/timedtext[^"]+)"/)?.[1]
+      ?.replace(/\\u0026/g, "&")
+      .replace(/\\\//g, "/");
     if (!playability) return { verdict: "no playabilityStatus", ok: false };
     return {
+      captionUrl,
       verdict: `${playability}, ${trackCount} tracks`,
       ok: playability === "OK" && trackCount > 0,
     };
+  } catch (e) {
+    return { verdict: e instanceof Error ? e.name : "error", ok: false };
+  }
+}
+
+/**
+ * Step 4 — actually download a subtitle track. THE verdict.
+ *
+ * Everything before this returns metadata, and YouTube gates `api/timedtext`
+ * far more strictly than the pages that describe it: a datacenter IP is served
+ * the watch page and the player response happily, then handed Google's "your
+ * computer or network may be sending automated queries" interstitial the moment
+ * it asks for the captions themselves. A proxy that passes steps 2 and 3 and
+ * fails here is useless for transcripts, so nothing else may be called PASS.
+ */
+async function probeCaptionDownload(dispatcher, captionUrl) {
+  if (!captionUrl) return { verdict: "no track url", ok: false };
+  try {
+    const { status, text } = await request(captionUrl, {
+      dispatcher,
+      headers: BROWSER_HEADERS,
+    });
+    if (status !== 200) {
+      const bot = /sending automated queries/i.test(text);
+      return { verdict: `HTTP ${status}${bot ? " bot-wall" : ""}`, ok: false };
+    }
+    // The dead watch-page path answered 200 with an empty body; a real track is
+    // kilobytes of markup. Size is what separates them.
+    if (text.length < 200) return { verdict: `empty 200`, ok: false };
+    return { verdict: `${text.length} bytes`, ok: true };
   } catch (e) {
     return { verdict: e instanceof Error ? e.name : "error", ok: false };
   }
@@ -182,21 +223,35 @@ async function probe(label, dispatcher) {
   // about whether the bot check would have let us through. Kept strictly
   // distinct from BLOCKED so a broken proxy can't be misread as evidence that
   // proxying doesn't work.
-  if (error) return { label, ip: null, watch: "—", inner: "—", state: "UNREACHABLE", error };
+  if (error) {
+    return { label, ip: null, watch: "—", inner: "—", captions: "—", state: "UNREACHABLE", error };
+  }
   const watch = await probeWatchPage(dispatcher);
   const inner = await probeInnerTube(dispatcher);
+  const captions = await probeCaptionDownload(dispatcher, inner.captionUrl);
   return {
     label,
     ip,
     watch: watch.verdict,
     inner: inner.verdict,
-    state: inner.ok ? "PASS" : "BLOCKED",
+    captions: captions.verdict,
+    // Only a real subtitle download counts. Passing the metadata steps and
+    // failing here is the exact shape that made an earlier run declare a pool
+    // usable when not one transcript could be fetched through it.
+    state: captions.ok ? "PASS" : "BLOCKED",
   };
 }
 
 function table(rows) {
-  const cols = ["label", "ip", "watch", "inner", "state"];
-  const head = { label: "ROUTE", ip: "EXIT IP", watch: "WATCH PAGE", inner: "INNERTUBE", state: "" };
+  const cols = ["label", "ip", "watch", "inner", "captions", "state"];
+  const head = {
+    label: "ROUTE",
+    ip: "EXIT IP",
+    watch: "WATCH PAGE",
+    inner: "INNERTUBE",
+    captions: "CAPTION DOWNLOAD",
+    state: "",
+  };
   const width = Object.fromEntries(
     cols.map((c) => [c, Math.max(...[head, ...rows].map((r) => String(r[c] ?? "—").length))])
   );

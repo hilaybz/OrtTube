@@ -26,7 +26,7 @@ production.** Everything else in this backlog assumes videos can be added.
 | --- | --- | --- |
 | 0.1 | ~~Switch the primary caption path to InnerTube ANDROID.~~ **Done / moot** — `852b3d0`. The package already used ANDROID InnerTube; the dead watch-page download is deleted. | ✅ |
 | 0.2 | ~~Re-probe Vercel.~~ **Answered: blocked.** `not_playable:LOGIN_REQUIRED` from a preview deployment. Not free after all. | ✅ |
-| 0.3 | ~~Paid egress behind the `fetchFreshTranscript` seam.~~ **Done, and free.** Proxy pool in `lib/egress.ts`; the free tier turned out to be enough. See below. | ✅ |
+| 0.3 | **Still open.** Proxy pool shipped (`lib/egress.ts`) and fixes `duration_seconds`, but 0/10 free datacenter exits can download a caption — YouTube walls `api/timedtext` specifically. Residential egress required. | ❓ |
 | 0.4 | Verify the no-transcript experience end to end (below). Tutor behaviour decided; blocked on 0.5. | ❓ |
 | 0.5 | Make "has no transcript" a property of the quiz rather than of request timing. Blocks 0.4 and, until settled, makes tutor availability differ between students in the same class. | ❓ |
 
@@ -63,7 +63,37 @@ it is null in production too. Titles come from oEmbed and appear unaffected.
 
 Issues #7 and #8 are closed with this evidence; #9 carries the path forward.
 
-### Resolved 2026-08-20 — 0.3 shipped, and it cost nothing
+### Corrected 2026-08-21 — the free tier does NOT work; residential is required
+
+The section below was written after measuring the watch page and the InnerTube
+player endpoint. **Both are metadata.** Neither downloads a caption, and the
+probe that produced "3 of 10 pass" never once fetched `api/timedtext` — the
+endpoint that actually returns subtitles. Verified from production and then
+reproduced locally against all ten exits:
+
+| Request | Datacenter proxy | Residential |
+| --- | --- | --- |
+| `GET /watch` | 200, lists tracks | 200 |
+| `POST youtubei/v1/player` | 200, lists tracks | 200 |
+| `GET api/timedtext` | **429, Google "automated queries" wall** | **200, 25,710 bytes** |
+
+**0 of 10 free datacenter proxies can download a transcript.** YouTube gates the
+caption endpoint far harder than the pages describing it, so an exit sails
+through discovery and is walled at the download. That is why production got as
+far as `scrape → playability=OK tracks=1 [iw:asr]` and still returned
+`tracks_undownloadable`.
+
+What the proxy pool DID fix, and is worth keeping: `duration_seconds` and
+`playabilityStatus` both come off the watch page, which datacenter exits serve.
+Those work in production now. Transcripts do not.
+
+**0.3 is therefore still open**, and the original prediction — paid residential
+egress (~$3.50/mo) — stands, now with a precise reason: it is needed for
+`api/timedtext` specifically, not for the watch page. `scripts/probe-proxy.mjs`
+now downloads a real subtitle track before calling any exit PASS, so it cannot
+repeat this error.
+
+### Superseded 2026-08-20 — "0.3 shipped, and it cost nothing"
 
 The assumption baked into 0.3 was that **datacenter** proxies would be refused
 exactly like Vercel's, so only residential egress could work. Measured against

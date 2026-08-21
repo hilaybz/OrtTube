@@ -303,6 +303,30 @@ describe("sweep cooldown", () => {
     // One probe, not another full pass.
     expect(undiciFetch).toHaveBeenCalledTimes(4);
   });
+
+  it("is per-endpoint, so a working endpoint cannot clear a walled one's cooldown", async () => {
+    // Observed in production: YouTube serves the watch page from a datacenter
+    // IP but walls api/timedtext from the same address. With a single global
+    // cooldown, the watch-page success reset it before it could ever apply, and
+    // one attempt made TWO full 10-exit sweeps of timedtext — 20 bot walls.
+    undiciFetch.mockImplementation(async (url: string) =>
+      url.includes("timedtext") ? reply("nope", 429) : reply(GOOD)
+    );
+    const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p,3.3.3.3:3:u:p");
+
+    await proxiedFetch("https://www.youtube.com/api/timedtext?v=x");
+    expect(undiciFetch).toHaveBeenCalledTimes(3); // full sweep, all refused
+
+    // A different endpoint succeeds in between — this must NOT reset the
+    // timedtext cooldown.
+    await proxiedFetch("https://www.youtube.com/watch?v=x");
+    expect(undiciFetch).toHaveBeenCalledTimes(4);
+
+    await proxiedFetch("https://www.youtube.com/api/timedtext?v=x");
+
+    // One probe, not another sweep: 4 + 1, not 4 + 3.
+    expect(undiciFetch).toHaveBeenCalledTimes(5);
+  });
 });
 
 describe("trace", () => {
