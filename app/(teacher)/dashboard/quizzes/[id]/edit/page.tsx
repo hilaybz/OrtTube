@@ -7,6 +7,7 @@ import { listQuizAllocations, type QuizAllocation } from "@/lib/allocations";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { QuizEditor } from "@/components/teacher/editor/QuizEditor";
+import { TranscriptWarmer } from "@/components/TranscriptWarmer";
 
 /**
  * Quiz editor: reads the full editable tree via the owner-checked
@@ -83,6 +84,9 @@ export default async function EditQuizPage({
   return (
     <div className="mx-auto max-w-4xl py-2">
       {backLink}
+      {/* Warm the transcript now so "generate with AI" has it ready rather than
+          starting a cold fetch while the teacher waits on a spinner. */}
+      <TranscriptWarmer quizId={id} />
       <QuizEditor initial={quiz} classes={classes} allocations={allocations} />
     </div>
   );
