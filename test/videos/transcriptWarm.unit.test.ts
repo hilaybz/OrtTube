@@ -9,7 +9,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const getTranscript = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/transcriptCache", () => ({ getTranscript }));
+const releaseClaim = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/transcriptCache", () => ({ getTranscript, releaseClaim }));
 vi.mock("@/lib/supabase/service", () => ({ createServiceClient: () => ({}) }));
 
 const getUser = vi.hoisted(() => vi.fn());
@@ -41,6 +42,7 @@ beforeEach(() => {
   from.mockReset();
   rpc.mockReset();
   getTranscript.mockReset().mockResolvedValue({ segments: [{ text: "hi" }] });
+  releaseClaim.mockReset().mockResolvedValue(undefined);
 });
 
 describe("authorization", () => {
@@ -162,10 +164,37 @@ describe("fetch behaviour", () => {
     expect(await res.json()).toEqual({ status: "pending" });
   });
 
+  it("releases the claim when warming fails, so it cannot block generate", async () => {
+    // Observed in production: the editor warmed on open, the warm failed, and
+    // its claim then refused the teacher's own "generate" seconds later with
+    // "another attempt holds the claim". A background nicety must never
+    // outrank an explicit human action.
+    getTranscript.mockResolvedValue(null);
+
+    await call();
+
+    expect(releaseClaim).toHaveBeenCalledWith({}, "yt-abc");
+  });
+
+  it("keeps the claim when warming succeeded — nothing to unblock", async () => {
+    getTranscript.mockResolvedValue({ segments: [{ text: "hi" }] });
+    await call();
+    expect(releaseClaim).not.toHaveBeenCalled();
+  });
+
+  it("keeps the claim on a confirmed no-captions verdict", async () => {
+    // That verdict is recorded on the row and worth throttling behind; it is a
+    // real answer rather than a failure to get one.
+    getTranscript.mockResolvedValue({ segments: [] });
+    await call();
+    expect(releaseClaim).not.toHaveBeenCalled();
+  });
+
   it("swallows a thrown fetch — warming must never break the page", async () => {
     getTranscript.mockRejectedValue(new Error("upstream exploded"));
     const res = await call();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: "pending" });
+    expect(releaseClaim).toHaveBeenCalled();
   });
 });

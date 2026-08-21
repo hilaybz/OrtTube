@@ -1,4 +1,5 @@
 import type { AllocationState } from "@/lib/allocationState";
+import { formatDateTime } from "@/lib/datetime";
 
 /**
  * Scheduling-window display helpers, shared by the two places an allocation's
@@ -22,15 +23,16 @@ export const STATE_VARIANT: Record<AllocationState, "warning" | "gray" | "succes
   done: "gray",
 };
 
-/** "D.M HH:mm" for a window bound, in the viewer's local time. */
+/**
+ * "D.M HH:mm" for a window bound, in Israeli time.
+ *
+ * Pinned rather than local: this renders on the server (UTC) and again on the
+ * client, and the two must agree or React discards the tree with a hydration
+ * error. See `lib/datetime.ts`.
+ */
 export function formatWindowPart(iso: string | null): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleString("he-IL", {
-    day: "numeric",
-    month: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(iso);
 }
 
 /** ISO timestamp (or null) → datetime-local input value ("" when null/invalid). */

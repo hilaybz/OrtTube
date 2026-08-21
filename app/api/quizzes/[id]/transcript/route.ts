@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { getTranscript } from "@/lib/transcriptCache";
+import { getTranscript, releaseClaim } from "@/lib/transcriptCache";
 
 /**
  * POST /api/quizzes/[id]/transcript  — warm the transcript cache.
@@ -141,10 +141,17 @@ async function warm(youtubeVideoId: string): Promise<"ready" | "unavailable" | "
     // No segments covers both "confirmed no captions" and "could not read them
     // this time". The caller only needs to know it is not usable yet; the
     // distinction is already recorded on the video row and logged with a trace.
-    return transcript ? "unavailable" : "pending";
+    if (transcript) return "unavailable";
+    // Nothing usable, and the attempt may have left the single-flight claim
+    // held. Release it: otherwise this page-open refuses the teacher's own
+    // "generate" moments later with "another attempt holds the claim", so the
+    // feature meant to remove a wait becomes the reason for a failure.
+    await releaseClaim(service, youtubeVideoId);
+    return "pending";
   } catch {
     // Warming is best-effort by definition. A failure here must never surface
     // to a teacher opening the editor or a student opening a quiz.
+    await releaseClaim(service, youtubeVideoId).catch(() => {});
     return "pending";
   }
 }

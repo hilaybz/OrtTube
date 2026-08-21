@@ -5,6 +5,7 @@ import { Icon } from "@/components/ui/Icon";
 import type { StudentFeedItem } from "@/lib/classes";
 import { feedHeading } from "@/lib/studentFeedFilters";
 import { quizDurationMinutes } from "@/lib/quizDuration";
+import { formatDate, formatTime, isToday } from "@/lib/datetime";
 
 /**
  * "עד 18:00 · היום" for a deadline later today, otherwise "עד 18:00 · 14.3".
@@ -12,19 +13,14 @@ import { quizDurationMinutes } from "@/lib/quizDuration";
  * so no "overdue" wording is needed here — a closed one is `formatClosedDate`.
  */
 function formatDueDate(iso: string): string {
-  const due = new Date(iso);
-  const now = new Date();
-  const time = due.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
-  if (due.toDateString() === now.toDateString()) return `עד ${time} · היום`;
-  const date = due.toLocaleDateString("he-IL", { day: "numeric", month: "numeric" });
-  return `עד ${time} · ${date}`;
+  const time = formatTime(iso);
+  if (isToday(iso)) return `עד ${time} · היום`;
+  return `עד ${time} · ${formatDate(iso)}`;
 }
 
 /** Past-tense sibling of `formatDueDate`, for a `missed` card's closed window. */
 function formatClosedDate(iso: string): string {
-  const closed = new Date(iso);
-  const date = closed.toLocaleDateString("he-IL", { day: "numeric", month: "numeric" });
-  return `הסתיים ב-${date}`;
+  return `הסתיים ב-${formatDate(iso)}`;
 }
 
 export function attemptsNote(item: StudentFeedItem): string {

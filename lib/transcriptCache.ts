@@ -212,6 +212,29 @@ async function markUnavailable(client: SupabaseClient, youtubeId: string): Promi
 // `markUnavailable` clear it as part of recording their verdict.)
 
 /**
+ * Drops the single-flight claim so the next caller may fetch immediately.
+ *
+ * Exists for **opportunistic warming only**, and exists because warming
+ * otherwise sabotages the thing it was built to help: the editor page warms on
+ * open, the warm fails, and its claim then refuses the teacher's own "generate"
+ * seconds later with "another attempt holds the claim". A background nicety must
+ * never outrank an explicit human action.
+ *
+ * Deliberately NOT called on a real fetch failure. There the marker is the
+ * throttle that stops the AI tutor re-hitting a blocked upstream on every
+ * student question, which is the behaviour it was introduced for.
+ */
+export async function releaseClaim(
+  client: SupabaseClient,
+  youtubeId: string
+): Promise<void> {
+  await client
+    .from("videos")
+    .update({ transcript_fetch_started_at: null })
+    .eq("youtube_video_id", youtubeId);
+}
+
+/**
  * Returns the cached transcript for a canonical video, re-fetching from YouTube
  * when the Storage object is missing or `videos.fetched_at` is older than the
  * ~30-day TTL.
