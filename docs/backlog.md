@@ -26,7 +26,7 @@ production.** Everything else in this backlog assumes videos can be added.
 | --- | --- | --- |
 | 0.1 | ~~Switch the primary caption path to InnerTube ANDROID.~~ **Done / moot** — `852b3d0`. The package already used ANDROID InnerTube; the dead watch-page download is deleted. | ✅ |
 | 0.2 | ~~Re-probe Vercel.~~ **Answered: blocked.** `not_playable:LOGIN_REQUIRED` from a preview deployment. Not free after all. | ✅ |
-| 0.3 | **Still open.** Proxy pool shipped (`lib/egress.ts`) and fixes `duration_seconds`, but 0/10 free datacenter exits can download a caption — YouTube walls `api/timedtext` specifically. Residential egress required. | ❓ |
+| 0.3 | ~~Adopt a paid fetch path.~~ **Done** — rotating residential egress via `lib/egress.ts`. The watch-page scrape went with it; two proxied requests per video now. See below. | ✅ |
 | 0.4 | Verify the no-transcript experience end to end (below). Tutor behaviour decided; blocked on 0.5. | ❓ |
 | 0.5 | Make "has no transcript" a property of the quiz rather than of request timing. Blocks 0.4 and, until settled, makes tutor availability differ between students in the same class. | ❓ |
 
@@ -63,7 +63,41 @@ it is null in production too. Titles come from oEmbed and appear unaffected.
 
 Issues #7 and #8 are closed with this evidence; #9 carries the path forward.
 
-### Corrected 2026-08-21 — the free tier does NOT work; residential is required
+### Resolved 2026-08-21 — rotating residential, and the watch page is gone
+
+Webshare **rotating residential** clears the wall. Measured end to end through
+the real modules, not a replica: `2NnfemvbjhQ` → 110 segments, `tvyOITo5iOk` →
+176 (matching 0.2's residential baseline exactly), `aircAruvnKk` → 225 from the
+human Hebrew track among its 31. `duration_seconds` populates again.
+
+**The watch page was removed in the same pass.** It cost ~1,197 KB to supply
+10.4 KB of fields — 63% of it is the YouTube web app's own HTML/CSS/JS and 32%
+is the recommendations sidebar — it was fetched *twice* per video, and it was
+the least reliable request we made (3/5 on residential, against 8/8 for the
+player endpoint that carries the identical `playabilityStatus`, track list and
+`lengthSeconds`). A video now costs **two proxied requests, ~337 KB**, down from
+~2,549 KB plus retries. At ~300 new videos/month that is ~101 MB against a 1 GB
+plan, versus ~1.25 GB before — i.e. it would not have fit.
+
+Three findings worth keeping, each of which had to be measured because the
+obvious assumption was wrong:
+
+- **Only `api/timedtext` needs residential.** Datacenter exits are served the
+  watch page and the player response perfectly well and are refused *only* at
+  the download. A probe that checks metadata endpoints will report a pool as
+  working when not one transcript can be fetched through it — which is exactly
+  what happened here, and why `probe-proxy.mjs` now downloads a real subtitle
+  track before calling anything usable.
+- **undici pins one exit IP per `ProxyAgent` for its lifetime.** Four requests
+  through one agent all left from the same address; closing and rebuilding drew
+  a new one. So a *rotating* endpoint only rotates if the burned agent is thrown
+  away — `lib/egress.ts` does that on every refusal. Without it a rotating proxy
+  degrades into a sticky one and burns like the datacenter IPs did.
+- **A dashboard's `USER-gb-1` style credential is a sticky session**, not a
+  proxy. It returns the same IP across freshly-built agents. Rotation needs the
+  `-rotate` suffix.
+
+### Superseded 2026-08-21 — "the free tier does NOT work; residential is required"
 
 The section below was written after measuring the watch page and the InnerTube
 player endpoint. **Both are metadata.** Neither downloads a caption, and the

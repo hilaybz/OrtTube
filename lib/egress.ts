@@ -67,6 +67,8 @@ interface Exit {
   agent: ProxyAgent;
   /** `host:port` — never the credentials. */
   label: string;
+  /** Kept so a burned agent can be rebuilt; see `replaceAgent`. */
+  uri: string;
 }
 
 let pool: Exit[] | null = null;
@@ -112,6 +114,41 @@ export function normalizeProxyUrl(raw: string): string | null {
   return null;
 }
 
+function newAgent(uri: string): ProxyAgent {
+  return new ProxyAgent({
+    uri,
+    connectTimeout: CONNECT_TIMEOUT_MS,
+    headersTimeout: EXIT_TIMEOUT_MS,
+    bodyTimeout: EXIT_TIMEOUT_MS,
+  });
+}
+
+/**
+ * Throws away a burned exit's agent and builds a fresh one in its place, so the
+ * NEXT request through this slot leaves from a different IP.
+ *
+ * This is what makes a rotating proxy actually rotate. Measured: undici keeps
+ * the CONNECT tunnel alive, so one `ProxyAgent` holds the same exit IP for its
+ * entire life — four requests through one agent all left from 105.97.147.80.
+ * Closing and rebuilding drew a new IP (88.166.252.226). Without this a
+ * "rotating" endpoint behaves as a sticky one and burns exactly the way the
+ * fixed datacenter IPs did.
+ *
+ * Harmless for a static proxy: it just opens a new connection to the same IP.
+ */
+function replaceAgent(exit: Exit): void {
+  const old = exit.agent;
+  try {
+    exit.agent = newAgent(exit.uri);
+  } catch {
+    // Keep the old agent rather than leaving the slot without one.
+    return;
+  }
+  // Not awaited: the caller is mid-sweep and the old agent's sockets are of no
+  // further interest. Rejections are ignored for the same reason.
+  void old.close().catch(() => {});
+}
+
 function proxies(): Exit[] {
   const configured = process.env.YOUTUBE_PROXY_URLS ?? "";
   if (pool !== null && poolSource === configured) return pool;
@@ -127,14 +164,10 @@ function proxies(): Exit[] {
     try {
       const parsed = new URL(uri);
       built.push({
-        agent: new ProxyAgent({
-          uri,
-          connectTimeout: CONNECT_TIMEOUT_MS,
-          headersTimeout: EXIT_TIMEOUT_MS,
-          bodyTimeout: EXIT_TIMEOUT_MS,
-        }),
+        agent: newAgent(uri),
         // Host and port only: credentials must never reach a log or a trace.
         label: `${parsed.hostname}:${parsed.port}`,
+        uri,
       });
     } catch {
       // Unusable entry; the remaining exits still stand.
@@ -272,9 +305,15 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
           return rebuilt;
         }
         notes.push(`${label} refused(${res.status})`);
+        // This IP is walled. Retire it so the next request through this slot
+        // leaves from a different one.
+        replaceAgent(exits[index]);
         lastResponse = rebuilt;
       } catch (e) {
         notes.push(`${label} ${describeCause(e)}`);
+        // Same for a transport failure: the tunnel is no good, and holding onto
+        // it would keep every later attempt on the same dead route.
+        replaceAgent(exits[index]);
         lastError = e;
       }
     }

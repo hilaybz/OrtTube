@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const undiciFetch = vi.hoisted(() => vi.fn());
 const proxyAgentCtor = vi.hoisted(() => vi.fn());
+const agentClosed = vi.hoisted(() => vi.fn());
 
 /**
  * The fake agent keeps its own `uri`, so a test can tell WHICH exit a request
@@ -40,6 +41,9 @@ vi.mock("undici", () => ({
         throw new Error(`InvalidArgumentError: unsupported proxy protocol ${parsed.protocol}`);
       }
       proxyAgentCtor(this.uri);
+    }
+    async close() {
+      agentClosed(this.uri);
     }
   },
 }));
@@ -73,6 +77,7 @@ async function loadEgress(proxies?: string) {
 beforeEach(() => {
   undiciFetch.mockReset();
   proxyAgentCtor.mockReset();
+  agentClosed.mockReset();
 });
 
 afterEach(() => {
@@ -183,6 +188,46 @@ describe("fallthrough", () => {
     await expect(proxiedFetch("https://www.youtube.com/watch?v=x")).rejects.toThrow(
       "fetch failed"
     );
+  });
+});
+
+describe("self-healing exits", () => {
+  it("retires a refused exit's agent so the next request gets a fresh IP", async () => {
+    // undici pins one exit IP per ProxyAgent for its whole life (measured: four
+    // requests through one agent all left from the same address). A rotating
+    // proxy therefore only rotates if the burned agent is thrown away.
+    undiciFetch.mockResolvedValue(reply(BOT_CHECK));
+    const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
+
+    // The pool is built lazily, so nothing exists until the first request.
+    await proxiedFetch("https://www.youtube.com/watch?v=x");
+
+    expect(agentClosed).toHaveBeenCalledTimes(1);
+    // Two constructions: the original, then its replacement for the same slot.
+    expect(proxyAgentCtor).toHaveBeenCalledTimes(2);
+    expect(proxyAgentCtor).toHaveBeenLastCalledWith("http://u:p@1.1.1.1:1");
+  });
+
+  it("retires an exit that threw, not only one that was refused", async () => {
+    // A dead tunnel would otherwise be retried for the life of the instance.
+    undiciFetch.mockRejectedValue(new TypeError("fetch failed"));
+    const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
+
+    await expect(proxiedFetch("https://www.youtube.com/watch?v=x")).rejects.toThrow();
+
+    expect(agentClosed).toHaveBeenCalledTimes(1);
+    expect(proxyAgentCtor).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves a working exit's agent alone", async () => {
+    // Rebuilding on success would throw away connection reuse for nothing.
+    undiciFetch.mockResolvedValue(reply(GOOD));
+    const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
+
+    await proxiedFetch("https://www.youtube.com/watch?v=x");
+
+    expect(agentClosed).not.toHaveBeenCalled();
+    expect(proxyAgentCtor).toHaveBeenCalledTimes(1);
   });
 });
 

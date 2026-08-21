@@ -336,17 +336,20 @@ async function main() {
     process.exitCode = 1;
   } else if (passing === conclusive) {
     console.log(
-      `\n✓ All ${conclusive} reachable proxies defeated the bot check. The free tier is enough — wire it in.`
+      `\n✓ All ${conclusive} reachable exits downloaded real captions. This pool works.`
     );
   } else if (passing > 0) {
     console.log(
-      `\n~ ${passing}/${conclusive} reachable proxies passed. The pool is partially burned, so an\n` +
-        "  integration would need health-checking and rotation, not a single fixed proxy."
+      `\n~ ${passing}/${conclusive} reachable exits downloaded captions. Partially burned — usable\n` +
+        "  only because a refused exit falls through to the next one. Listing a rotating\n" +
+        "  endpoint several times raises the odds; a fixed list this thin does not."
     );
   } else {
     console.log(
-      `\n✗ All ${conclusive} reachable proxies were bot-checked, same as Vercel. Datacenter IPs\n` +
-        "  do not clear it. The next decision is residential egress (~$3.50/mo) — now evidence-backed."
+      `\n✗ No exit could download a caption. Every one was refused at api/timedtext, which\n` +
+        "  YouTube walls far harder than the pages describing a video — so passing the WATCH\n" +
+        "  PAGE and INNERTUBE columns means nothing on its own. Datacenter IPs do not clear\n" +
+        "  it; residential does (measured)."
     );
   }
 }

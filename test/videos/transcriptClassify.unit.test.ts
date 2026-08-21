@@ -27,18 +27,23 @@ vi.mock("youtube-transcript", () => ({
   YoutubeTranscript: { fetchTranscript },
 }));
 
-/** A watch page whose inline player response is `player`. */
-function watchPage(player: unknown): string {
-  return `<!DOCTYPE html><html><body><script>
-    var ytInitialPlayerResponse = ${JSON.stringify(player)};
-  </script></body></html>`;
+/**
+ * A player response as the InnerTube endpoint returns it.
+ *
+ * These fixtures used to be watch-page HTML with the same object embedded in a
+ * `<script>` tag. The classification they drive is unchanged — only the
+ * transport is, since the ~1,197 KB scrape was replaced by the ~156 KB player
+ * call that carries the identical fields.
+ */
+function playerResponse(player: unknown): string {
+  return JSON.stringify(player);
 }
 
-/** Stub the next `fetch` with an HTML watch page. */
-function youtubeServes(html: string, status = 200): void {
+/** Stub the next `fetch` with a raw body. */
+function youtubeServes(body: string, status = 200): void {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => new Response(html, { status }))
+    vi.fn(async () => new Response(body, { status }))
   );
 }
 
@@ -64,7 +69,7 @@ afterEach(() => {
 describe("fetchFreshTranscript classification", () => {
   it("confirms 'unavailable' only for an intact, PLAYABLE page with no tracks", async () => {
     youtubeServes(
-      watchPage({ playabilityStatus: { status: "OK" }, videoDetails: {} })
+      playerResponse({ playabilityStatus: { status: "OK" }, videoDetails: {} })
     );
 
     const outcome = await fetchFreshTranscript("vid");
@@ -78,7 +83,7 @@ describe("fetchFreshTranscript classification", () => {
     // telling us it wouldn't play the video for us, so we learned nothing about
     // its captions. Treating this as confirmation is what stranded videos.
     youtubeServes(
-      watchPage({ playabilityStatus: { status: "LOGIN_REQUIRED" } })
+      playerResponse({ playabilityStatus: { status: "LOGIN_REQUIRED" } })
     );
 
     const outcome = await fetchFreshTranscript("vid");
@@ -90,7 +95,7 @@ describe("fetchFreshTranscript classification", () => {
   });
 
   it("does NOT confirm 'unavailable' when playabilityStatus is absent", async () => {
-    youtubeServes(watchPage({ videoDetails: {} }));
+    youtubeServes(playerResponse({ videoDetails: {} }));
 
     const outcome = await fetchFreshTranscript("vid");
 
@@ -141,7 +146,7 @@ describe("fetchFreshTranscript classification", () => {
 
   it("reports tracks_undownloadable when tracks exist but the download finds none", async () => {
     youtubeServes(
-      watchPage({
+      playerResponse({
         playabilityStatus: { status: "OK" },
         captions: {
           playerCaptionsTracklistRenderer: { captionTracks: [A_CAPTION_TRACK] },
@@ -169,7 +174,7 @@ describe("fetchFreshTranscript request surface", () => {
    */
   it("never requests a caption track's baseUrl", async () => {
     youtubeServes(
-      watchPage({
+      playerResponse({
         playabilityStatus: { status: "OK" },
         captions: {
           playerCaptionsTracklistRenderer: { captionTracks: [A_CAPTION_TRACK] },
@@ -183,9 +188,13 @@ describe("fetchFreshTranscript request surface", () => {
       (args) => String(args[0])
     );
     expect(requested).not.toContain(A_CAPTION_TRACK.baseUrl);
-    // The watch page is the module's ONLY direct request; the download goes
-    // through the package.
-    expect(requested).toEqual(["https://www.youtube.com/watch?v=vid"]);
+    // The player call is the module's ONLY direct request; the download goes
+    // through the package. Notably it is no longer the 1,197 KB watch page —
+    // nothing here should ever fetch /watch again.
+    expect(requested).toEqual([
+      "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+    ]);
+    expect(requested.some((u) => u.includes("/watch"))).toBe(false);
   });
 });
 
@@ -194,7 +203,7 @@ describe("fetchFreshTranscript provenance", () => {
 
   it("labels captions ASR when the scraped track for that language is ASR", async () => {
     youtubeServes(
-      watchPage({
+      playerResponse({
         playabilityStatus: { status: "OK" },
         captions: {
           playerCaptionsTracklistRenderer: {
@@ -240,9 +249,9 @@ describe("fetchFreshTranscript provenance", () => {
  * which is what these pin.
  */
 describe("fetchFreshTranscript trace", () => {
-  it("records the scrape's status and the track list it found", async () => {
+  it("records the player call's status and the track list it found", async () => {
     youtubeServes(
-      watchPage({
+      playerResponse({
         playabilityStatus: { status: "OK" },
         captions: {
           playerCaptionsTracklistRenderer: {
@@ -254,15 +263,15 @@ describe("fetchFreshTranscript trace", () => {
 
     const outcome = await fetchFreshTranscript("vid");
 
-    expect(outcome.trace).toContain("GET www.youtube.com/watch → 200");
-    expect(outcome.trace).toContain("scrape → playability=OK tracks=1 [en:asr]");
+    expect(outcome.trace).toContain("POST www.youtube.com/youtubei/v1/player → 200");
+    expect(outcome.trace).toContain("lookup → playability=OK tracks=1 [en:asr]");
   });
 
   it("keeps the download's error CLASS, not just its message", async () => {
     // The package reports a captcha wall, disabled captions and an unavailable
     // video as distinct error classes. That distinction is the sharpest diagnosis
     // available anywhere in this flow, and it used to be swallowed whole.
-    youtubeServes(watchPage({ playabilityStatus: { status: "LOGIN_REQUIRED" } }));
+    youtubeServes(playerResponse({ playabilityStatus: { status: "LOGIN_REQUIRED" } }));
     class YoutubeTranscriptTooManyRequestError extends Error {}
     fetchTranscript.mockRejectedValue(
       new YoutubeTranscriptTooManyRequestError("captcha required")
@@ -280,7 +289,7 @@ describe("fetchFreshTranscript trace", () => {
   it("records every request the download makes, which it otherwise hides", async () => {
     // The download's own requests are most of the upstream surface and the
     // package exposes none of them; only the injected fetch reaches them.
-    youtubeServes(watchPage({ playabilityStatus: { status: "OK" } }));
+    youtubeServes(playerResponse({ playabilityStatus: { status: "OK" } }));
     fetchTranscript.mockImplementation(
       async (_id: string, config: { fetch: typeof globalThis.fetch }) => {
         await config.fetch("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", {
@@ -298,7 +307,7 @@ describe("fetchFreshTranscript trace", () => {
   });
 
   it("separates a download that answered empty from one that failed", async () => {
-    youtubeServes(watchPage({ playabilityStatus: { status: "OK" } }));
+    youtubeServes(playerResponse({ playabilityStatus: { status: "OK" } }));
     fetchTranscript.mockResolvedValue([]);
 
     const outcome = await fetchFreshTranscript("vid");
@@ -323,7 +332,7 @@ describe("fetchFreshTranscript download language", () => {
 
   function servesTracks(...langs: { languageCode: string; kind?: string }[]): void {
     youtubeServes(
-      watchPage({
+      playerResponse({
         playabilityStatus: { status: "OK" },
         captions: {
           playerCaptionsTracklistRenderer: {

@@ -1,5 +1,4 @@
-import { extractInlineJson } from "./transcript";
-import { proxiedFetch } from "./egress";
+import { fetchPlayerResponse } from "./innertube";
 
 const PATTERNS = [
   /[?&]v=([a-zA-Z0-9_-]{11})/,
@@ -51,35 +50,19 @@ export interface VideoMetadata {
 }
 
 /**
- * Scrapes `ytInitialPlayerResponse.videoDetails.lengthSeconds` from the watch
- * page. oEmbed (used for the title) does not expose duration, so this is the
- * only reliable no-API-key source. Returns null on any failure.
+ * Reads `videoDetails.lengthSeconds` from the InnerTube player response. oEmbed
+ * (used for the title) does not expose duration, so this is the only reliable
+ * no-API-key source. Returns null on any failure — callers tolerate a null and
+ * the value can be backfilled later.
  *
- * Proxied: this is the same watch page the transcript scrape reads, so it is
- * refused by the same bot check — which is why `duration_seconds` is null in
- * production while oEmbed titles still arrive.
+ * This used to scrape the watch page, which meant fetching ~1,197 KB for one
+ * integer, on the least reliable endpoint we touch, a second time on top of the
+ * copy the transcript path already pulled. The player endpoint carries the same
+ * field in ~156 KB and is what actually works from a proxied IP.
  */
 async function fetchDurationSeconds(videoId: string): Promise<number | null> {
-  try {
-    const res = await proxiedFetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-    const data = extractInlineJson(html, "ytInitialPlayerResponse") as
-      | { videoDetails?: { lengthSeconds?: string } }
-      | null;
-    const raw = data?.videoDetails?.lengthSeconds;
-    if (!raw) return null;
-    const n = parseInt(raw, 10);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  } catch {
-    return null;
-  }
+  const result = await fetchPlayerResponse(videoId);
+  return result.ok ? result.lengthSeconds : null;
 }
 
 /**

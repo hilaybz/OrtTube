@@ -1,5 +1,6 @@
 import { YoutubeTranscript } from "youtube-transcript";
 import { createProxiedFetch } from "./egress";
+import { fetchPlayerResponse } from "./innertube";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -53,60 +54,6 @@ export type FetchOutcome = (
 // Order in which caption languages are requested. The app speaks he/ar/en; "iw"
 // is the legacy ISO code for Hebrew that older videos still use.
 const LANG_PREFERENCE = ["he", "iw", "ar", "en"];
-
-const YOUTUBE_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept-Language": "en-US,en;q=0.9",
-};
-
-// ─── Inline-JSON extraction (shared with lib/youtube.ts metadata scrape) ─────
-
-/**
- * Extracts a top-level JSON object assigned to `varName` from a YouTube watch
- * page (`var ytInitialPlayerResponse = {…}`), balancing braces while ignoring
- * braces inside string literals. Exported so lib/youtube.ts can reuse it to read
- * `videoDetails.lengthSeconds`.
- */
-export function extractInlineJson(html: string, varName: string): unknown {
-  const tokens = [`var ${varName} = `, `${varName} = `];
-  for (const token of tokens) {
-    const startIndex = html.indexOf(token);
-    if (startIndex === -1) continue;
-    const jsonStart = startIndex + token.length;
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-    for (let i = jsonStart; i < html.length; i++) {
-      const ch = html[i];
-      if (escape) {
-        escape = false;
-        continue;
-      }
-      if (ch === "\\") {
-        escape = true;
-        continue;
-      }
-      if (ch === '"') {
-        inString = !inString;
-        continue;
-      }
-      if (inString) continue;
-      if (ch === "{") depth++;
-      else if (ch === "}") {
-        depth--;
-        if (depth === 0) {
-          try {
-            return JSON.parse(html.slice(jsonStart, i + 1));
-          } catch {
-            return null;
-          }
-        }
-      }
-    }
-  }
-  return null;
-}
 
 // ─── Upstream tracing ────────────────────────────────────────────────────────
 
@@ -166,12 +113,12 @@ function tracingFetch(trace: string[]): typeof globalThis.fetch {
 // ─── Caption track discovery ─────────────────────────────────────────────────
 
 interface CaptionScrape {
-  /** Whether the watch page loaded and a player response was parsed. */
+  /** Whether the player response was fetched and parsed. */
   pageLoaded: boolean;
   /**
    * `playabilityStatus.status` from the player response ("OK", "LOGIN_REQUIRED",
    * "UNPLAYABLE", …), or null when absent. This is the discriminator between a
-   * page served INTACT that genuinely lists no captions, and a degraded response
+   * response served INTACT that genuinely lists no captions, and a degraded one
    * where the caption data was withheld — the two are otherwise identical from
    * the outside, and conflating them is what let a blocked fetch be recorded as
    * "this video has no captions".
@@ -179,8 +126,8 @@ interface CaptionScrape {
   playability: string | null;
   tracks: CaptionTrack[];
   /**
-   * Why the page yielded nothing, when `pageLoaded` is false: `http_<status>`,
-   * `no_player_json`, or a thrown error. Null when the page loaded.
+   * Why the lookup yielded nothing, when `pageLoaded` is false: `http_<status>`,
+   * `no_player_json`, or a thrown error. Null when it loaded.
    *
    * A refused request, a bot wall that answers 200 with no player JSON, and a
    * network error are three different problems wanting three different fixes —
@@ -191,45 +138,37 @@ interface CaptionScrape {
   failure: string | null;
 }
 
+/**
+ * Reads playability and the caption track list off the InnerTube player
+ * response.
+ *
+ * This used to scrape the watch page. That page is ~1,197 KB of which these two
+ * fields are 10.4 KB, only 3 of 5 residential exits would serve it, and the
+ * duration lookup fetched it a second time — so on metered egress it cost more
+ * than everything else combined while being the least reliable request we made.
+ * The player endpoint carries the same fields, answered 8 of 8, and is the call
+ * the download itself makes moments later.
+ *
+ * The `CaptionScrape` shape is deliberately unchanged, so `fetchFreshTranscript`'s
+ * confirmed-vs-transient classification did not have to move with it.
+ */
 async function fetchCaptionTracks(
   videoId: string,
   trace: string[]
 ): Promise<CaptionScrape> {
-  const failed = (failure: string): CaptionScrape => {
-    trace.push(`scrape → ${failure}`);
-    return { pageLoaded: false, playability: null, tracks: [], failure };
-  };
-  try {
-    const res = await createProxiedFetch(trace)(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: YOUTUBE_HEADERS,
-    });
-    trace.push(`GET www.youtube.com/watch → ${res.status}`);
-    // Covers rate limiting (429) as well as outright errors — both mean we
-    // learned nothing about this video's captions.
-    if (!res.ok) return failed(`http_${res.status}`);
-    const html = await res.text();
-    const data = extractInlineJson(html, "ytInitialPlayerResponse") as
-      | {
-          playabilityStatus?: { status?: string };
-          captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
-        }
-      | null;
-    // Player response absent → the page shape changed or we were blocked: treat
-    // as "not loaded" so callers keep the result transient (no status downgrade).
-    if (!data) return failed("no_player_json");
-    const tracks = data.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-    const found = Array.isArray(tracks) ? tracks : [];
-    const playability = data.playabilityStatus?.status ?? null;
-    trace.push(
-      `scrape → playability=${playability ?? "absent"} tracks=${found.length}` +
-        (found.length
-          ? ` [${found.map((t) => `${t.languageCode}${t.kind === "asr" ? ":asr" : ""}`).join(",")}]`
-          : "")
-    );
-    return { pageLoaded: true, playability, tracks: found, failure: null };
-  } catch (e) {
-    return failed(describeError(e));
+  const result = await fetchPlayerResponse(videoId, trace);
+  if (!result.ok) {
+    trace.push(`lookup → ${result.failure}`);
+    return { pageLoaded: false, playability: null, tracks: [], failure: result.failure };
   }
+  const { playability, tracks } = result;
+  trace.push(
+    `lookup → playability=${playability ?? "absent"} tracks=${tracks.length}` +
+      (tracks.length
+        ? ` [${tracks.map((t) => `${t.languageCode}${t.kind === "asr" ? ":asr" : ""}`).join(",")}]`
+        : "")
+  );
+  return { pageLoaded: true, playability, tracks, failure: null };
 }
 
 /** Normalize caption language codes to the app's supported set (iw → he). */
