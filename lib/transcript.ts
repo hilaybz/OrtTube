@@ -63,14 +63,18 @@ const LANG_PREFERENCE = ["he", "iw", "ar", "en"];
 function describeError(e: unknown): string {
   if (!(e instanceof Error)) return String(e);
   // undici reports a transport failure as a bare `TypeError: fetch failed` and
-  // puts the actual diagnosis (ECONNREFUSED, ETIMEDOUT, …) on `.cause`. Naming
-  // only the wrapper makes a dead proxy indistinguishable from a DNS failure.
-  const cause = e.cause;
-  const suffix =
-    cause instanceof Error
-      ? ` (${(cause as NodeJS.ErrnoException).code ?? cause.message})`
-      : "";
-  return `${e.constructor.name}: ${e.message}${suffix}`;
+  // buries the real diagnosis several `.cause` levels down. Walking only ONE
+  // level found a DOMException whose code is 0, so the trace read
+  // "TypeError: fetch failed (0)" while the level below it said
+  // "Proxy response (407)" — the entire answer, discarded.
+  let deepest: Error = e;
+  while (deepest.cause instanceof Error) deepest = deepest.cause;
+  if (deepest === e) return `${e.constructor.name}: ${e.message}`;
+  const code = (deepest as NodeJS.ErrnoException).code;
+  const detail = code && !deepest.message.includes(code)
+    ? `${code}: ${deepest.message}`
+    : code ?? deepest.message;
+  return `${e.constructor.name}: ${e.message} (${detail})`;
 }
 
 /**

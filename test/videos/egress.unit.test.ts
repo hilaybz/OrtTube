@@ -393,6 +393,29 @@ describe("trace", () => {
     expect(trace[0]).toContain("2.2.2.2:2 ok");
   });
 
+  it("names a rejected credential as such, not as an 'abort'", async () => {
+    // undici reports a 407 as UND_ERR_ABORTED several .cause levels down, which
+    // reads as "someone cancelled this request" and sent a real debugging
+    // session looking for a network fault that did not exist.
+    undiciFetch.mockRejectedValue(
+      Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new DOMException("Request was cancelled."), {
+          cause: Object.assign(new Error("Proxy response (407) !== 200 when HTTP Tunneling"), {
+            code: "UND_ERR_ABORTED",
+          }),
+        }),
+      })
+    );
+    const { createProxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
+    const trace: string[] = [];
+
+    await expect(createProxiedFetch(trace)("https://x.test")).rejects.toThrow();
+
+    expect(trace[0]).toContain("proxy auth rejected (407)");
+    expect(trace[0]).toContain("YOUTUBE_PROXY_URLS");
+    expect(trace[0]).not.toContain("UND_ERR_ABORTED");
+  });
+
   it("does not leak proxy credentials into the trace", async () => {
     undiciFetch.mockResolvedValue(reply(BOT_CHECK));
     const { createProxiedFetch } = await loadEgress("1.1.1.1:1:bob:hunter2");

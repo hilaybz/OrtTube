@@ -210,16 +210,27 @@ function rebuild(status: number, statusText: string, headers: Headers, body: str
 }
 
 function describeCause(e: unknown): string {
-  // undici surfaces a proxy failure as `TypeError: fetch failed` and puts the
-  // real diagnosis (ECONNREFUSED, ETIMEDOUT, …) on `.cause`. Reporting only the
-  // outer message throws away the one detail worth having.
+  // undici surfaces a proxy failure as `TypeError: fetch failed` and buries the
+  // real diagnosis several `.cause` levels down. Reporting only the outer
+  // message throws away the one detail worth having.
   let current: unknown = e;
   while (current instanceof Error && current.cause !== undefined) current = current.cause;
-  if (current instanceof Error) {
-    const code = (current as NodeJS.ErrnoException).code;
-    return code ?? `${current.constructor.name}: ${current.message}`;
+  if (!(current instanceof Error)) return String(current);
+
+  const code = (current as NodeJS.ErrnoException).code;
+  const message = current.message;
+
+  // Rejected credentials arrive as UND_ERR_ABORTED — a name that says "someone
+  // cancelled this" when the truth is "the proxy refused to authenticate you".
+  // That cost an afternoon of looking for a network fault that did not exist,
+  // so it is called out by name rather than left to be decoded again.
+  if (/Proxy response \(407\)/i.test(message)) {
+    return "proxy auth rejected (407) — check YOUTUBE_PROXY_URLS credentials";
   }
-  return String(current);
+  // Code AND message: the code alone hides `Proxy response (502)` and friends,
+  // the message alone hides ECONNREFUSED vs ETIMEDOUT.
+  if (code) return message && !message.includes(code) ? `${code}: ${message}` : code;
+  return `${current.constructor.name}: ${message}`;
 }
 
 /**
