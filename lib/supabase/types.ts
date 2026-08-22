@@ -57,6 +57,13 @@ export type Database = {
             foreignKeyName: "answer_selections_answer_id_fkey"
             columns: ["answer_id"]
             isOneToOne: false
+            referencedRelation: "analytics_answers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "answer_selections_answer_id_fkey"
+            columns: ["answer_id"]
+            isOneToOne: false
             referencedRelation: "answers"
             referencedColumns: ["id"]
           },
@@ -96,6 +103,13 @@ export type Database = {
             foreignKeyName: "answers_attempt_id_fkey"
             columns: ["attempt_id"]
             isOneToOne: false
+            referencedRelation: "analytics_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "answers_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
             referencedRelation: "attempts"
             referencedColumns: ["id"]
           },
@@ -125,6 +139,13 @@ export type Database = {
           question_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "attempt_questions_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_attempts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "attempt_questions_attempt_id_fkey"
             columns: ["attempt_id"]
@@ -528,6 +549,7 @@ export type Database = {
           author_id: string
           base_language: string
           cloned_from_id: string | null
+          content_updated_at: string | null
           created_at: string
           deleted_at: string | null
           duration_minutes: number | null
@@ -542,6 +564,7 @@ export type Database = {
           author_id: string
           base_language?: string
           cloned_from_id?: string | null
+          content_updated_at?: string | null
           created_at?: string
           deleted_at?: string | null
           duration_minutes?: number | null
@@ -556,6 +579,7 @@ export type Database = {
           author_id?: string
           base_language?: string
           cloned_from_id?: string | null
+          content_updated_at?: string | null
           created_at?: string
           deleted_at?: string | null
           duration_minutes?: number | null
@@ -689,6 +713,13 @@ export type Database = {
             foreignKeyName: "tutor_questions_attempt_id_fkey"
             columns: ["attempt_id"]
             isOneToOne: false
+            referencedRelation: "analytics_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tutor_questions_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
             referencedRelation: "attempts"
             referencedColumns: ["id"]
           },
@@ -767,7 +798,140 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      analytics_answers: {
+        Row: {
+          answered_at: string | null
+          attempt_id: string | null
+          id: string | null
+          question_id: string | null
+          was_correct: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "answers_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "answers_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analytics_attempts: {
+        Row: {
+          attempt_no: number | null
+          class_id: string | null
+          completed_at: string | null
+          id: string | null
+          num_correct: number | null
+          num_questions: number | null
+          quiz_id: string | null
+          started_at: string | null
+          student_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attempts_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attempts_quiz_id_fkey"
+            columns: ["quiz_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attempts_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analytics_tutor_questions: {
+        Row: {
+          ai_response: string | null
+          attempt_id: string | null
+          class_id: string | null
+          created_at: string | null
+          id: string | null
+          position_seconds: number | null
+          prompt: string | null
+          question_id: string | null
+          quiz_id: string | null
+          student_id: string | null
+          video_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tutor_questions_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tutor_questions_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tutor_questions_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tutor_questions_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tutor_questions_quiz_id_fkey"
+            columns: ["quiz_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tutor_questions_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tutor_questions_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       _allocation_is_live: {
@@ -798,6 +962,7 @@ export type Database = {
           author_id: string
           base_language: string
           cloned_from_id: string | null
+          content_updated_at: string | null
           created_at: string
           deleted_at: string | null
           duration_minutes: number | null
@@ -815,12 +980,27 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      _excluded_attempt_count: {
+        Args: { p_class_id?: string; p_quiz_id: string }
+        Returns: number
+      }
       _finalize_attempt_scores: {
         Args: { p_attempt_id: string; p_completed_at: string }
         Returns: boolean
       }
+      _touch_quiz_content: { Args: { p_quiz_id: string }; Returns: undefined }
       add_student_to_class: {
         Args: { p_class_id: string; p_email: string }
+        Returns: Json
+      }
+      analytics_tutor_questions_page: {
+        Args: {
+          p_class_id?: string
+          p_limit?: number
+          p_offset?: number
+          p_quiz_id?: string
+          p_student_id?: string
+        }
         Returns: Json
       }
       assign_quiz_to_class: {
@@ -839,6 +1019,7 @@ export type Database = {
         Args: { p_language: string; p_quiz_id: string; p_ttl_seconds?: number }
         Returns: boolean
       }
+      class_analytics_overview: { Args: { p_class_id: string }; Returns: Json }
       class_quiz_analytics: {
         Args: { p_class_id: string; p_quiz_id: string }
         Returns: Json
@@ -950,6 +1131,7 @@ export type Database = {
         Returns: Json
       }
       question_stats: { Args: { p_quiz_id: string }; Returns: Json }
+      quiz_analytics_overview: { Args: { p_quiz_id: string }; Returns: Json }
       quiz_stats: { Args: { p_quiz_id: string }; Returns: Json }
       reassign_ownership: {
         Args: { p_from_teacher: string; p_to_teacher: string }
@@ -990,6 +1172,7 @@ export type Database = {
         Args: { p_class_id: string; p_quiz_id: string }
         Returns: Json
       }
+      student_analytics: { Args: { p_student_id: string }; Returns: Json }
       student_quiz_progress: {
         Args: { p_class_id: string; p_student_id: string }
         Returns: Json
@@ -1002,9 +1185,28 @@ export type Database = {
         }
         Returns: Json
       }
+      teacher_analytics_search: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_query?: string
+          p_scope: string
+        }
+        Returns: Json
+      }
       teacher_can_read_profile: { Args: { target: string }; Returns: boolean }
       tutor_prompts_in_scope: {
         Args: { p_class_id?: string; p_quiz_id?: string }
+        Returns: Json
+      }
+      tutor_questions_page: {
+        Args: {
+          p_class_id?: string
+          p_limit?: number
+          p_offset?: number
+          p_quiz_id?: string
+          p_student_id?: string
+        }
         Returns: Json
       }
       tutor_stats: {
