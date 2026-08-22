@@ -9,17 +9,18 @@ import {
   sortQuizzes,
   matchesText,
   matchesClassFilter,
+  matchesVisibility,
   UNASSIGNED_CLASS,
   type SortOption,
 } from "@/lib/libraryFilters";
 import type { QuizAllocationTags } from "@/lib/allocations";
 
-function quiz(created_at: string, question_count: number) {
-  return { created_at, question_count };
+function quiz(created_at: string) {
+  return { created_at };
 }
 
 describe("sortQuizzes", () => {
-  const rows = [quiz("2026-01-02", 5), quiz("2026-01-03", 1), quiz("2026-01-01", 3)];
+  const rows = [quiz("2026-01-02"), quiz("2026-01-03"), quiz("2026-01-01")];
 
   it("sorts by date, newest first", () => {
     expect(sortQuizzes(rows, "date_desc").map((r) => r.created_at)).toEqual([
@@ -37,18 +38,6 @@ describe("sortQuizzes", () => {
     ]);
   });
 
-  it("sorts by question count, most first", () => {
-    expect(sortQuizzes(rows, "count_desc").map((r) => r.question_count)).toEqual([
-      5, 3, 1,
-    ]);
-  });
-
-  it("sorts by question count, fewest first", () => {
-    expect(sortQuizzes(rows, "count_asc").map((r) => r.question_count)).toEqual([
-      1, 3, 5,
-    ]);
-  });
-
   it("does not mutate the input array", () => {
     const copy = [...rows];
     sortQuizzes(rows, "date_asc" as SortOption);
@@ -56,8 +45,22 @@ describe("sortQuizzes", () => {
   });
 
   it("keeps ties stable (no crash, same length) when values are equal", () => {
-    const tied = [quiz("2026-01-01", 2), quiz("2026-01-01", 2)];
+    const tied = [quiz("2026-01-01"), quiz("2026-01-01")];
     expect(sortQuizzes(tied, "date_desc")).toHaveLength(2);
+  });
+});
+
+describe("matchesVisibility", () => {
+  it("'all' matches both stored visibilities", () => {
+    expect(matchesVisibility("all", "private")).toBe(true);
+    expect(matchesVisibility("all", "shared")).toBe(true);
+  });
+
+  it("matches only the selected visibility", () => {
+    expect(matchesVisibility("private", "private")).toBe(true);
+    expect(matchesVisibility("private", "shared")).toBe(false);
+    expect(matchesVisibility("shared", "shared")).toBe(true);
+    expect(matchesVisibility("shared", "private")).toBe(false);
   });
 });
 

@@ -1,9 +1,9 @@
 /**
- * Tutor-prompts (topic-cluster feed) integration tests — the owner-checked
+ * Tutor-prompts (AI-summary feed) integration tests — the owner-checked
  * `tutor_prompts_in_scope` RPC read, end-to-end against a live local Supabase
  * with the v2 schema applied.
  *
- * This exercises only the DB read (`fetchTutorPrompts`), NOT the AI clustering
+ * This exercises only the DB read (`fetchTutorPrompts`), NOT the AI summary
  * step, so no Claude call is ever made. Told through the actor DSL: a teacher
  * authors two quizzes and assigns both to a class; students' tutor prompts are
  * seeded on one quiz (the other is left promptless for the empty-scope case).
@@ -27,21 +27,20 @@ import {
   type Classroom,
   type Quiz,
 } from "../helpers/testbed";
-import { AnalyticsError } from "@/lib/analytics";
-import { fetchTutorPrompts } from "@/lib/analyticsTopics";
+import { AnalyticsError, fetchTutorPrompts } from "@/lib/analytics";
 import { stackOnline } from "../helpers/stack";
 
 const online = await stackOnline();
 
 // Raw RPC invoker for the bad-scope cases (both/neither), which `fetchTutorPrompts`
 // cannot express — it always sends exactly one scope. Mirrors the un-parameterised
-// `.rpc` cast used in `lib/analyticsTopics.ts`.
+// `.rpc` cast used in `lib/analytics.ts`.
 type RpcInvoker = (
   fn: string,
   args?: Record<string, unknown>
 ) => Promise<{ data: unknown; error: { code?: string; message: string } | null }>;
 
-describe.skipIf(!online)("tutor prompts in scope (topic-cluster feed)", () => {
+describe.skipIf(!online)("tutor prompts in scope (AI summary feed)", () => {
   let teacher: Teacher; // owns the class + quizzes
   let peerTeacher: Teacher; // same school, NOT the owner
   let alice: Student;

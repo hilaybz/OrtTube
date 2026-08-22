@@ -24,7 +24,7 @@ correctness) live in the database, not the handler.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | POST | `/api/auth/sign-in` | Role-agnostic sign-in; returns the post-login route (`/dashboard` or `/student`) and rejects deactivated users. |
-| POST | `/api/auth/sign-up-student` | Student self-signup, gated by a pending class invite; cleans up the auth user on failure. |
+| POST | `/api/auth/sign-up-student` | Provisioning/fixture only — no UI reaches it (the school creates accounts). Creates a student against a pending class invite; cleans up the auth user on failure. Used by `npm run seed` and `npm run smoke`. |
 
 ### Quiz authoring
 | Method | Path | Purpose |
@@ -79,6 +79,9 @@ correctness) live in the database, not the handler.
 | GET | `/api/analytics/class/[classId]` | Per-assigned-quiz stats for a class. |
 | GET | `/api/analytics/class/[classId]/quiz/[quizId]` | One quiz's stats within one class — score distribution and per-question/per-option breakdown, scored from each student's latest completed attempt. |
 | GET | `/api/analytics/tutor` | Tutor-interaction stats for a quiz or class. |
+| GET | `/api/analytics/search` | Hub search over the teacher's own entities in one scope (`student` / `class` / `quiz`), paged with `limit` / `offset` and a total. |
+| GET | `/api/analytics/tutor-questions` | A page of the tutor-question log for a student, quiz or class scope the teacher owns; at least one scope is required. |
+| POST | `/api/analytics/insights` | Streaming AI summary of what students are struggling with, over the most-asked tutor questions in scope. Returns `{ insight: null }` as JSON when the scope has no questions, without calling the model. Per-teacher rate limited. |
 
 ## Admin endpoints (`ADMIN_SECRET`)
 

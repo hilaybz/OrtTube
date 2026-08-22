@@ -41,11 +41,22 @@ import {
   getClassStats,
   getTutorStats,
   getClassQuizAnalytics,
+  getClassAnalyticsOverview,
+  getStudentAnalytics,
+  getQuizAnalyticsOverview,
+  getTutorQuestionsPage,
+  searchAnalyticsEntities,
   type QuizStats,
   type QuestionStatsResult,
   type ClassStats,
   type TutorStats,
   type ClassQuizAnalytics,
+  type ClassAnalyticsOverview,
+  type StudentAnalytics,
+  type QuizAnalyticsOverview,
+  type TutorQuestionsPage,
+  type AnalyticsScope,
+  type AnalyticsSearchResult,
 } from "@/lib/analytics";
 import {
   getClassRosterProgress,
@@ -358,6 +369,75 @@ export class Teacher implements Actor {
   /** Per-current-member roster progress for a class (must own the class). */
   rosterProgress(classroom: Classroom): Promise<ClassRosterProgress> {
     return getClassRosterProgress(this.client, classroom.id);
+  }
+
+  /**
+   * Everything the hub's CLASS view reads in one call: header counts, the
+   * per-quiz rows (latest-attempt scored), the class score distribution and the
+   * completions-per-day series. Must own the class.
+   */
+  classAnalytics(classroom: Classroom): Promise<ClassAnalyticsOverview> {
+    return getClassAnalyticsOverview(this.client, classroom.id);
+  }
+
+  /**
+   * One student ACROSS every class this teacher owns — the cross-class view a
+   * per-class RPC cannot give. Rejects `not_owner` unless the student is a
+   * current member of one of this teacher's classes.
+   */
+  studentAnalytics(student: Student | string): Promise<StudentAnalytics> {
+    return getStudentAnalytics(
+      this.client,
+      typeof student === "string" ? student : student.id
+    );
+  }
+
+  /**
+   * One quiz across every class it runs in (author-scoped): which classes have
+   * it, how each did, the pooled distribution, per-question difficulty.
+   */
+  quizAnalytics(quiz: Quiz | string): Promise<QuizAnalyticsOverview> {
+    return getQuizAnalyticsOverview(
+      this.client,
+      typeof quiz === "string" ? quiz : quiz.id
+    );
+  }
+
+  /**
+   * A page of the tutor-question log. Every scope passed must be one this
+   * teacher owns; at least one is required (`invalid_args` otherwise).
+   */
+  tutorQuestions(
+    scope: { student?: Student | string; quiz?: Quiz | string; classroom?: Classroom },
+    window: { limit?: number; offset?: number } = {}
+  ): Promise<TutorQuestionsPage> {
+    return getTutorQuestionsPage(
+      this.client,
+      {
+        studentId:
+          scope.student === undefined
+            ? undefined
+            : typeof scope.student === "string"
+              ? scope.student
+              : scope.student.id,
+        quizId:
+          scope.quiz === undefined
+            ? undefined
+            : typeof scope.quiz === "string"
+              ? scope.quiz
+              : scope.quiz.id,
+        classId: scope.classroom?.id,
+      },
+      window
+    );
+  }
+
+  /** Search this teacher's own entities in one scope, paged (hub search). */
+  searchAnalytics(
+    scope: AnalyticsScope,
+    opts: { query?: string; limit?: number; offset?: number } = {}
+  ): Promise<AnalyticsSearchResult> {
+    return searchAnalyticsEntities(this.client, scope, opts);
   }
 
   /** Single-student drill-down within a class (must own the class). */

@@ -1,11 +1,10 @@
-import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getQuizForAuthor, QuizAuthorError, type AuthorQuiz } from "@/lib/quizAuthor";
 import { listMyClasses, type ClassRow } from "@/lib/classes";
 import { listQuizAllocations, type QuizAllocation } from "@/lib/allocations";
 import { Alert } from "@/components/ui/Alert";
-import { Icon } from "@/components/ui/Icon";
+import { BackLink } from "@/components/ui/BackLink";
 import { QuizEditor } from "@/components/teacher/editor/QuizEditor";
 import { TranscriptWarmer } from "@/components/TranscriptWarmer";
 
@@ -26,13 +25,9 @@ export default async function EditQuizPage({
   const client = (await createClient()) as unknown as SupabaseClient;
 
   const backLink = (
-    <Link
-      href="/dashboard/quizzes"
-      className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--fg-brand)] hover:underline"
-    >
-      <Icon name="arrow" size={16} />
-      חזרה לחידונים שלי
-    </Link>
+    <div className="mb-4">
+      <BackLink href="/dashboard/quizzes" label="החידונים שלי" />
+    </div>
   );
 
   let quiz: AuthorQuiz | null = null;

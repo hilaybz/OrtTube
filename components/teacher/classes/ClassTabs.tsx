@@ -54,7 +54,7 @@ export function ClassTabs({
         </div>
       ) : (
         <div role="tabpanel">
-          <RosterSection classId={classId} roster={roster} />
+          <RosterSection roster={roster} />
         </div>
       )}
     </div>

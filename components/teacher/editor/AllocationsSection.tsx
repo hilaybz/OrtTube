@@ -1,19 +1,23 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
 import { Spinner } from "@/components/ui/Spinner";
 import { Alert } from "@/components/ui/Alert";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { Field } from "@/components/ui/Field";
+import { Pager } from "@/components/ui/Pager";
+import { usePagedList } from "@/components/ui/usePagedList";
 import { apiFetch, ApiError } from "@/lib/http";
 import type { ClassRow, TutorMode } from "@/lib/classes";
-import { allocationState } from "@/lib/allocationState";
+import { allocationState, type AllocationState } from "@/lib/allocationState";
 import type { QuizAllocation } from "@/lib/allocations";
 import { TUTOR_MODE_LABELS } from "@/components/teacher/classes/labels";
+import { EndQuizConfirmModal } from "@/components/teacher/EndQuizConfirmModal";
 import { BulkAssignModal } from "./BulkAssignModal";
 import {
   STATE_LABEL,
@@ -22,6 +26,40 @@ import {
   toDatetimeLocalValue,
   fromDatetimeLocalValue,
 } from "@/components/teacher/scheduleFormat";
+
+// Allocation rows are tall (name, state, settings line), so a page is short.
+const ALLOCATIONS_PAGE_SIZE = 5;
+
+/** Row order, matching `AllocationState`'s declared draft→scheduled→live→done order. */
+const STATE_ORDER: Record<AllocationState, number> = {
+  draft: 0,
+  scheduled: 1,
+  live: 2,
+  done: 3,
+};
+
+/**
+ * Sort key within a state — soonest-relevant-date first, so a teacher
+ * scanning the list sees what needs attention soonest at the top of each
+ * group. Mirrors `sectionSortValue` in `AssignedQuizzesSection` (same idea,
+ * applied to one flat list here instead of separate section headers, since
+ * this view is per-quiz across a handful of classes rather than per-class
+ * across many quizzes).
+ */
+function stateSortValue(state: AllocationState, a: QuizAllocation): number {
+  switch (state) {
+    case "live":
+      return a.available_until ? new Date(a.available_until).getTime() : Infinity;
+    case "scheduled":
+      return a.available_from ? new Date(a.available_from).getTime() : Infinity;
+    case "done":
+      // Most-recently-closed first.
+      return a.available_until ? -new Date(a.available_until).getTime() : Infinity;
+    case "draft":
+      // Newest-assigned first.
+      return -new Date(a.assigned_at).getTime();
+  }
+}
 
 /**
  * Allocation management for a quiz, on the editor page (Epic 2A.3): every
@@ -50,6 +88,10 @@ export function AllocationsSection({
   const [rowError, setRowError] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editing, setEditing] = useState<QuizAllocation | null>(null);
+  const [unassigning, setUnassigning] = useState<QuizAllocation | null>(null);
+
+  // The row (class) awaiting "end quiz now" confirmation (null = closed).
+  const [endConfirm, setEndConfirm] = useState<QuizAllocation | null>(null);
 
   async function togglePublished(classId: string, next: boolean) {
     setPending(classId);
@@ -67,14 +109,60 @@ export function AllocationsSection({
     }
   }
 
-  async function unassign(classId: string) {
+  /** Ends this allocation right now (see `EndQuizConfirmModal`'s doc comment
+   * for why this is just the existing window-close mechanism, not new
+   * grading logic). Preserves `available_from` as-is. */
+  async function endQuiz(classId: string, availableFrom: string | null) {
     setPending(classId);
     setRowError("");
     try {
-      await apiFetch(`/api/classes/${classId}/quizzes/${quizId}`, { method: "DELETE" });
+      await apiFetch(`/api/classes/${classId}/quizzes/${quizId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          availableFrom,
+          availableUntil: new Date().toISOString(),
+        }),
+      });
+      setEndConfirm(null);
+      router.refresh();
+    } catch (e) {
+      setRowError(e instanceof ApiError ? e.message : "סיום השאלון נכשל.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  /** Reopens a `done` allocation, open-ended — clears `available_until`. */
+  async function reopenQuiz(classId: string, availableFrom: string | null) {
+    setPending(classId);
+    setRowError("");
+    try {
+      await apiFetch(`/api/classes/${classId}/quizzes/${quizId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ availableFrom, availableUntil: null }),
+      });
+      router.refresh();
+    } catch (e) {
+      setRowError(e instanceof ApiError ? e.message : "פתיחת השאלון נכשלה.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function confirmUnassign() {
+    const target = unassigning;
+    if (!target) return;
+    setPending(target.class_id);
+    setRowError("");
+    try {
+      await apiFetch(`/api/classes/${target.class_id}/quizzes/${quizId}`, {
+        method: "DELETE",
+      });
+      setUnassigning(null);
       router.refresh();
     } catch (e) {
       setRowError(e instanceof ApiError ? e.message : "ביטול ההקצאה נכשל.");
+      setUnassigning(null);
     } finally {
       setPending(null);
     }
@@ -83,13 +171,39 @@ export function AllocationsSection({
   const assignedClassIds = new Set(allocations.map((a) => a.class_id));
   const candidates = classes.filter((c) => !assignedClassIds.has(c.id));
 
+  const sortedAllocations = useMemo(() => {
+    return [...allocations].sort((a, b) => {
+      const stateA = allocationState(a);
+      const stateB = allocationState(b);
+      if (stateA !== stateB) return STATE_ORDER[stateA] - STATE_ORDER[stateB];
+      return stateSortValue(stateA, a) - stateSortValue(stateB, b);
+    });
+  }, [allocations]);
+
+  // Paging runs over the sorted order, so page 1 is always the rows that need
+  // attention soonest rather than whatever order the server returned.
+  const paged = usePagedList(sortedAllocations, {
+    pageSize: ALLOCATIONS_PAGE_SIZE,
+  });
+
   return (
-    <GlassCard className="mb-6 flex flex-col gap-4">
+    <GlassCard className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-[var(--heading)]">הקצאות</h2>
-        <Button size="sm" onClick={() => setBulkOpen(true)} disabled={classes.length === 0}>
-          הקצאה לכיתות
-        </Button>
+        <h2 className="text-lg font-semibold text-[var(--heading)]">
+          הקצאות
+          {allocations.length > 0 && (
+            <span className="ms-2 text-sm font-normal text-[var(--body-subtle)] tabular-nums">
+              {allocations.length}
+            </span>
+          )}
+        </h2>
+        <IconButton
+          name="plus"
+          label="הקצאה לכיתות"
+          variant="brand"
+          onClick={() => setBulkOpen(true)}
+          disabled={classes.length === 0}
+        />
       </div>
 
       {rowError && <Alert variant="danger">{rowError}</Alert>}
@@ -101,77 +215,93 @@ export function AllocationsSection({
             : "החידון עדיין לא הוקצה לאף כיתה."}
         </p>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {allocations.map((a) => {
-            const state = allocationState(a);
-            const busy = pending === a.class_id;
-            return (
-              <li
-                key={a.class_id}
-                className="rounded-[var(--radius)] border border-[var(--glass-border)] p-3"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-[var(--heading)]">
-                        {a.class_name}
-                      </span>
-                      <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
-                      <Badge variant="brand">
-                        מורה־AI: {TUTOR_MODE_LABELS[a.tutor_mode]}
-                      </Badge>
-                      <Badge variant="gray">
-                        {a.max_attempts == null
-                          ? "ניסיונות ללא הגבלה"
-                          : `${a.max_attempts} ניסיונות`}
-                      </Badge>
-                    </div>
-                    {(a.available_from || a.available_until) && (
+        <>
+          <ul className="flex flex-col gap-3">
+            {paged.slice.map((a) => {
+              const state = allocationState(a);
+              const busy = pending === a.class_id;
+              // An end date when there is one; on a still-live open-ended row,
+              // say so outright rather than leaving the window unexplained.
+              const windowNote = a.available_until
+                ? `עד ${formatWindowPart(a.available_until)}`
+                : state === "live"
+                  ? "ללא תאריך סיום — יישאר זמין עד לסיום ידני"
+                  : null;
+              return (
+                <li
+                  key={a.class_id}
+                  className="rounded-[var(--radius)] border border-[var(--glass-border)] p-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-[var(--heading)]">
+                          {a.class_name}
+                        </span>
+                        <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
+                      </div>
+                      {/* The settings behind the row, as one quiet line rather
+                          than a badge wall: they are context, not status. */}
                       <p className="text-xs text-[var(--body-subtle)]">
-                        {a.available_from && `מ־${formatWindowPart(a.available_from)}`}
-                        {a.available_from && a.available_until && " · "}
-                        {a.available_until && `עד ${formatWindowPart(a.available_until)}`}
+                        {[
+                          `מורה־AI: ${TUTOR_MODE_LABELS[a.tutor_mode]}`,
+                          a.max_attempts == null
+                            ? "ניסיונות ללא הגבלה"
+                            : `${a.max_attempts} ניסיונות`,
+                          a.available_from
+                            ? `מ־${formatWindowPart(a.available_from)}`
+                            : null,
+                          windowNote,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => togglePublished(a.class_id, !a.published)}
-                    >
-                      {busy ? (
-                        <Spinner size={16} />
-                      ) : a.published ? (
-                        "הסתרה מתלמידים"
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {state === "done" ? (
+                        <IconButton
+                          name="replay"
+                          label="פתיחת השאלון מחדש לכיתה"
+                          busy={busy}
+                          onClick={() => reopenQuiz(a.class_id, a.available_from)}
+                        />
                       ) : (
-                        "הצגה לתלמידים"
+                        <IconButton
+                          name={a.published ? "eyeOff" : "eye"}
+                          label={a.published ? "הסתרה מתלמידים" : "הצגה לתלמידים"}
+                          busy={busy}
+                          onClick={() => togglePublished(a.class_id, !a.published)}
+                        />
                       )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => setEditing(a)}
-                    >
-                      עריכה
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-[var(--fg-danger)]"
-                      disabled={busy}
-                      onClick={() => unassign(a.class_id)}
-                    >
-                      ביטול הקצאה
-                    </Button>
+                      {state === "live" && (
+                        <IconButton
+                          name="closeCircle"
+                          label="סיום השאלון עכשיו"
+                          disabled={busy}
+                          onClick={() => setEndConfirm(a)}
+                        />
+                      )}
+                      <IconButton
+                        name="edit"
+                        label="עריכת ההקצאה"
+                        disabled={busy}
+                        onClick={() => setEditing(a)}
+                      />
+                      <IconButton
+                        name="trash"
+                        label="ביטול הקצאה"
+                        variant="danger"
+                        disabled={busy}
+                        onClick={() => setUnassigning(a)}
+                      />
+                    </div>
                   </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                </li>
+              );
+            })}
+          </ul>
+          <Pager {...paged} label="ניווט בין הקצאות" />
+        </>
       )}
 
       <BulkAssignModal
@@ -182,6 +312,32 @@ export function AllocationsSection({
         onAssigned={() => router.refresh()}
       />
 
+      <Modal
+        open={unassigning !== null}
+        title="ביטול הקצאה"
+        onClose={() => {
+          if (pending === null) setUnassigning(null);
+        }}
+      >
+        <p className="text-sm text-[var(--body)]">
+          לבטל את ההקצאה של החידון ל{unassigning?.class_name}? התלמידים לא יראו
+          אותו יותר. תשובות ונתוני אנליטיקה של תלמידים שכבר פתרו אותו יישמרו.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setUnassigning(null)}
+            disabled={pending !== null}
+          >
+            השארת ההקצאה
+          </Button>
+          <Button variant="danger" onClick={confirmUnassign} disabled={pending !== null}>
+            {pending !== null && <Spinner size={16} />}
+            ביטול הקצאה
+          </Button>
+        </div>
+      </Modal>
+
       <EditAllocationModal
         allocation={editing}
         quizId={quizId}
@@ -190,6 +346,18 @@ export function AllocationsSection({
           setEditing(null);
           router.refresh();
         }}
+      />
+
+      <EndQuizConfirmModal
+        open={endConfirm !== null}
+        prompt={
+          <>
+            לסיים את השאלון עכשיו לכיתה &rdquo;{endConfirm?.class_name}&ldquo;?
+          </>
+        }
+        busy={endConfirm !== null && pending === endConfirm.class_id}
+        onConfirm={() => endConfirm && endQuiz(endConfirm.class_id, endConfirm.available_from)}
+        onClose={() => setEndConfirm(null)}
       />
     </GlassCard>
   );
