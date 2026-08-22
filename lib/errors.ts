@@ -36,12 +36,14 @@ const MESSAGES: Record<string, string> = {
   invalid_max_attempts: "מספר הניסיונות אינו תקין.",
   invalid_tutor_mode: "מצב OrtAI אינו תקין.",
   lookup_failed: "אירעה תקלה זמנית. נסו שוב בעוד רגע.",
-  // Deliberately covers BOTH causes in one sentence. A fetch that YouTube blocks
-  // is often indistinguishable from a video that genuinely has no captions, so
-  // asserting either one would frequently be wrong. Retrying is worthwhile, and
-  // manual authoring always works.
-  transcript_unavailable:
-    "לסרטון זה אין כתוביות או שלא הצלחנו לקרוא אותם כרגע. נסו שוב או הוסיפו שאלות ידנית.",
+  // Three outcomes, three sentences. These used to be one: a blocked fetch and a
+  // caption-less video were treated as indistinguishable, so every failure told
+  // the teacher their video had no subtitles — which was frequently untrue and
+  // gave them nothing to act on. The server does know which happened, and now
+  // says so. Only the first is a claim about the video.
+  transcript_unavailable: "לסרטון זה אין כתוביות. הוסיפו שאלות ידנית.",
+  transcript_pending: "התמליל של הסרטון עדיין נטען. נסו שוב בעוד רגע.",
+  transcript_fetch_failed: "לא הצלחנו לקרוא את התמליל כרגע. נסו שוב בעוד רגע.",
   generation_failed: "יצירת השאלות עם AI נכשלה. נסו שוב או הוסיפו שאלות ידנית.",
   forbidden: "אין לך הרשאה לפעולה זו.",
   not_found: "הפריט המבוקש לא נמצא.",

@@ -33,6 +33,7 @@ correctness) live in the database, not the handler.
 | POST | `/api/quizzes/[id]/questions` | Create or edit a question with its options + answer key. |
 | POST | `/api/quizzes/[id]/generate` | AI-generate questions from the transcript in the quiz's base language. |
 | POST | `/api/quizzes/[id]/translate` | Lazily fill a target-language translation of the quiz's text. |
+| POST | `/api/quizzes/[id]/transcript` | Warm the transcript cache on page open, so generate and the tutor don't wait on a cold fetch. Answers 202 and never reports the outcome; students must pass `{ classId }`. |
 
 ### Sharing
 | Method | Path | Purpose |

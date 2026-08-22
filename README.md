@@ -136,9 +136,52 @@ calling out because searching the code for their names finds nothing:
 | `TRANSCRIPT_BUCKET` | `transcripts` |
 | `CRON_SECRET` | guards `/api/jobs/*`; Vercel Cron sends it automatically |
 | `ADMIN_SECRET` | guards `/api/admin/*`; must differ from `CRON_SECRET` |
+| `YOUTUBE_PROXY_URLS` | **production only** — see below; leave empty locally |
 
 Optional tuning, all defaulted: `GC_VIDEO_GRACE_MINUTES`, `PURGE_RETENTION_DAYS`,
 `RECONCILE_AUTH_MINUTES`, `TRANSCRIPT_TTL_DAYS`.
+
+### YouTube egress
+
+YouTube bot-checks datacenter IPs, and Vercel's functions run on one. Without a
+proxy, production gets `playabilityStatus: LOGIN_REQUIRED` and no transcripts at
+all. (Titles come from oEmbed, a different endpoint, and are unaffected — which
+is why a broken video still shows its name.)
+
+**Residential egress is required, not merely preferable.** The gate is not
+uniform: measured across ten datacenter proxies, every one was served the player
+metadata and **none** could fetch a single subtitle, because `api/timedtext` is
+walled far harder than the endpoints describing a video. Passing a metadata
+check proves nothing on its own.
+
+Two requests per video, both proxied:
+
+| Request | Carries |
+| --- | --- |
+| `POST youtubei/v1/player` | `playabilityStatus`, caption track list, `lengthSeconds` |
+| `GET api/timedtext` | the subtitles themselves |
+
+There is deliberately **no watch-page scrape**. It cost ~1,197 KB to supply
+10.4 KB of fields the player call already returns, was fetched twice per video,
+and was the least reliable request in the system.
+
+`YOUTUBE_PROXY_URLS` is a comma-separated pool, tried in order with the
+last-known-good entry preferred, accepting either `http://user:pass@host:port`
+or the `host:port:user:pass` form dashboards export. An exit that answers 429,
+403 or a bot check is skipped, and **its connection is thrown away** so the next
+request through that slot leaves from a different IP — undici pins one exit IP
+per agent for its lifetime, so without that a rotating proxy silently behaves
+like a sticky one. Use a rotating endpoint (`USER-rotate`) listed several times;
+a `USER-gb-1` sticky session pins to a single IP and will burn.
+
+**Empty means no proxy** — the right setting locally, where a residential IP
+already works, and the kill switch in production.
+
+Pools decay. [`scripts/probe-proxy.mjs`](scripts/probe-proxy.mjs)
+(`npm run probe:proxy`) downloads a real subtitle track before calling any exit
+usable, and refuses to draw conclusions from a proxy that was never actually in
+the request path. **Changing provider is a change to this variable's value
+only.**
 
 **Never set `SUPABASE_DB_URL` in a deployed environment.** No application code
 reads it — only the test harness, which truncates every table and clears

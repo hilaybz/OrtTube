@@ -139,39 +139,54 @@ export async function POST(
 
   const { data: video } = await supabase
     .from("videos")
-    .select("youtube_video_id, transcript_status")
+    .select("youtube_video_id")
     .eq("id", q.video_id)
     .maybeSingle();
-  const v = video as {
-    youtube_video_id: string;
-    transcript_status: "pending" | "ready" | "unavailable";
-  } | null;
+  const v = video as { youtube_video_id: string } | null;
   if (!v) return err("not_found", "Quiz video not found", 404);
 
   // No up-front refusal on `unavailable`. That verdict is a judgement made at a
   // point in time — it may have come from a blocked fetch rather than a genuinely
   // caption-less video, and captions get added to videos later — so refusing here
   // made one bad fetch permanent for every user, with no way back. getTranscript
-  // owns the throttling now (negative cache + claim marker), so this just asks.
+  // owns the throttling, so this just asks.
   //
   // `force` because a teacher pressing generate is an explicit human retry: it
-  // ignores a recent negative verdict and only has to beat a 30s floor. The AI
-  // tutor deliberately does NOT force, so it stays throttled per student question.
+  // ignores a recent negative verdict. The AI tutor deliberately does NOT force,
+  // so it stays throttled per student question.
   const service = createServiceClient();
   const transcript = await getTranscript(service, v.youtube_video_id, {
     force: true,
   });
-  const segments = transcript?.segments ?? [];
-  if (segments.length === 0) {
-    // Nothing usable after the attempt. We often cannot tell "no captions" from
-    // "couldn't read them", so the message must not assert either — see the
-    // Hebrew copy in lib/errors.ts. Manual authoring remains available.
+
+  // Each outcome gets its own answer. These were one 409 saying "this video has
+  // no captions", which was a guess — and wrong whenever the real cause was that
+  // we could not reach YouTube. A teacher can act on the difference: wait, retry,
+  // or stop waiting and author manually.
+  if (transcript.state === "unavailable") {
     return err(
       "transcript_unavailable",
-      "No captions could be read for this video; add questions manually instead",
+      "This video has no captions; add questions manually instead",
       409
     );
   }
+  if (transcript.state === "throttled") {
+    return err(
+      "transcript_pending",
+      "The transcript is not ready yet; try again shortly",
+      409
+    );
+  }
+  if (transcript.state === "failed") {
+    // 503, matching `lookup_failed` in sign-in: transient, retrying is
+    // meaningful, and it is not a verdict about the caller's request.
+    return err(
+      "transcript_fetch_failed",
+      `Could not read the transcript (${transcript.reason})`,
+      503
+    );
+  }
+  const segments = transcript.segments;
 
   // Append cleanly onto any existing questions: continue order_index past the
   // current max, and tell the model what's already covered so it doesn't repeat.

@@ -26,7 +26,7 @@ production.** Everything else in this backlog assumes videos can be added.
 | --- | --- | --- |
 | 0.1 | ~~Switch the primary caption path to InnerTube ANDROID.~~ **Done / moot** — `852b3d0`. The package already used ANDROID InnerTube; the dead watch-page download is deleted. | ✅ |
 | 0.2 | ~~Re-probe Vercel.~~ **Answered: blocked.** `not_playable:LOGIN_REQUIRED` from a preview deployment. Not free after all. | ✅ |
-| 0.3 | **The only remaining path.** Paid egress behind the `fetchFreshTranscript` seam — residential proxy or hosted transcript API. | ❓ |
+| 0.3 | ~~Adopt a paid fetch path.~~ **Done** — rotating residential egress via `lib/egress.ts`. The watch-page scrape went with it; two proxied requests per video now. See below. | ✅ |
 | 0.4 | Verify the no-transcript experience end to end (below). Tutor behaviour decided; blocked on 0.5. | ❓ |
 | 0.5 | Make "has no transcript" a property of the quiz rather than of request timing. Blocks 0.4 and, until settled, makes tutor availability differ between students in the same class. | ❓ |
 
@@ -62,6 +62,127 @@ and ~5× less metered traffic.
 it is null in production too. Titles come from oEmbed and appear unaffected.
 
 Issues #7 and #8 are closed with this evidence; #9 carries the path forward.
+
+### Resolved 2026-08-21 — rotating residential, and the watch page is gone
+
+Webshare **rotating residential** clears the wall. Measured end to end through
+the real modules, not a replica: `2NnfemvbjhQ` → 110 segments, `tvyOITo5iOk` →
+176 (matching 0.2's residential baseline exactly), `aircAruvnKk` → 225 from the
+human Hebrew track among its 31. `duration_seconds` populates again.
+
+**The watch page was removed in the same pass.** It cost ~1,197 KB to supply
+10.4 KB of fields — 63% of it is the YouTube web app's own HTML/CSS/JS and 32%
+is the recommendations sidebar — it was fetched *twice* per video, and it was
+the least reliable request we made (3/5 on residential, against 8/8 for the
+player endpoint that carries the identical `playabilityStatus`, track list and
+`lengthSeconds`). A video now costs **two proxied requests, ~337 KB**, down from
+~2,549 KB plus retries. At ~300 new videos/month that is ~101 MB against a 1 GB
+plan, versus ~1.25 GB before — i.e. it would not have fit.
+
+Three findings worth keeping, each of which had to be measured because the
+obvious assumption was wrong:
+
+- **Only `api/timedtext` needs residential.** Datacenter exits are served the
+  watch page and the player response perfectly well and are refused *only* at
+  the download. A probe that checks metadata endpoints will report a pool as
+  working when not one transcript can be fetched through it — which is exactly
+  what happened here, and why `probe-proxy.mjs` now downloads a real subtitle
+  track before calling anything usable.
+- **undici pins one exit IP per `ProxyAgent` for its lifetime.** Four requests
+  through one agent all left from the same address; closing and rebuilding drew
+  a new one. So a *rotating* endpoint only rotates if the burned agent is thrown
+  away — `lib/egress.ts` does that on every refusal. Without it a rotating proxy
+  degrades into a sticky one and burns like the datacenter IPs did.
+- **A dashboard's `USER-gb-1` style credential is a sticky session**, not a
+  proxy. It returns the same IP across freshly-built agents. Rotation needs the
+  `-rotate` suffix.
+
+### Superseded 2026-08-21 — "the free tier does NOT work; residential is required"
+
+The section below was written after measuring the watch page and the InnerTube
+player endpoint. **Both are metadata.** Neither downloads a caption, and the
+probe that produced "3 of 10 pass" never once fetched `api/timedtext` — the
+endpoint that actually returns subtitles. Verified from production and then
+reproduced locally against all ten exits:
+
+| Request | Datacenter proxy | Residential |
+| --- | --- | --- |
+| `GET /watch` | 200, lists tracks | 200 |
+| `POST youtubei/v1/player` | 200, lists tracks | 200 |
+| `GET api/timedtext` | **429, Google "automated queries" wall** | **200, 25,710 bytes** |
+
+**0 of 10 free datacenter proxies can download a transcript.** YouTube gates the
+caption endpoint far harder than the pages describing it, so an exit sails
+through discovery and is walled at the download. That is why production got as
+far as `scrape → playability=OK tracks=1 [iw:asr]` and still returned
+`tracks_undownloadable`.
+
+What the proxy pool DID fix, and is worth keeping: `duration_seconds` and
+`playabilityStatus` both come off the watch page, which datacenter exits serve.
+Those work in production now. Transcripts do not.
+
+**0.3 is therefore still open**, and the original prediction — paid residential
+egress (~$3.50/mo) — stands, now with a precise reason: it is needed for
+`api/timedtext` specifically, not for the watch page. `scripts/probe-proxy.mjs`
+now downloads a real subtitle track before calling any exit PASS, so it cannot
+repeat this error.
+
+### Superseded 2026-08-20 — "0.3 shipped, and it cost nothing"
+
+The assumption baked into 0.3 was that **datacenter** proxies would be refused
+exactly like Vercel's, so only residential egress could work. Measured against
+Webshare's *free* tier (10 datacenter proxies, $0) with `npm run probe:proxy`:
+
+| | Watch page | InnerTube |
+| --- | --- | --- |
+| `31.56.127.193` (US) | OK, 1 track | OK, 1 track |
+| `84.247.60.125` (PL) | OK, 1 track | OK, 1 track |
+| `45.38.107.97` (UK) | HTTP 429 | OK, 1 track |
+| other 7 | 429 / LOGIN_REQUIRED | LOGIN_REQUIRED |
+
+**3 of 10 clear the check**, so the assumption was wrong and no payment is
+required yet.
+
+**Which** 3 is not stable, though, and that matters more than the count. Two
+back-to-back runs were byte-identical, which looked like a fixed per-IP
+property. Two hours later the membership had moved: `31.59.20.176` and
+`191.96.254.138` had recovered, `45.38.107.97` had been burned, and the count
+was 4. Treat any single probe run as a snapshot, never as a roster — the earlier
+reading of it as a standing property was simply too few samples.
+
+That churn is designed for rather than papered over: `lib/egress.ts` treats the
+pool as mostly-burned and membership as unknown, skipping any exit that answers
+429 or a bot check and remembering the one that just worked, so a request pays
+for a dead proxy at most once per instance and recovers on its own when the pool
+shifts underneath it. If it decays past usefulness, **the fix is the value of
+`YOUTUBE_PROXY_URLS`, not a code change** — the pool interface is identical for
+one paid residential endpoint.
+
+Two traps worth recording, both of which produced confident wrong answers first:
+
+- **Node's global `fetch` rejects a `dispatcher` built by a separately-installed
+  undici** (`UND_ERR_INVALID_ARG`), surfaced as a bare `TypeError: fetch failed`
+  that is indistinguishable from an unreachable host. Every proxy looked dead,
+  and the probe concluded datacenter IPs cannot clear the check. Proxy code must
+  import `fetch` from `undici`.
+- **A probe run from a dev machine proves nothing unless it checks its own exit
+  IP.** A residential IP already works, so a proxy that silently falls back to
+  direct returns a perfect transcript and reads as success.
+
+The request-count cut landed with it: the download now reads its language off
+the track list the scrape already returned and makes **one** call instead of up
+to five (two when the first misses, since the WEB scrape and the ANDROID player
+do not always agree on whether Hebrew is `he` or `iw`).
+
+That is ~7 MB → ~1.5 MB **on the happy path only**, and it is worth being precise
+about the unhappy one: fallthrough multiplies a *failing* request by pool size.
+A video that is genuinely login-gated — age-restricted, private, members-only —
+returns LOGIN_REQUIRED from every IP on earth, so it sweeps every exit, and it
+does so separately for the scrape, the duration fetch and the download's own web
+fallback. Unbounded that is ~36 MB per attempt against a 1 GB monthly quota, on
+a video that can never succeed. Hence the sweep cooldown in `lib/egress.ts`: the
+first sweep pays to distinguish "burned pool" from "gated video", and retries
+within the next minute cost one request instead of another full pass.
 
 ### 0.4 · What happens when there is no transcript
 
@@ -100,10 +221,10 @@ Three consequences:
   has no known caption state at the moment students start using it.
 - **Availability is decided per student request, so it differs between students
   in the same class.** The tutor route calls `getTranscript` on every question.
-  Whoever asks first triggers the fetch; if it succeeds the transcript is cached
-  and everyone after them gets a grounded tutor, and if it fails the claim marker
-  throttles the next callers for `CLAIM_TTL_MS` and they get nothing — without
-  even attempting. Over a longer horizon the TTL sweep deletes the object and the
+  Whoever asks first triggers the fetch; concurrent askers on the same instance
+  join it rather than starting their own, so they share its outcome. If it fails
+  they all get an ungrounded answer, and the next question re-attempts. Over a
+  longer horizon the TTL sweep deletes the object and the
   next request re-fetches, so a quiz that worked in September can stop working in
   October.
 

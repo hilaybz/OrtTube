@@ -19,6 +19,14 @@
  *
  * Guarded by ADMIN_SECRET: it makes outbound requests on demand, and an open
  * endpoint that does that is an abuse vector.
+ *
+ * DELIBERATELY UNPROXIED. It uses the global `fetch`, so it still measures the
+ * deployment's own egress IP — which is the question it exists to answer. Since
+ * `lib/egress.ts` landed, that is NO LONGER the path production takes for
+ * captions: a run where every context reads `blocked` is now the EXPECTED result
+ * and says nothing about whether transcripts work. It answers "is our raw IP
+ * still walled", not "is the product healthy". For the latter, read the `trace`
+ * on a real fetch, which names what each proxy exit did.
  */
 import { assertSecret } from "@/lib/jobs/auth";
 

@@ -103,6 +103,7 @@ beforeEach(() => {
   ]);
   persistMock.mockResolvedValue(["question-1"]);
   getTranscriptMock.mockResolvedValue({
+    state: "ready",
     segments: [{ text: "hello world", offset: 0, duration: 4000 }],
     language: "he",
   });
@@ -149,31 +150,52 @@ describe("generate route transcript warming (C1)", () => {
     expect(response.status).toBe(201);
   });
 
-  it("409s when a re-check still yields no transcript", async () => {
+  it("409s transcript_unavailable ONLY for a confirmed caption-less video", async () => {
     stubQuizAndVideo(authoredQuiz, {
       youtube_video_id: "yt-none",
       transcript_status: "unavailable",
     });
-    getTranscriptMock.mockResolvedValue(null); // still nothing after the retry
+    getTranscriptMock.mockResolvedValue({ state: "unavailable" });
 
     const response = await POST(generateRequest({ count: 1 }), { params: routeParams });
 
     expect(response.status).toBe(409);
-    const body = await response.json();
-    expect(body.error.code).toBe("transcript_unavailable");
+    expect((await response.json()).error.code).toBe("transcript_unavailable");
   });
 
-  it("409s a 'pending' video when warming yields no usable segments", async () => {
+  it("does NOT claim 'no captions' when the fetch merely failed", async () => {
+    // The bug this replaced: a blocked fetch, a throttled one and a genuinely
+    // caption-less video all produced the same 409 telling the teacher their
+    // video had no subtitles. Only one of those was a statement about the video,
+    // and the other two are transient — so the copy has to differ.
     stubQuizAndVideo(authoredQuiz, {
-      youtube_video_id: "yt-empty",
+      youtube_video_id: "yt-blocked",
       transcript_status: "pending",
     });
-    getTranscriptMock.mockResolvedValue({ segments: [], language: null });
+    getTranscriptMock.mockResolvedValue({
+      state: "failed",
+      reason: "player_not_loaded:http_429",
+    });
 
     const response = await POST(generateRequest({ count: 1 }), { params: routeParams });
 
-    expect(getTranscriptMock).toHaveBeenCalled();
+    // 503, matching sign-in's `lookup_failed`: transient, and retrying means
+    // something. A 409 would say the request itself conflicted with the state.
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe("transcript_fetch_failed");
+  });
+
+  it("reports a standing verdict as pending, not as a fresh finding", async () => {
+    stubQuizAndVideo(authoredQuiz, {
+      youtube_video_id: "yt-throttled",
+      transcript_status: "unavailable",
+    });
+    getTranscriptMock.mockResolvedValue({ state: "throttled" });
+
+    const response = await POST(generateRequest({ count: 1 }), { params: routeParams });
+
     expect(response.status).toBe(409);
+    expect((await response.json()).error.code).toBe("transcript_pending");
   });
 
   it("appends: offsets order_index past existing questions and passes their prompts to avoid repeats", async () => {

@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { listMyAttemptsForQuiz, findLatestCompletedAttempt, type StudentAttemptState } from "@/lib/attempts";
 import { QuizPlayer } from "@/components/student/QuizPlayer";
+import { TranscriptWarmer } from "@/components/TranscriptWarmer";
 
 export default async function QuizPlayerPage({
   params,
@@ -34,5 +35,12 @@ export default async function QuizPlayerPage({
     notFound();
   }
 
-  return <QuizPlayer classId={classId} quizId={quizId} state={state} />;
+  return (
+    <>
+      {/* Warm the transcript now so the AI tutor is ready if this student asks
+          — reaching for it mid-quiz is the worst moment to start a cold fetch. */}
+      <TranscriptWarmer quizId={quizId} classId={classId} />
+      <QuizPlayer classId={classId} quizId={quizId} state={state} />
+    </>
+  );
 }
