@@ -59,6 +59,27 @@ function objectPath(youtubeId: string): string {
   return `${youtubeId}.json`;
 }
 
+/**
+ * Records a non-success fetch outcome to the platform log.
+ *
+ * The failures that matter happen on production egress IPs and cannot be
+ * reproduced locally, which is exactly why `fetchFreshTranscript` bothers to
+ * compute a reason code — but nothing used to read it, so every distinct cause
+ * (bot check, login wall, rate limit, genuinely caption-less video) surfaced to
+ * the teacher as one indistinguishable 409 and left no trace. `youtube_video_id`
+ * is included because the canonical video row is shared across schools, so it is
+ * the only handle that ties a log line back to a specific video.
+ */
+function log(youtubeId: string, outcome: string, trace?: string[]): void {
+  console.warn(`[transcript] video=${youtubeId} ${outcome}`);
+  // Emitted as one indented block rather than a line per request: the platform
+  // log lists one row per call, and eleven interleaved rows are far harder to
+  // read back than a single expandable entry that stays in order.
+  if (trace?.length) {
+    console.warn(`[transcript] video=${youtubeId} trace:\n  ${trace.join("\n  ")}`);
+  }
+}
+
 /** Freshness is decided solely from `videos.fetched_at` + status (one source). */
 function isFresh(video: VideoFreshnessRow | null): boolean {
   if (!video || video.transcript_status !== "ready" || !video.fetched_at) return false;
@@ -235,6 +256,11 @@ export async function getTranscript(
   // A recent "no usable captions" verdict stands, unless a human explicitly
   // asked again. Without this the tutor re-fetches on every student question.
   if (!force && isNegativeFresh(video)) {
+    // Logged only when it yields nothing, which is the case that reaches a user
+    // as a failure. Throttled hits that still serve a cached transcript are the
+    // mechanism working, and the tutor runs this per student question — logging
+    // those would bury the real failures.
+    if (!cached) log(youtubeId, "no fetch: recent unavailable verdict still stands");
     return cached ? { segments: cached.segments, language: cached.language } : null;
   }
 
@@ -245,6 +271,9 @@ export async function getTranscript(
   );
   if (!won) {
     // Loser: serve the stale object (or fall back) instead of double-fetching.
+    // Worth a line when it comes back empty: this is the one failure that makes
+    // NO upstream request, so without it the log shows a bare 409 and no cause.
+    if (!cached) log(youtubeId, "no fetch: another attempt holds the claim");
     return cached ? { segments: cached.segments, language: cached.language } : null;
   }
 
@@ -262,6 +291,13 @@ export async function getTranscript(
     }
 
     if (outcome.status === "unavailable") {
+      // Traced as well as the failures: this verdict is sticky for two days and
+      // applies to every school, so it has to stay auditable after the fact.
+      log(
+        youtubeId,
+        "confirmed no usable captions (page intact and playable)",
+        outcome.trace
+      );
       await markUnavailable(client, youtubeId);
       return null;
     }
@@ -273,8 +309,14 @@ export async function getTranscript(
     // carries a timestamp with a TTL. Automatic callers are therefore throttled
     // for CLAIM_TTL_MS, while an explicit retry only has to beat the 30s force
     // floor. A crashed fetch self-heals on the same expiry, exactly as before.
+    log(
+      youtubeId,
+      `transient failure reason=${outcome.reason} served_stale=${cached ? "yes" : "no"}`,
+      outcome.trace
+    );
     return cached ? { segments: cached.segments, language: cached.language } : null;
-  } catch {
+  } catch (e) {
+    log(youtubeId, `threw: ${e instanceof Error ? e.message : String(e)}`);
     return cached ? { segments: cached.segments, language: cached.language } : null;
   }
 }

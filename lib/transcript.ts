@@ -16,12 +16,12 @@ export interface CaptionTrack {
 }
 
 /** Result of a fresh (non-cached) transcript fetch. */
-export type FetchOutcome =
+export type FetchOutcome = (
   | {
       status: "ok";
       segments: TranscriptSegment[];
       language: string | null;
-      /** Provenance of the winning track. Manual (human) captions never equal "asr". */
+      /** Provenance of the captions — see `trackKind`. Descriptive only. */
       kind: "manual" | "asr" | "package";
     }
   /**
@@ -34,10 +34,23 @@ export type FetchOutcome =
    * NOT downgrade status. `reason` records which, so a failure on an IP we can't
    * reproduce locally is still diagnosable from logs.
    */
-  | { status: "error"; reason: string };
+  | { status: "error"; reason: string }
+) & {
+  /**
+   * Every upstream request and decision this attempt made, in order.
+   *
+   * `reason` names the verdict; this says how it was reached. One fetch attempt
+   * makes up to eleven requests across two endpoints and three client
+   * fingerprints, and they fail independently — a summary alone cannot tell
+   * "InnerTube 403 on every language" (an egress block) from "InnerTube 200 but
+   * no caption tracks" (a video-shaped problem), and those need different fixes.
+   * Callers own the log sink; this type only carries the material.
+   */
+  trace: string[];
+};
 
-// Caption-language preference within a track group. The app speaks he/ar/en;
-// "iw" is the legacy ISO code for Hebrew that older videos still use.
+// Order in which caption languages are requested. The app speaks he/ar/en; "iw"
+// is the legacy ISO code for Hebrew that older videos still use.
 const LANG_PREFERENCE = ["he", "iw", "ar", "en"];
 
 const YOUTUBE_HEADERS = {
@@ -94,6 +107,50 @@ export function extractInlineJson(html: string, varName: string): unknown {
   return null;
 }
 
+// ─── Upstream tracing ────────────────────────────────────────────────────────
+
+/** Names an error by class as well as message — the download's typed errors
+ * (rate limit, disabled captions, unavailable video) carry their diagnosis in
+ * the class name, and a bare `.message` throws it away. */
+function describeError(e: unknown): string {
+  return e instanceof Error ? `${e.constructor.name}: ${e.message}` : String(e);
+}
+
+/**
+ * Wraps `fetch` so each request the DOWNLOAD makes lands in `trace`.
+ *
+ * The download runs inside `youtube-transcript`, which swallows every HTTP
+ * detail and reports only that it found nothing — yet those ten requests are
+ * most of the upstream surface, and their status codes are the difference
+ * between an IP block and a video that genuinely has no captions. The package
+ * takes a `fetch` override, so injecting one is the only seam that reaches them
+ * without forking it.
+ */
+function tracingFetch(trace: string[]): typeof globalThis.fetch {
+  return async (input, init) => {
+    const raw =
+      typeof input === "string" || input instanceof URL ? String(input) : input.url;
+    const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+    // Path only: a watch or player URL carries the video id and API keys in its
+    // query string, and the endpoint is what identifies the call.
+    let label = raw;
+    try {
+      const url = new URL(raw);
+      label = `${url.host}${url.pathname}`;
+    } catch {
+      // Not absolute — keep it verbatim rather than dropping the request.
+    }
+    try {
+      const res = await fetch(input, init);
+      trace.push(`${method} ${label} → ${res.status}`);
+      return res;
+    } catch (e) {
+      trace.push(`${method} ${label} → ${describeError(e)}`);
+      throw e;
+    }
+  };
+}
+
 // ─── Caption track discovery ─────────────────────────────────────────────────
 
 interface CaptionScrape {
@@ -109,16 +166,35 @@ interface CaptionScrape {
    */
   playability: string | null;
   tracks: CaptionTrack[];
+  /**
+   * Why the page yielded nothing, when `pageLoaded` is false: `http_<status>`,
+   * `no_player_json`, or a thrown error. Null when the page loaded.
+   *
+   * A refused request, a bot wall that answers 200 with no player JSON, and a
+   * network error are three different problems wanting three different fixes —
+   * only the first is an argument for paid egress. Collapsed into a bare "not
+   * loaded" they are indistinguishable, which is how the most common production
+   * failure stayed unattributable.
+   */
+  failure: string | null;
 }
 
-async function fetchCaptionTracks(videoId: string): Promise<CaptionScrape> {
+async function fetchCaptionTracks(
+  videoId: string,
+  trace: string[]
+): Promise<CaptionScrape> {
+  const failed = (failure: string): CaptionScrape => {
+    trace.push(`scrape → ${failure}`);
+    return { pageLoaded: false, playability: null, tracks: [], failure };
+  };
   try {
     const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
       headers: YOUTUBE_HEADERS,
     });
+    trace.push(`GET www.youtube.com/watch → ${res.status}`);
     // Covers rate limiting (429) as well as outright errors — both mean we
     // learned nothing about this video's captions.
-    if (!res.ok) return { pageLoaded: false, playability: null, tracks: [] };
+    if (!res.ok) return failed(`http_${res.status}`);
     const html = await res.text();
     const data = extractInlineJson(html, "ytInitialPlayerResponse") as
       | {
@@ -128,22 +204,20 @@ async function fetchCaptionTracks(videoId: string): Promise<CaptionScrape> {
       | null;
     // Player response absent → the page shape changed or we were blocked: treat
     // as "not loaded" so callers keep the result transient (no status downgrade).
-    if (!data) return { pageLoaded: false, playability: null, tracks: [] };
+    if (!data) return failed("no_player_json");
     const tracks = data.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-    return {
-      pageLoaded: true,
-      playability: data.playabilityStatus?.status ?? null,
-      tracks: Array.isArray(tracks) ? tracks : [],
-    };
-  } catch {
-    return { pageLoaded: false, playability: null, tracks: [] };
+    const found = Array.isArray(tracks) ? tracks : [];
+    const playability = data.playabilityStatus?.status ?? null;
+    trace.push(
+      `scrape → playability=${playability ?? "absent"} tracks=${found.length}` +
+        (found.length
+          ? ` [${found.map((t) => `${t.languageCode}${t.kind === "asr" ? ":asr" : ""}`).join(",")}]`
+          : "")
+    );
+    return { pageLoaded: true, playability, tracks: found, failure: null };
+  } catch (e) {
+    return failed(describeError(e));
   }
-}
-
-function langRank(code: string): number {
-  const base = code.toLowerCase().split("-")[0];
-  const i = LANG_PREFERENCE.indexOf(base);
-  return i === -1 ? LANG_PREFERENCE.length : i;
 }
 
 /** Normalize caption language codes to the app's supported set (iw → he). */
@@ -154,149 +228,105 @@ export function normalizeLang(code: string | null | undefined): string | null {
 }
 
 /**
- * Selection order: prefer a **manual** (human) track in any language over any
- * ASR track; within a group prefer the app's languages (he/ar/en). Returns null
- * when the track list is empty.
+ * Provenance of a downloaded transcript, read off the scraped track list by
+ * matching the language the download actually used. `"package"` means the scrape
+ * could not corroborate it — the watch page was blocked, or it listed no track in
+ * that language — so whether a human or a machine wrote the captions is unknown.
  */
-export function pickCaptionTrack(tracks: CaptionTrack[]): CaptionTrack | null {
-  const manual = tracks.filter((t) => t.kind !== "asr");
-  const asr = tracks.filter((t) => t.kind === "asr");
-  const byPreference = (a: CaptionTrack, b: CaptionTrack) =>
-    langRank(a.languageCode) - langRank(b.languageCode);
-  if (manual.length) return [...manual].sort(byPreference)[0];
-  if (asr.length) return [...asr].sort(byPreference)[0];
-  return null;
+function trackKind(
+  tracks: CaptionTrack[],
+  language: string | null
+): "manual" | "asr" | "package" {
+  if (!language) return "package";
+  const match = tracks.find((t) => normalizeLang(t.languageCode) === language);
+  if (!match) return "package";
+  return match.kind === "asr" ? "asr" : "manual";
 }
 
-// ─── Transcript parsing ──────────────────────────────────────────────────────
+// ─── Transcript download (InnerTube) ────────────────────────────────────────
 
-function decodeHtmlEntities(s: string): string {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
-}
-
-function parseSrv3(xml: string): TranscriptSegment[] {
-  const segments: TranscriptSegment[] = [];
-  const pRegex = /<p\s+t="(\d+)"\s+d="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
-  let m;
-  while ((m = pRegex.exec(xml)) !== null) {
-    const startMs = parseInt(m[1], 10);
-    const durMs = parseInt(m[2], 10);
-    const inner = m[3];
-    let text = "";
-    const sRegex = /<s[^>]*>([^<]*)<\/s>/g;
-    let sMatch;
-    while ((sMatch = sRegex.exec(inner)) !== null) {
-      text += sMatch[1];
-    }
-    if (!text) text = inner.replace(/<[^>]+>/g, "");
-    text = decodeHtmlEntities(text).trim();
-    if (text) {
-      segments.push({ text, offset: startMs, duration: durMs });
-    }
-  }
-  return segments;
-}
-
-function parseClassic(xml: string): TranscriptSegment[] {
-  const segments: TranscriptSegment[] = [];
-  const regex = /<text start="([\d.]+)" dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
-  let m;
-  while ((m = regex.exec(xml)) !== null) {
-    const text = decodeHtmlEntities(m[3]).trim();
-    if (text) {
-      segments.push({
-        text,
-        offset: parseFloat(m[1]) * 1000,
-        duration: parseFloat(m[2]) * 1000,
-      });
-    }
-  }
-  return segments;
-}
-
-async function fetchAndParseTranscript(url: string): Promise<TranscriptSegment[] | null> {
+async function tryPackage(
+  videoId: string,
+  trace: string[],
+  lang?: string
+): Promise<{ segments: TranscriptSegment[]; language: string | null } | null> {
+  const attempt = `download lang=${lang ?? "any"}`;
   try {
-    const res = await fetch(url, { headers: YOUTUBE_HEADERS });
-    if (!res.ok) return null;
-    const xml = await res.text();
-
-    const srv3 = parseSrv3(xml);
-    if (srv3.length > 0) return srv3;
-
-    const classic = parseClassic(xml);
-    if (classic.length > 0) return classic;
-
-    return null;
-  } catch {
+    const raw = await YoutubeTranscript.fetchTranscript(videoId, {
+      ...(lang ? { lang } : {}),
+      fetch: tracingFetch(trace),
+    });
+    if (!raw || raw.length === 0) {
+      // A resolved-but-empty result is NOT the same as a throw: the endpoints
+      // answered, so this says something about the video rather than the egress.
+      trace.push(`${attempt} → empty`);
+      return null;
+    }
+    trace.push(`${attempt} → ${raw.length} segments`);
+    return {
+      segments: raw.map((s) => ({ text: s.text, offset: s.offset, duration: s.duration })),
+      // Read the language off the RESPONSE, not off `lang`: the request carries a
+      // preference the download may satisfy with a different track, so trusting
+      // the request would mislabel the transcript.
+      language: normalizeLang(raw[0].lang ?? lang),
+    };
+  } catch (e) {
+    // The package's typed errors are the sharpest diagnosis available anywhere
+    // in this flow — a captcha wall, disabled captions and an unavailable video
+    // each get their own class — and this catch used to discard all of them.
+    trace.push(`${attempt} → ${describeError(e)}`);
     return null;
   }
 }
 
-async function tryPackage(videoId: string, lang?: string): Promise<TranscriptSegment[] | null> {
-  try {
-    const raw = await YoutubeTranscript.fetchTranscript(videoId, lang ? { lang } : undefined);
-    if (!raw || raw.length === 0) return null;
-    return raw.map((s) => ({ text: s.text, offset: s.offset, duration: s.duration }));
-  } catch {
-    return null;
-  }
-}
-
+/** Tries the app's languages in preference order, then whatever the video has. */
 async function fetchViaPackage(
-  videoId: string
+  videoId: string,
+  trace: string[]
 ): Promise<{ segments: TranscriptSegment[]; language: string | null } | null> {
   for (const lang of LANG_PREFERENCE) {
-    const segments = await tryPackage(videoId, lang);
-    if (segments && segments.length) {
-      return { segments, language: normalizeLang(lang) };
-    }
+    const got = await tryPackage(videoId, trace, lang);
+    if (got) return got;
   }
-  const any = await tryPackage(videoId);
-  if (any && any.length) return { segments: any, language: null };
-  return null;
+  return tryPackage(videoId, trace);
 }
 
-// ─── Fresh transcript fetch (manual-first, original language) ────────────────
+// ─── Fresh transcript fetch (original language) ──────────────────────────────
 
 /**
- * Fetches a fresh transcript for `videoId`, preferring manual captions.
+ * Fetches a fresh transcript for `videoId`, in its **original language** — it is
+ * never machine-translated here.
  *
- * Order: scrape the caption track list → pick a manual track (any language) →
- * else an ASR track → else the `youtube-transcript` package. The transcript is
- * returned in its **original language**; it is never machine-translated here.
+ * The download runs over the InnerTube player endpoint (an ANDROID client
+ * context, via `youtube-transcript`). The watch-page scrape is deliberately NOT a
+ * download path: YouTube answers an `api/timedtext` URL lifted out of the watch
+ * page with an empty 200 — on every IP, including a residential one, in every
+ * subtitle format — so requesting one only ever burned a request and made the
+ * real download look like a fallback. The scrape survives for the two questions
+ * it still answers reliably:
  *
- * Distinguishes a **confirmed** no-captions result (page loaded, zero tracks,
- * package empty → `"unavailable"`) from a **transient** failure (network/parse
- * problem, or tracks existed but couldn't be downloaded → `"error"`), so callers
- * only downgrade `transcript_status` on a confirmed change.
+ *   1. `playabilityStatus` — the only discriminator between a page served INTACT
+ *      that genuinely lists no captions and a degraded one withholding them.
+ *   2. The track list, which says whether the captions are human or ASR.
+ *
+ * Distinguishes a **confirmed** no-captions result (page loaded, playable, zero
+ * tracks, download empty → `"unavailable"`) from a **transient** failure
+ * (blocked, unparseable, or tracks that wouldn't download → `"error"`), so
+ * callers only downgrade `transcript_status` on a confirmed change.
  */
 export async function fetchFreshTranscript(videoId: string): Promise<FetchOutcome> {
-  const scrape = await fetchCaptionTracks(videoId);
+  const trace: string[] = [];
+  const scrape = await fetchCaptionTracks(videoId, trace);
 
-  if (scrape.pageLoaded && scrape.tracks.length > 0) {
-    const track = pickCaptionTrack(scrape.tracks);
-    if (track) {
-      const segments = await fetchAndParseTranscript(track.baseUrl);
-      if (segments && segments.length) {
-        return {
-          status: "ok",
-          segments,
-          language: normalizeLang(track.languageCode),
-          kind: track.kind === "asr" ? "asr" : "manual",
-        };
-      }
-    }
-  }
-
-  const pkg = await fetchViaPackage(videoId);
+  const pkg = await fetchViaPackage(videoId, trace);
   if (pkg) {
-    return { status: "ok", segments: pkg.segments, language: pkg.language, kind: "package" };
+    return {
+      status: "ok",
+      segments: pkg.segments,
+      language: pkg.language,
+      kind: trackKind(scrape.tracks, pkg.language),
+      trace,
+    };
   }
 
   // A CONFIRMED no-captions video requires evidence the page was served INTACT:
@@ -306,18 +336,20 @@ export async function fetchFreshTranscript(videoId: string): Promise<FetchOutcom
   // is what let a blocked fetch permanently mark a captioned video as having
   // none. Anything short of intact-and-playable is transient.
   if (scrape.pageLoaded && scrape.playability === "OK" && scrape.tracks.length === 0) {
-    return { status: "unavailable" };
+    return { status: "unavailable", trace };
   }
 
   // Reason codes exist so a production failure is diagnosable: the interesting
   // failures happen on IPs we cannot reproduce locally, and "it returned error"
-  // does not distinguish "rate-limited" from "video is age-gated".
+  // does not distinguish "rate-limited" from "video is age-gated". The scrape's
+  // own failure is carried through rather than flattened, because "refused" and
+  // "answered, but not with a page we recognise" argue for different fixes.
   const reason = !scrape.pageLoaded
-    ? "page_not_loaded"
+    ? `page_not_loaded:${scrape.failure ?? "unknown"}`
     : scrape.playability && scrape.playability !== "OK"
       ? `not_playable:${scrape.playability}`
       : "tracks_undownloadable";
-  return { status: "error", reason };
+  return { status: "error", reason, trace };
 }
 
 // ─── Playhead slicing (AI-tutor spoiler bounding) ───────────────────────

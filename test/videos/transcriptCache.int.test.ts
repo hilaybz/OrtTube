@@ -37,10 +37,18 @@ const HEBREW_SEGMENTS = [
 
 /** A manual (human-authored) Hebrew caption track — the common happy-path fetch. */
 function manualHebrewTrack(): FetchOutcome {
-  return { status: "ok", segments: HEBREW_SEGMENTS, language: "he", kind: "manual" };
+  return {
+    status: "ok",
+    segments: HEBREW_SEGMENTS,
+    language: "he",
+    kind: "manual",
+    trace: [],
+  };
 }
 
-/** Script the mocked scraper to return one fixed outcome. */
+/** Script the mocked scraper to return one fixed outcome. These tests are about
+ * what the CACHE does with an outcome, so the trace stays empty throughout —
+ * what a real fetch records in it is pinned in transcriptClassify.unit.test.ts. */
 function youtubeReturns(outcome: FetchOutcome): void {
   scraper.mockResolvedValue(outcome);
 }
@@ -124,7 +132,7 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
     const youtubeId = "nocaps00001";
     await clearCachedTranscript(youtubeId);
     await givenVideo(youtubeId, { status: "pending" });
-    youtubeReturns({ status: "unavailable" });
+    youtubeReturns({ status: "unavailable", trace: [] });
 
     const result = await getTranscript(getServiceClient(), youtubeId);
 
@@ -139,7 +147,7 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
     const fetchedLongAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(); // 40d old
     await clearCachedTranscript(youtubeId);
     await givenVideo(youtubeId, { status: "ready", fetchedAt: fetchedLongAgo });
-    youtubeReturns({ status: "error", reason: "page_not_loaded" });
+    youtubeReturns({ status: "error", reason: "page_not_loaded:http_429", trace: [] });
 
     const result = await getTranscript(getServiceClient(), youtubeId);
 
@@ -164,7 +172,7 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
       status: "unavailable",
       fetchedAt: new Date().toISOString(),
     });
-    youtubeReturns({ status: "unavailable" });
+    youtubeReturns({ status: "unavailable", trace: [] });
 
     await getTranscript(getServiceClient(), youtubeId);
     await getTranscript(getServiceClient(), youtubeId);

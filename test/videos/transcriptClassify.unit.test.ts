@@ -13,9 +13,19 @@
  *
  * `global.fetch` is stubbed with real captured shapes rather than mocking
  * `fetchCaptionTracks`, so the parsing and the verdict are exercised together.
+ *
+ * The InnerTube download is mocked at the package boundary. That keeps the two
+ * halves separable: `fetch` then carries only the requests THIS module makes, so a
+ * test can assert which ones those are, and each case can drive the download to a
+ * chosen result instead of relying on it failing against a stub.
  */
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { fetchFreshTranscript } from "@/lib/transcript";
+
+const fetchTranscript = vi.hoisted(() => vi.fn());
+vi.mock("youtube-transcript", () => ({
+  YoutubeTranscript: { fetchTranscript },
+}));
 
 /** A watch page whose inline player response is `player`. */
 function watchPage(player: unknown): string {
@@ -37,8 +47,18 @@ const A_CAPTION_TRACK = {
   languageCode: "en",
 };
 
+/** The download finds nothing — the default for the classification cases. */
+function downloadYieldsNothing(): void {
+  fetchTranscript.mockRejectedValue(new Error("no transcripts available"));
+}
+
+beforeEach(() => {
+  downloadYieldsNothing();
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  fetchTranscript.mockReset();
 });
 
 describe("fetchFreshTranscript classification", () => {
@@ -85,43 +105,204 @@ describe("fetchFreshTranscript classification", () => {
 
     expect(outcome.status).toBe("error");
     if (outcome.status === "error") {
-      expect(outcome.reason).toBe("page_not_loaded");
+      // The status survives into the reason. A refused request argues for paid
+      // egress; the unparseable case below does not, and a bare "page_not_loaded"
+      // could not tell them apart.
+      expect(outcome.reason).toBe("page_not_loaded:http_429");
     }
   });
 
-  it("treats an unparseable page as transient", async () => {
+  it("treats an unparseable page as transient, distinctly from a refusal", async () => {
     youtubeServes("<html><body>nothing useful here</body></html>");
 
     const outcome = await fetchFreshTranscript("vid");
 
     expect(outcome.status).toBe("error");
     if (outcome.status === "error") {
-      expect(outcome.reason).toBe("page_not_loaded");
+      expect(outcome.reason).toBe("page_not_loaded:no_player_json");
     }
   });
 
-  it("reports tracks_undownloadable when tracks exist but the download fails", async () => {
-    // First call returns the watch page; the caption download then fails.
-    const html = watchPage({
-      playabilityStatus: { status: "OK" },
-      captions: {
-        playerCaptionsTracklistRenderer: { captionTracks: [A_CAPTION_TRACK] },
-      },
-    });
-    let call = 0;
+  it("keeps a network error distinct from an answered request", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
-        call += 1;
-        return call === 1
-          ? new Response(html, { status: 200 })
-          : new Response("", { status: 500 });
+        throw new TypeError("fetch failed");
+      })
+    );
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    expect(outcome.status).toBe("error");
+    if (outcome.status === "error") {
+      expect(outcome.reason).toBe("page_not_loaded:TypeError: fetch failed");
+    }
+  });
+
+  it("reports tracks_undownloadable when tracks exist but the download finds none", async () => {
+    youtubeServes(
+      watchPage({
+        playabilityStatus: { status: "OK" },
+        captions: {
+          playerCaptionsTracklistRenderer: { captionTracks: [A_CAPTION_TRACK] },
+        },
       })
     );
 
     const outcome = await fetchFreshTranscript("vid");
 
     // Tracks demonstrably exist, so this must never be "no captions".
-    expect(outcome.status).not.toBe("unavailable");
+    expect(outcome.status).toBe("error");
+    if (outcome.status === "error") {
+      expect(outcome.reason).toBe("tracks_undownloadable");
+    }
+  });
+});
+
+describe("fetchFreshTranscript request surface", () => {
+  /**
+   * Regression pin for a path that was deleted, not fixed. YouTube answers a
+   * timedtext URL taken from the watch page with an empty 200 on every IP and in
+   * every subtitle format, so the module must never spend a request on one — and
+   * because that failure looks exactly like success (200, no error), re-adding the
+   * call would go unnoticed without this test.
+   */
+  it("never requests a caption track's baseUrl", async () => {
+    youtubeServes(
+      watchPage({
+        playabilityStatus: { status: "OK" },
+        captions: {
+          playerCaptionsTracklistRenderer: { captionTracks: [A_CAPTION_TRACK] },
+        },
+      })
+    );
+
+    await fetchFreshTranscript("vid");
+
+    const requested = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(
+      (args) => String(args[0])
+    );
+    expect(requested).not.toContain(A_CAPTION_TRACK.baseUrl);
+    // The watch page is the module's ONLY direct request; the download goes
+    // through the package.
+    expect(requested).toEqual(["https://www.youtube.com/watch?v=vid"]);
+  });
+});
+
+describe("fetchFreshTranscript provenance", () => {
+  const SEGMENTS = [{ text: "שלום", offset: 0, duration: 1000, lang: "iw" }];
+
+  it("labels captions ASR when the scraped track for that language is ASR", async () => {
+    youtubeServes(
+      watchPage({
+        playabilityStatus: { status: "OK" },
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            // Legacy "iw" here, normalised "he" on the download — they must still
+            // match, or a real Hebrew ASR track gets labelled as unknown.
+            captionTracks: [{ baseUrl: "u", languageCode: "iw", kind: "asr" }],
+          },
+        },
+      })
+    );
+    fetchTranscript.mockResolvedValue(SEGMENTS);
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    expect(outcome.status).toBe("ok");
+    if (outcome.status === "ok") {
+      expect(outcome.language).toBe("he");
+      expect(outcome.kind).toBe("asr");
+    }
+  });
+
+  it("falls back to 'package' provenance when the scrape was blocked", async () => {
+    // The download can still succeed while the watch page is degraded, and then
+    // there is no track list to corroborate human-vs-machine. That is unknown, not
+    // manual — claiming manual would overstate the transcript's quality.
+    youtubeServes("Too Many Requests", 429);
+    fetchTranscript.mockResolvedValue(SEGMENTS);
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    expect(outcome.status).toBe("ok");
+    if (outcome.status === "ok") {
+      expect(outcome.language).toBe("he");
+      expect(outcome.kind).toBe("package");
+    }
+  });
+});
+
+/**
+ * The trace is the only record of what a fetch actually did. These failures
+ * happen on production egress IPs and cannot be reproduced locally, so if the
+ * trace loses a request or an error class, that information is gone for good —
+ * which is what these pin.
+ */
+describe("fetchFreshTranscript trace", () => {
+  it("records the scrape's status and the track list it found", async () => {
+    youtubeServes(
+      watchPage({
+        playabilityStatus: { status: "OK" },
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [{ baseUrl: "u", languageCode: "en", kind: "asr" }],
+          },
+        },
+      })
+    );
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    expect(outcome.trace).toContain("GET www.youtube.com/watch → 200");
+    expect(outcome.trace).toContain("scrape → playability=OK tracks=1 [en:asr]");
+  });
+
+  it("keeps the download's error CLASS, not just its message", async () => {
+    // The package reports a captcha wall, disabled captions and an unavailable
+    // video as distinct error classes. That distinction is the sharpest diagnosis
+    // available anywhere in this flow, and it used to be swallowed whole.
+    youtubeServes(watchPage({ playabilityStatus: { status: "LOGIN_REQUIRED" } }));
+    class YoutubeTranscriptTooManyRequestError extends Error {}
+    fetchTranscript.mockRejectedValue(
+      new YoutubeTranscriptTooManyRequestError("captcha required")
+    );
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    expect(outcome.trace).toContain(
+      "download lang=he → YoutubeTranscriptTooManyRequestError: captcha required"
+    );
+  });
+
+  it("records every request the download makes, which it otherwise hides", async () => {
+    // The download's own requests are most of the upstream surface and the
+    // package exposes none of them; only the injected fetch reaches them.
+    youtubeServes(watchPage({ playabilityStatus: { status: "OK" } }));
+    fetchTranscript.mockImplementation(
+      async (_id: string, config: { fetch: typeof globalThis.fetch }) => {
+        await config.fetch("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", {
+          method: "POST",
+        });
+        throw new Error("no transcripts available");
+      }
+    );
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    // Query string dropped: it carries the video id and keys, and the endpoint is
+    // what identifies the call.
+    expect(outcome.trace).toContain("POST www.youtube.com/youtubei/v1/player → 200");
+  });
+
+  it("separates a download that answered empty from one that failed", async () => {
+    youtubeServes(watchPage({ playabilityStatus: { status: "OK" } }));
+    fetchTranscript.mockResolvedValue([]);
+
+    const outcome = await fetchFreshTranscript("vid");
+
+    // An empty answer says something about the video; a throw says something
+    // about the egress. Both end as "no transcript" and must stay tellable apart.
+    expect(outcome.trace).toContain("download lang=he → empty");
   });
 });
