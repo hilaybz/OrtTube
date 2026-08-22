@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getClassQuizAnalytics, type ClassQuizAnalytics } from "@/lib/analytics";
+import { analyticsCutoffNote } from "@/lib/analyticsCutoff";
 import { Alert } from "@/components/ui/Alert";
 import { BackLink } from "@/components/ui/BackLink";
 import { MetricRow, MetricTile } from "@/components/teacher/analytics/MetricTile";
@@ -64,6 +65,11 @@ export default async function ClassQuizAnalyticsPage({
     );
   }
 
+  const cutoffNote = analyticsCutoffNote(
+    analytics.content_updated_at,
+    analytics.excluded_attempt_count
+  );
+
   return (
     <div className="mx-auto max-w-4xl py-2">
       <header className="mb-6 flex flex-col gap-2">
@@ -73,6 +79,12 @@ export default async function ClassQuizAnalyticsPage({
         </h1>
         <p className="text-[var(--body)]">ביצועי הכיתה בחידון זה.</p>
       </header>
+
+      {cutoffNote && (
+        <Alert variant="warning" className="mb-6">
+          {cutoffNote}
+        </Alert>
+      )}
 
       <div className="flex flex-col gap-8">
         <MetricRow>

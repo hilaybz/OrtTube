@@ -11,6 +11,7 @@ import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, QuestionKind } from "@/lib/quizAuthor";
 import { deleteOption, MutationError } from "./mutations";
 import { formatTime, parseTime } from "./format";
+import { analyticsAtRiskNotice } from "@/lib/analyticsCutoff";
 
 interface DraftOption {
   /** Local, stable key for React (not the DB id). */
@@ -75,6 +76,7 @@ export function QuestionModal({
   currentPlayerSeconds = null,
   onClose,
   onSaved,
+  atRiskCount = 0,
 }: {
   open: boolean;
   quizId: string;
@@ -86,6 +88,7 @@ export function QuestionModal({
   currentPlayerSeconds?: number | null;
   onClose: () => void;
   onSaved: () => void;
+  atRiskCount?: number;
 }) {
   const [kind, setKind] = useState<QuestionKind>("single");
   const [position, setPosition] = useState("");
@@ -230,6 +233,10 @@ export function QuestionModal({
     >
       <div className="flex max-h-[70vh] flex-col gap-5 overflow-y-auto pe-1">
         {error && <Alert variant="danger">{error}</Alert>}
+
+        {atRiskCount > 0 && (
+          <Alert variant="warning">{analyticsAtRiskNotice(atRiskCount)}</Alert>
+        )}
 
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>

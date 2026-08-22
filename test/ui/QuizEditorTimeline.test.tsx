@@ -53,6 +53,8 @@ const QUIZ: AuthorQuiz = {
   transcript_status: "ready",
   time_restricted: false,
   duration_minutes: null,
+  content_updated_at: null,
+  analytics_attempt_count: 0,
   video: {
     id: "video-1",
     youtube_video_id: "aircAruvnKk",

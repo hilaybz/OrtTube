@@ -289,6 +289,15 @@ export class Teacher implements Actor {
   }
 
   /** Set a quiz's title (owner-scoped `update_quiz` RPC); `""` clears it. */
+  async writeQuizColumnDirectly(
+    quiz: Quiz | string,
+    patch: Record<string, unknown>
+  ): Promise<void> {
+    const id = typeof quiz === "string" ? quiz : quiz.id;
+    const { error } = await this.client.from("quizzes").update(patch).eq("id", id);
+    if (error) throw new Error(error.message);
+  }
+
   setTitle(quiz: Quiz, title: string): Promise<void> {
     return updateQuiz(this.client, quiz.id, { title });
   }

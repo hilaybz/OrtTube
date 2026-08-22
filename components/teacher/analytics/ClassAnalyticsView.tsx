@@ -63,8 +63,21 @@ export async function ClassAnalyticsView({ classId }: { classId: string }) {
     (q) => allocationState(q, now) === "done"
   ).length;
 
+  const editedQuizzes = overview.quizzes.filter(
+    (q) => q.excluded_attempt_count > 0
+  );
+
   return (
     <div className="flex flex-col gap-8">
+      {editedQuizzes.length > 0 && (
+        <Alert variant="warning">
+          {editedQuizzes.length === 1
+            ? `החידון "${editedQuizzes[0].title ?? "ללא כותרת"}" נערך, ולכן מוצגים לגביו רק ניסיונות שנפתחו לאחר העריכה.`
+            : `${editedQuizzes.length} חידונים בכיתה זו נערכו, ולכן מוצגים לגביהם רק ניסיונות שנפתחו לאחר העריכה.`}{" "}
+          תלמידים שסיימו גרסה קודמת יופיעו כמי שלא התחילו.
+        </Alert>
+      )}
+
       <MetricRow>
         <MetricTile
           label="תלמידים בכיתה"

@@ -8,7 +8,9 @@ import type { Language } from "@/lib/lang";
 import {
   getQuizForStudent,
   startOrResumeAttempt,
+  listMyAttemptsForQuiz,
   type StudentQuiz,
+  type StudentAttemptState,
 } from "@/lib/attempts";
 import { listStudentFeed, type StudentFeedItem, type TutorMode } from "@/lib/classes";
 import { getPool } from "../db";
@@ -72,6 +74,10 @@ export class Student implements Actor {
   }
 
   /** The per-class tutor context (`get_tutor_mode`). Throws `not_member`/`not_assigned`. */
+  attemptState(quiz: Quiz, opts: { in: Classroom }): Promise<StudentAttemptState> {
+    return listMyAttemptsForQuiz(this.client, opts.in.id, quiz.id);
+  }
+
   async tutorContext(quiz: Quiz, opts: { in: Classroom }): Promise<TutorContext> {
     const { data, error } = await this.client.rpc("get_tutor_mode", {
       p_class_id: opts.in.id,

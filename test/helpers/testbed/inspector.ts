@@ -256,6 +256,15 @@ export class Inspector {
   }
 
   /** Whether the profile for a user id still exists. */
+  async contentUpdatedAt(quiz: Quiz | string): Promise<Date | null> {
+    const id = typeof quiz === "string" ? quiz : quiz.id;
+    const res = await getPool().query<{ content_updated_at: Date | null }>(
+      `SELECT content_updated_at FROM public.quizzes WHERE id=$1`,
+      [id]
+    );
+    return res.rows[0]?.content_updated_at ?? null;
+  }
+
   async profileExists(userId: string): Promise<boolean> {
     const res = await getPool().query(
       "SELECT 1 FROM public.profiles WHERE id=$1",

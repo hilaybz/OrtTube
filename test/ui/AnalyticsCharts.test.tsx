@@ -78,6 +78,8 @@ function classOverview(
       {
         quiz_id: QUIZ_ID,
         title: "Photosynthesis",
+        content_updated_at: null,
+        excluded_attempt_count: 0,
         base_language: "he",
         question_count: 5,
         tutor_mode: "hints",
@@ -178,6 +180,8 @@ function quizOverview(
   return {
     quiz_id: QUIZ_ID,
     title: "Photosynthesis",
+    content_updated_at: null,
+    excluded_attempt_count: 0,
     base_language: "he",
     visibility: "private",
     created_at: "2026-07-01T00:00:00Z",

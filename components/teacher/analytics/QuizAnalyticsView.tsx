@@ -17,6 +17,7 @@ import { QuizQuestionTable } from "./QuizQuestionTable";
 import { TutorQuestionLog } from "./TutorQuestionLog";
 import { TutorInsights } from "./TutorInsights";
 import { grade } from "./chartTheme";
+import { analyticsCutoffNote } from "@/lib/analyticsCutoff";
 
 /** "12:34" / "1:02:03" from a video duration. */
 function duration(seconds: number | null): string | null {
@@ -56,6 +57,10 @@ export async function QuizAnalyticsView({ quizId }: { quizId: string }) {
   }
 
   const videoLength = duration(data.video.duration_seconds);
+  const cutoffNote = analyticsCutoffNote(
+    data.content_updated_at,
+    data.excluded_attempt_count
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -93,6 +98,8 @@ export async function QuizAnalyticsView({ quizId }: { quizId: string }) {
           tooltipPlacement="bottom"
         />
       </GlassCard>
+
+      {cutoffNote && <Alert variant="warning">{cutoffNote}</Alert>}
 
       <MetricRow>
         <MetricTile

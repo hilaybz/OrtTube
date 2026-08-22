@@ -65,6 +65,8 @@ export class AnalyticsError extends Error {
 /** `quiz_stats(quiz_id)` — quiz-level completion/attempt/score summary. */
 export interface QuizStats {
   quiz_id: string;
+  content_updated_at: string | null;
+  excluded_attempt_count: number;
   /** Total attempt rows for the quiz (started; includes incomplete). */
   attempt_count: number;
   /** Attempts with `completed_at IS NOT NULL`. */
@@ -126,6 +128,8 @@ export interface ClassQuizStat {
   title: string | null;
   /** True when the quiz was soft-deleted (assignment row may still exist). */
   deleted: boolean;
+  content_updated_at: string | null;
+  excluded_attempt_count: number;
   tutor_mode: TutorMode;
   /** `null` = unlimited attempts. */
   max_attempts: number | null;
@@ -216,6 +220,8 @@ export interface ClassQuizAnalytics {
   class_id: string;
   quiz_id: string;
   title: string | null;
+  content_updated_at: string | null;
+  excluded_attempt_count: number;
   question_count: number;
   /** Current roster size. */
   member_count: number;
@@ -439,6 +445,8 @@ export interface AllocationWindow {
 export interface ClassOverviewQuiz extends AllocationWindow {
   quiz_id: string;
   title: string | null;
+  content_updated_at: string | null;
+  excluded_attempt_count: number;
   base_language: Language;
   /** Live (non-deleted) questions. */
   question_count: number;
@@ -594,6 +602,8 @@ export interface QuizAnalyticsQuestion {
 export interface QuizAnalyticsOverview {
   quiz_id: string;
   title: string | null;
+  content_updated_at: string | null;
+  excluded_attempt_count: number;
   base_language: Language;
   visibility: "private" | "shared";
   created_at: string;

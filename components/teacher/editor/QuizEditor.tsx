@@ -29,6 +29,12 @@ import { VideoPreviewPanel, type VideoPreviewPanelHandle } from "./VideoPreviewP
 import { QuestionListItem } from "./QuestionListItem";
 import { updateQuizMeta, deleteQuestion, MutationError } from "./mutations";
 import { LANGUAGE_LABELS, formatTime } from "./format";
+import {
+  analyticsAtRiskNotice,
+  formatCutoffDate,
+  ANALYTICS_RESET_CONSEQUENCE,
+} from "@/lib/analyticsCutoff";
+import { confirmContentEdit } from "./analyticsWarning";
 
 // How long a marker-click highlight lingers on the matching question card.
 const HIGHLIGHT_MS = 1600;
@@ -118,6 +124,7 @@ function GenerateModal({
   onGenerate,
   onClose,
   busy,
+  atRiskCount,
 }: {
   open: boolean;
   hasQuestions: boolean;
@@ -133,10 +140,14 @@ function GenerateModal({
   onGenerate: () => void;
   onClose: () => void;
   busy: boolean;
+  atRiskCount: number;
 }) {
   return (
     <Modal open={open} title="יצירת שאלות עם AI" onClose={busy ? () => {} : onClose}>
       <div className="flex flex-col gap-5">
+        {atRiskCount > 0 && (
+          <Alert variant="warning">{analyticsAtRiskNotice(atRiskCount)}</Alert>
+        )}
         <div className="flex flex-col gap-2">
           <label htmlFor="gen-count" className="text-sm text-[var(--body)]">
             {hasQuestions ? "כמה שאלות חדשות להוסיף לחידון?" : "כמה שאלות ליצור?"}
@@ -291,6 +302,8 @@ export function QuizEditor({
   // fetches, caches, and promotes the status), so the button must stay live —
   // it is the only teacher action that resolves `pending`.
   const transcriptUnavailable = initial.transcript_status === "unavailable";
+  const atRiskCount = initial.analytics_attempt_count;
+  const lastEditedDate = formatCutoffDate(initial.content_updated_at);
 
   function refresh() {
     router.refresh();
@@ -422,7 +435,17 @@ export function QuizEditor({
   }
 
   async function removeQuestion(q: AuthorQuestion) {
-    if (!window.confirm("למחוק את השאלה? הפעולה אינה מחזירה את השאלה לרשימה.")) return;
+    const consequence =
+      atRiskCount > 0
+        ? `\n\n${analyticsAtRiskNotice(atRiskCount)}\n\n${ANALYTICS_RESET_CONSEQUENCE}`
+        : "";
+    if (
+      !window.confirm(
+        `למחוק את השאלה? הפעולה אינה מחזירה את השאלה לרשימה.${consequence}`
+      )
+    ) {
+      return;
+    }
     setBanner(null);
     try {
       await deleteQuestion(q.id);
@@ -525,6 +548,7 @@ export function QuizEditor({
   async function handleMarkerMove(questionId: string, positionSeconds: number): Promise<boolean> {
     const q = questions.find((x) => x.id === questionId);
     if (!q) return false;
+    if (!confirmContentEdit(atRiskCount, "הזזת נקודת העצירה של השאלה")) return false;
     setBanner(null);
     const ok = await saveQuestionPosition(q, positionSeconds);
     // `refresh()` re-fetches the server-sorted tree so the timeline and the
@@ -550,6 +574,7 @@ export function QuizEditor({
       .map((id) => questions.find((x) => x.id === id))
       .filter((q): q is AuthorQuestion => q != null);
     if (targets.length === 0) return false;
+    if (!confirmContentEdit(atRiskCount, "הזזת נקודת העצירה של השאלות")) return false;
     setBanner(null);
     const results = await Promise.all(
       targets.map((q) => saveQuestionPosition(q, positionSeconds))
@@ -599,6 +624,12 @@ export function QuizEditor({
                 "אורך הסרטון ייקבע עם טעינת הנגן"
               )}
             </span>
+            {lastEditedDate && (
+              <span className="inline-flex items-center gap-1.5">
+                <Icon name="clock" size={14} />
+                עודכן <span className="tabular-nums">{lastEditedDate}</span>
+              </span>
+            )}
           </p>
         </div>
         <IconButton
@@ -612,6 +643,13 @@ export function QuizEditor({
       </header>
 
       {banner && <Alert variant={banner.kind}>{banner.msg}</Alert>}
+
+      {atRiskCount > 0 && (
+        <Alert variant="warning" title="עריכה תפסיק לספור את התוצאות שנאספו">
+          <p>{analyticsAtRiskNotice(atRiskCount)}</p>
+          <p className="mt-1">{ANALYTICS_RESET_CONSEQUENCE}</p>
+        </Alert>
+      )}
 
       {/* 1 · Title + who can see the quiz */}
       <GlassCard className="flex flex-col gap-4">
@@ -833,6 +871,7 @@ export function QuizEditor({
         onGenerate={generate}
         onClose={() => setGenModalOpen(false)}
         busy={genBusy}
+        atRiskCount={atRiskCount}
       />
 
       <QuestionModal
@@ -843,6 +882,7 @@ export function QuizEditor({
         currentPlayerSeconds={currentTime}
         onClose={() => setModalOpen(false)}
         onSaved={refresh}
+        atRiskCount={atRiskCount}
       />
 
       <Modal

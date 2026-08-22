@@ -74,6 +74,8 @@ export interface AuthorQuiz {
   time_restricted: boolean;
   /** Only non-null while `time_restricted`. */
   duration_minutes: number | null;
+  content_updated_at: string | null;
+  analytics_attempt_count: number;
 }
 
 /**

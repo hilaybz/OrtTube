@@ -57,6 +57,8 @@ function quizStat(over: Partial<ClassStats["quizzes"][number]> = {}) {
     quiz_id: "q",
     title: null,
     deleted: false,
+    content_updated_at: null,
+    excluded_attempt_count: 0,
     tutor_mode: "hints" as const,
     max_attempts: null,
     attempt_count: 0,
