@@ -4,9 +4,9 @@ import {
   formatToday,
   greetingFor,
   schoolDayNumber,
-} from "@/lib/schoolClock";
+} from "@/lib/datetime";
 
-describe("schoolClock", () => {
+describe("datetime", () => {
   it("greets by the school's clock", () => {
     // 06:00 in Jerusalem.
     expect(greetingFor(new Date("2026-08-20T03:00:00.000Z"))).toBe("בוקר טוב");

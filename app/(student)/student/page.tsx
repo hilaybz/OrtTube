@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { listStudentFeed } from "@/lib/classes";
-import { firstName } from "@/lib/schoolClock";
+import { firstName } from "@/lib/datetime";
 import { StudentFeed } from "@/components/student/StudentFeed";
 import { StudentWelcome } from "@/components/student/StudentWelcome";
 

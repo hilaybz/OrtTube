@@ -5,13 +5,13 @@ import {
   recentlyFinishedQuizzes,
   summarizeClass,
   totalsFromSummaries,
-  formatShortDate,
   quizHeading,
   RECENTLY_FINISHED_LOOKBACK_DAYS,
   type ClassAssignments,
 } from "@/components/teacher/overview/aggregate";
 import type { ClassRow, AssignedQuiz } from "@/lib/classes";
 import type { ClassStats } from "@/lib/analytics";
+import { formatDate } from "@/lib/datetime";
 
 const NOW = new Date("2026-08-20T09:00:00.000Z");
 
@@ -270,7 +270,7 @@ describe("presentation helpers", () => {
 
   it("formats a closing date in school-local time, not UTC", () => {
     // 22:30 UTC is already the next day in Jerusalem.
-    expect(formatShortDate("2026-08-25T22:30:00.000Z")).toBe("26.8");
+    expect(formatDate("2026-08-25T22:30:00.000Z")).toBe("26.8");
   });
 
   it("phrases a closing time by school-local calendar days", () => {

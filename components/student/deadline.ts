@@ -1,4 +1,4 @@
-import { SCHOOL_TIME_ZONE, schoolDayNumber } from "@/lib/schoolClock";
+import { formatDate, formatTime, schoolDayNumber } from "@/lib/datetime";
 import type { StatusTone } from "./StatusBlock";
 
 /**
@@ -55,24 +55,6 @@ export interface DeadlineView {
    */
   when: string;
   urgency: DeadlineUrgency;
-}
-
-/** "18:00", school time. */
-export function formatDeadlineClock(iso: string): string {
-  return new Intl.DateTimeFormat("he-IL", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: SCHOOL_TIME_ZONE,
-  }).format(new Date(iso));
-}
-
-/** "14.3", school time. Any date a student reads, not deadlines alone. */
-export function formatSchoolDate(iso: string): string {
-  return new Intl.DateTimeFormat("he-IL", {
-    day: "numeric",
-    month: "numeric",
-    timeZone: SCHOOL_TIME_ZONE,
-  }).format(new Date(iso));
 }
 
 /**
@@ -148,8 +130,8 @@ export function countdownTickMs(msLeft: number): number {
 export function deadlineView(iso: string, now: Date = new Date()): DeadlineView {
   const due = new Date(iso);
   const msLeft = due.getTime() - now.getTime();
-  const clock = formatDeadlineClock(iso);
-  const date = formatSchoolDate(iso);
+  const clock = formatTime(iso);
+  const date = formatDate(iso);
   const days = schoolDayNumber(due) - schoolDayNumber(now);
   const day = days <= 0 ? "היום" : days === 1 ? "מחר" : `בעוד ${hebDays(days)}`;
 

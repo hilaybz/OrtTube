@@ -1,6 +1,6 @@
 import { IconLink } from "@/components/ui/IconButton";
 import { withBackTarget } from "@/components/ui/backTarget";
-import { formatToday, greetingFor } from "@/lib/schoolClock";
+import { formatToday, greetingFor } from "@/lib/datetime";
 
 /**
  * A brighter wash over the panel, in the app gradient's own lilac and mint.

@@ -6,12 +6,11 @@
  * which is exactly the part a UTC-machine test would otherwise get wrong).
  */
 import { describe, it, expect } from "vitest";
+import { formatDate, formatTime } from "@/lib/datetime";
 import {
   countdownTickMs,
   deadlineView,
   formatRemaining,
-  formatSchoolDate,
-  formatDeadlineClock,
 } from "@/components/student/deadline";
 
 const NOW = new Date("2026-03-14T09:00:00.000Z");
@@ -54,10 +53,10 @@ describe("countdownTickMs", () => {
 describe("school-zone formatting", () => {
   it("reads a UTC instant as the school's own wall clock and date", () => {
     // 18:00 UTC is 20:00 in Jerusalem, still the same calendar day there.
-    expect(formatDeadlineClock("2026-03-10T18:00:00.000Z")).toBe("20:00");
-    expect(formatSchoolDate("2026-03-10T18:00:00.000Z")).toBe("10.3");
+    expect(formatTime("2026-03-10T18:00:00.000Z")).toBe("20:00");
+    expect(formatDate("2026-03-10T18:00:00.000Z")).toBe("10.3");
     // 22:30 UTC has already become the next day in Jerusalem.
-    expect(formatSchoolDate("2026-03-10T22:30:00.000Z")).toBe("11.3");
+    expect(formatDate("2026-03-10T22:30:00.000Z")).toBe("11.3");
   });
 });
 

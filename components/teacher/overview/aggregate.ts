@@ -1,7 +1,7 @@
 import type { ClassStats } from "@/lib/analytics";
 import type { ClassRow, AssignedQuiz } from "@/lib/classes";
 import { allocationState, type AllocationState } from "@/lib/allocationState";
-import { SCHOOL_TIME_ZONE, schoolDayNumber } from "@/lib/schoolClock";
+import { formatDate, schoolDayNumber } from "@/lib/datetime";
 
 /**
  * Pure reductions behind the teacher overview. Everything here takes already
@@ -211,15 +211,6 @@ export function quizHeading(quiz: {
   return quiz.title ?? quiz.videoTitle ?? "חידון";
 }
 
-/** A short school-local day-and-month, e.g. `26.8`. */
-export function formatShortDate(iso: string): string {
-  return new Intl.DateTimeFormat("he-IL", {
-    day: "numeric",
-    month: "numeric",
-    timeZone: SCHOOL_TIME_ZONE,
-  }).format(new Date(iso));
-}
-
 /**
  * How a closing time reads on a finished-quiz card. Two parts rather than one
  * sentence: a phrase the teacher can scan ("נסגר אתמול") and, next to it, the
@@ -242,10 +233,10 @@ export interface ClosedAtMeta {
  */
 export function closedAtMeta(iso: string, now: Date = new Date()): ClosedAtMeta {
   const days = schoolDayNumber(now) - schoolDayNumber(new Date(iso));
-  if (days <= 0) return { phrase: "נסגר היום", date: formatShortDate(iso) };
-  if (days === 1) return { phrase: "נסגר אתמול", date: formatShortDate(iso) };
+  if (days <= 0) return { phrase: "נסגר היום", date: formatDate(iso) };
+  if (days === 1) return { phrase: "נסגר אתמול", date: formatDate(iso) };
   if (days < 7)
-    return { phrase: `נסגר לפני ${days} ימים`, date: formatShortDate(iso) };
-  return { phrase: `נסגר ב־${formatShortDate(iso)}`, date: null };
+    return { phrase: `נסגר לפני ${days} ימים`, date: formatDate(iso) };
+  return { phrase: `נסגר ב־${formatDate(iso)}`, date: null };
 }
 

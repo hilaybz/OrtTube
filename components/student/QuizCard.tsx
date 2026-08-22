@@ -7,7 +7,8 @@ import { feedHeading } from "@/lib/studentFeedFilters";
 import { quizDurationMinutes } from "@/lib/quizDuration";
 import { formatGrade, gradeOf } from "./grade";
 import { StatusBlock, type StatusTone } from "./StatusBlock";
-import { deadlineView, formatSchoolDate, URGENCY_TONE } from "./deadline";
+import { formatDate } from "@/lib/datetime";
+import { deadlineView, URGENCY_TONE } from "./deadline";
 
 export function attemptsNote(item: StudentFeedItem): string {
   return item.max_attempts != null
@@ -87,7 +88,7 @@ export function feedStatus(item: StudentFeedItem, now: Date = new Date()): FeedS
       headline: grade != null ? formatGrade(grade) : "הושלם",
       strong: grade != null,
       meta: item.last_completed_at
-        ? `הוגש ב-${formatSchoolDate(item.last_completed_at)}`
+        ? `הוגש ב-${formatDate(item.last_completed_at)}`
         : null,
     };
   }
@@ -97,7 +98,7 @@ export function feedStatus(item: StudentFeedItem, now: Date = new Date()): FeedS
       tone: "danger",
       headline: "לא הוגש",
       meta: item.available_until
-        ? `נסגר ב-${formatSchoolDate(item.available_until)}`
+        ? `נסגר ב-${formatDate(item.available_until)}`
         : null,
     };
   }

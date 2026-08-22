@@ -20,7 +20,7 @@ import { ClassCard } from "@/components/teacher/overview/ClassCard";
 import { WelcomeHeader } from "@/components/teacher/overview/WelcomeHeader";
 import { ScrollRow, ScrollRowItem } from "@/components/teacher/overview/ScrollRow";
 import { FinishedQuizCard } from "@/components/teacher/overview/FinishedQuizCard";
-import { firstName } from "@/lib/schoolClock";
+import { firstName } from "@/lib/datetime";
 import {
   countQuizStates,
   recentlyFinishedQuizzes,

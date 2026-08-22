@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
-import { formatToday, greetingFor } from "@/lib/schoolClock";
+import { formatToday, greetingFor } from "@/lib/datetime";
 import type { StudentFeedItem } from "@/lib/classes";
 import { feedHeading, feedOutlook } from "@/lib/studentFeedFilters";
 import { deadlineView } from "./deadline";
