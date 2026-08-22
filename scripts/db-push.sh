@@ -24,7 +24,7 @@ remote_only="$(
   supabase migration list 2>/dev/null \
     | grep -o '{"local":"","remote":"[0-9]*"' \
     | grep -o '[0-9]*' \
-    | tr '\n' ' '
+    | tr '\n' ' ' || true
 )"
 if [ -n "${remote_only// /}" ]; then
   echo "remote has migrations with no local file: $remote_only" >&2
