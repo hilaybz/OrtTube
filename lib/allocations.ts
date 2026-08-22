@@ -62,14 +62,23 @@ export interface QuizAllocationTags {
   live: ClassTag[];
   /** Classes published but not yet inside their window. */
   scheduled: ClassTag[];
+  /** Classes whose window has already closed (`allocationState`'s `done`). */
+  closed: ClassTag[];
 }
 
 /**
  * The caller's own quizzes that have at least one allocation, split into the
- * `live`/`scheduled` buckets the card UI renders as `זמין:` / `מתוזמן:` rows.
- * A quiz whose only allocations are drafts or closed windows still appears,
- * with both arrays empty — that's what renders a plain `טיוטה` badge instead
- * of the quiz silently disappearing.
+ * three buckets the card UI and the library's status filter read: `live` and
+ * `scheduled` become the card's `זמין` / `מתוזמן` line, and `closed` is what
+ * lets "the window ended" be told apart from "never published" — with only
+ * two buckets, both arrived as two empty arrays.
+ *
+ * A quiz whose allocations are all drafts still appears with all three arrays
+ * empty (that's the `טיוטה` line, not a disappearing card); a quiz with no
+ * allocation at all is absent entirely.
+ *
+ * Hand-typed against the RPC's `jsonb`, like the rest of `@/lib` —
+ * `146_quiz_allocation_tags_closed.sql` is the shape's source of truth.
  */
 export async function listMyQuizAllocationTags(
   client: SupabaseClient

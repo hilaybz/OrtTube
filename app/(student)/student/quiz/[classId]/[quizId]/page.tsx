@@ -12,6 +12,7 @@ export default async function QuizPlayerPage({
 }) {
   const { classId, quizId } = await params;
   const client = (await createClient()) as unknown as SupabaseClient;
+  const resultsHref = `/student/quiz/${classId}/${quizId}/results`;
 
   let state: StudentAttemptState;
   try {
@@ -30,10 +31,22 @@ export default async function QuizPlayerPage({
       // fall through to notFound()
     }
     if (completed) {
-      redirect(`/student/quiz/${classId}/${quizId}/results`);
+      redirect(resultsHref);
     }
     notFound();
   }
+
+  // A finished quiz with no attempt left has nothing to play: the player's
+  // opening screen would be a thumbnail whose only control links onward to the
+  // results. Skip it — the student asked for a quiz they have already finished,
+  // and their score is the answer. Mid-attempt is not finished, so an
+  // unfinished attempt still opens the player even with the allowance spent.
+  const finishedForGood =
+    state.last_completed_attempt_id != null &&
+    !state.in_progress &&
+    state.attempts_left != null &&
+    state.attempts_left <= 0;
+  if (finishedForGood) redirect(resultsHref);
 
   return (
     <>

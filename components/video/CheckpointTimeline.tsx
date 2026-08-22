@@ -36,11 +36,10 @@ export interface CheckpointTimelineProps {
   markers: TimelineMarker[];
   activeMarkerId?: string | null;
   /**
-   * Progress display only: no click-to-seek, no dragging, no cluster popover —
-   * every checkpoint renders as a non-interactive status node. This is what the
-   * student player needs, where seeking is owned entirely by the block-skip
-   * gate and the video's own controls, and the timeline's job is to show where
-   * the questions sit and how far along the student is.
+   * Progress display: no dragging, no cluster popover, and no click-to-seek on
+   * the track itself. This is what the student player needs — the bar reports
+   * where the questions sit and how far along the student is, and the only
+   * navigation on it is the per-marker jump `seekableIds` opts in to (below).
    */
   readOnly?: boolean;
   /** Accessible name of the read-only checkpoint list. */
@@ -49,6 +48,15 @@ export interface CheckpointTimelineProps {
   onSeek?: (seconds: number) => void;
   /** Click on a marker, or an item picked from a cluster popover. Falls back to `onSeek` when omitted. */
   onMarkerClick?: (id: string, seconds: number) => void;
+  /**
+   * `readOnly` only: the markers the student may jump to. A marker in this set
+   * becomes a real seek control (button, hover/focus timestamp, `onMarkerClick`
+   * on press); every other marker stays the status node it was and still shows
+   * its timestamp on hover — a checkpoint the block-skip gate withholds must
+   * not look pressable, but there is no reason to hide *when* it is. Callers
+   * derive the set from `canSeekTo` in `./gate`, the one place that rule lives.
+   */
+  seekableIds?: Set<string>;
   /** Drag committed on drop for a single (non-clustered) marker. Omitted entirely (or an id absent from `draggableIds`) disables dragging for that marker. */
   onMarkerMove?: (id: string, seconds: number) => MoveResult;
   /** Drag committed on drop for an entire cluster — every clustered question moves to the same new instant together. Omitted (or any member missing from `draggableIds`) disables dragging for that cluster; it stays click-to-open-popover only. */
@@ -134,10 +142,12 @@ function idsEqual(a: string[], b: string[]): boolean {
  * dots — clicking it opens a small popover to pick which one, dragging it
  * moves every clustered question to the same new instant together.
  *
- * `readOnly` turns the same geometry into a pure progress display (the student
- * player): the bar tracks playback, each checkpoint is a status node showing
- * whether it is answered, current or still locked, and nothing on it is
- * clickable — seeking there belongs to the block-skip gate alone.
+ * `readOnly` turns the same geometry into the student player's progress
+ * display: the bar tracks playback and each checkpoint shows whether it is
+ * answered, current or still locked. Dragging, the cluster popover and
+ * click-anywhere-on-the-track are all gone there; the one navigation left is
+ * a jump to a checkpoint the block-skip gate already allows, opted into per
+ * marker through `seekableIds`.
  */
 export function CheckpointTimeline({
   durationSeconds,
@@ -151,6 +161,7 @@ export function CheckpointTimeline({
   onMarkerMove,
   onClusterMove,
   draggableIds,
+  seekableIds,
   className,
 }: CheckpointTimelineProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -370,13 +381,37 @@ export function CheckpointTimeline({
             const posPct = pct(seconds);
 
             if (readOnly) {
+              // A stack is jumpable only when every question in it is — the
+              // jump lands on one instant, so a locked member would be
+              // reachable through its answered neighbour otherwise.
+              const seekable =
+                cluster.items.every((i) => seekableIds?.has(i.id)) &&
+                !!(onMarkerClick ?? onSeek);
               return (
+                // `listitem` sits on the wrapper rather than on the node
+                // itself, so a jumpable checkpoint can be a real button
+                // inside it. `group` drives the hover/focus timestamp.
                 <div
                   key={cluster.key}
-                  className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                  role="listitem"
+                  className="group absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
                   style={{ left: `${posPct}%` }}
                 >
-                  <ReadOnlyNode items={cluster.items} seconds={cluster.seconds} />
+                  <TimeBubble
+                    seconds={cluster.seconds}
+                    posPct={posPct}
+                    className="hidden group-hover:block group-focus-within:block"
+                  />
+                  <ReadOnlyNode
+                    items={cluster.items}
+                    seconds={cluster.seconds}
+                    seekable={seekable}
+                    onSeek={
+                      seekable
+                        ? () => fireClick(cluster.items[0].id, cluster.seconds)
+                        : undefined
+                    }
+                  />
                 </div>
               );
             }
@@ -391,16 +426,7 @@ export function CheckpointTimeline({
                   className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
                   style={{ left: `${posPct}%` }}
                 >
-                  {dragging && (
-                    <div
-                      className={cn(
-                        "pointer-events-none absolute bottom-full mb-2 whitespace-nowrap rounded-[var(--radius-d)] bg-[var(--heading)] px-2 py-0.5 font-mono text-xs text-white",
-                        edgeAnchorClasses(posPct)
-                      )}
-                    >
-                      {formatSeconds(seconds)}
-                    </div>
-                  )}
+                  {dragging && <TimeBubble seconds={seconds} posPct={posPct} />}
                   <button
                     type="button"
                     data-testid="timeline-marker"
@@ -454,16 +480,7 @@ export function CheckpointTimeline({
                 className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
                 style={{ left: `${posPct}%` }}
               >
-                {dragging && (
-                  <div
-                    className={cn(
-                      "pointer-events-none absolute bottom-full mb-2 whitespace-nowrap rounded-[var(--radius-d)] bg-[var(--heading)] px-2 py-0.5 font-mono text-xs text-white",
-                      edgeAnchorClasses(posPct)
-                    )}
-                  >
-                    {formatSeconds(seconds)}
-                  </div>
-                )}
+                {dragging && <TimeBubble seconds={seconds} posPct={posPct} />}
                 <button
                   type="button"
                   data-testid="timeline-cluster"
@@ -566,22 +583,40 @@ function groupState(items: TimelineMarker[]): TimelineMarkerState | undefined {
 
 /**
  * One checkpoint (or a stack of near-simultaneous ones) on a `readOnly`
- * timeline: a status node, not a control. Its appearance carries the state
- * visually — answered, current, still locked — and an sr-only line per
- * clustered question carries the same in words, since neither the shape nor
- * the position is available to a screen reader.
+ * timeline. Its appearance carries the state visually — answered, current,
+ * still locked — and an sr-only line per clustered question carries the same
+ * in words, since neither the shape nor the position is available to a screen
+ * reader.
+ *
+ * `seekable` decides what it *is*: a button that jumps the video back to this
+ * instant when the gate allows it, or the plain status node it has always been
+ * when it doesn't. Only the element and the hover affordance change; the
+ * status appearance is identical either way, so the timeline still reads as
+ * one row of checkpoints rather than a mix of controls and decorations.
  */
-function ReadOnlyNode({ items, seconds }: { items: TimelineMarker[]; seconds: number }) {
+function ReadOnlyNode({
+  items,
+  seconds,
+  seekable,
+  onSeek,
+}: {
+  items: TimelineMarker[];
+  seconds: number;
+  seekable: boolean;
+  onSeek?: () => void;
+}) {
   const state = groupState(items);
   const count = items.length;
+  const As = seekable ? "button" : "span";
   return (
-    <span
-      role="listitem"
+    <As
+      {...(seekable ? { type: "button" as const, onClick: onSeek } : {})}
       data-testid="checkpoint-marker"
       data-state={state ?? "upcoming"}
       data-seconds={seconds}
       className={cn(
         "relative grid h-6 w-6 place-items-center rounded-full border-2 transition-colors",
+        seekable && "cursor-pointer hover:ring-4 hover:ring-[var(--brand-soft)]",
         state === "done"
           ? "border-[var(--brand)] bg-[var(--brand)] text-white"
           : state === "current"
@@ -617,6 +652,38 @@ function ReadOnlyNode({ items, seconds }: { items: TimelineMarker[]; seconds: nu
           }`}
         </span>
       ))}
+      {/* Part of the accessible name rather than a title/tooltip: a button
+          whose whole label is "שאלה 2 · 1:20 · נענתה" says what it is but not
+          what pressing it does. */}
+      {seekable && <span className="sr-only">· מעבר לנקודה זו בסרטון</span>}
+    </As>
+  );
+}
+
+/**
+ * The mm:ss flag above a marker: the live readout while a marker is dragged on
+ * an authoring timeline, and the hover/focus readout of a checkpoint's position
+ * on the student's. Same shape in both, since it answers the same question.
+ */
+function TimeBubble({
+  seconds,
+  posPct,
+  className,
+}: {
+  seconds: number;
+  posPct: number;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute bottom-full z-10 mb-2 whitespace-nowrap rounded-[var(--radius-d)] bg-[var(--heading)] px-2 py-0.5 font-mono text-xs text-white",
+        edgeAnchorClasses(posPct),
+        className
+      )}
+    >
+      {formatSeconds(seconds)}
     </span>
   );
 }

@@ -18,7 +18,7 @@ import { SignInForm } from "./SignInForm";
 const HIGHLIGHTS: { icon: IconName; text: string }[] = [
   { icon: "quiz", text: "שאלות מעוגנות לרגעי הסרטון" },
   { icon: "bot", text: "OrtAI עונה תוך כדי הצפייה" },
-  { icon: "chart", text: "תמונת מצב על הכיתה" },
+  { icon: "globe", text: "כל שאלה בשפה שלכם" },
 ];
 
 export default async function SignInPage() {

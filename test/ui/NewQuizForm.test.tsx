@@ -124,6 +124,20 @@ describe("NewQuizForm", () => {
     );
   });
 
+  it("carries the page's origin into the editor it opens", async () => {
+    stubCreate();
+    render(<NewQuizForm from="overview" />);
+    await userEvent.type(urlInput(), WATCH_URL);
+    await userEvent.type(screen.getByLabelText("כותרת החידון"), "מבוא");
+    await submit();
+
+    await vi.waitFor(() =>
+      expect(push).toHaveBeenCalledWith(
+        "/dashboard/quizzes/new-quiz/edit?from=overview"
+      )
+    );
+  });
+
   it("sends a bare video id as an id, which the server cannot extract from a URL", async () => {
     stubCreate();
     render(<NewQuizForm />);
@@ -145,6 +159,56 @@ describe("NewQuizForm", () => {
 
     const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(JSON.parse(init.body)).toMatchObject({ baseLanguage: "en" });
+  });
+
+  it("offers the time cap as a single opt-in, with no estimate alternative", async () => {
+    render(<NewQuizForm />);
+    const cap = screen.getByRole("checkbox", { name: "הגבלת זמן" });
+    expect(cap).not.toBeChecked();
+    // Unchecked IS "estimate from the video", so there is no second control
+    // (and no radio) offering it.
+    expect(screen.queryByText("הערכה מהסרטון")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("משך החידון בדקות")).not.toBeInTheDocument();
+
+    await userEvent.click(cap);
+    expect(screen.getByLabelText("משך החידון בדקות")).toBeInTheDocument();
+  });
+
+  it("sends the stated cap when the time limit is opted into", async () => {
+    stubCreate();
+    render(<NewQuizForm />);
+    await userEvent.type(urlInput(), WATCH_URL);
+    await userEvent.type(screen.getByLabelText("כותרת החידון"), "מבוא");
+    await userEvent.click(screen.getByRole("checkbox", { name: "הגבלת זמן" }));
+    await userEvent.type(screen.getByLabelText("משך החידון בדקות"), "20");
+    await submit();
+
+    const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(JSON.parse(init.body)).toMatchObject({
+      timeRestricted: true,
+      durationMinutes: 20,
+    });
+  });
+
+  it("refuses to create anything with a cap but no positive minute count", async () => {
+    stubCreate();
+    render(<NewQuizForm />);
+    await userEvent.type(urlInput(), WATCH_URL);
+    await userEvent.type(screen.getByLabelText("כותרת החידון"), "מבוא");
+    await userEvent.click(screen.getByRole("checkbox", { name: "הגבלת זמן" }));
+    await submit();
+
+    expect(
+      screen.getByText("משך הזמן חייב להיות מספר שלם גדול מ־0.")
+    ).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps one quiet example under the link box, LTR-isolated, with no explanatory prose", () => {
+    render(<NewQuizForm />);
+    const sample = screen.getByText("youtu.be/dQw4w9WgXcQ");
+    expect(sample).toHaveAttribute("dir", "ltr");
+    expect(screen.queryByText(/Shorts/)).not.toBeInTheDocument();
   });
 
   it("surfaces a server failure and stays on the form", async () => {

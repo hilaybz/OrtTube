@@ -73,8 +73,29 @@ const CLASSES: ClassRow[] = [
 
 // q3 is deliberately absent — "not assigned to any class."
 const TAGS: Record<string, QuizAllocationTags> = {
-  q1: { quiz_id: "q1", live: [{ class_id: "c1", class_name: "כיתה א" }], scheduled: [] },
-  q2: { quiz_id: "q2", live: [], scheduled: [{ class_id: "c2", class_name: "כיתה ב" }] },
+  q1: {
+    quiz_id: "q1",
+    live: [{ class_id: "c1", class_name: "כיתה א" }],
+    scheduled: [],
+    closed: [],
+  },
+  q2: {
+    quiz_id: "q2",
+    live: [],
+    scheduled: [{ class_id: "c2", class_name: "כיתה ב" }],
+    closed: [],
+  },
+};
+
+/** q1 finished (closed in כיתה א), q2 still scheduled — one quiz per status. */
+const STATUS_TAGS: Record<string, QuizAllocationTags> = {
+  ...TAGS,
+  q1: {
+    quiz_id: "q1",
+    live: [],
+    scheduled: [],
+    closed: [{ class_id: "c1", class_name: "כיתה א" }],
+  },
 };
 
 function sharedQuiz(overrides: Partial<SharedQuiz>): SharedQuiz {
@@ -125,6 +146,7 @@ function renderLibrary(opts?: {
   sharedQuizzes?: SharedQuiz[];
   allocationTags?: Record<string, QuizAllocationTags>;
   classes?: ClassRow[];
+  initialStatus?: "all" | "active" | "finished";
 }) {
   render(
     <QuizLibrary
@@ -132,6 +154,7 @@ function renderLibrary(opts?: {
       sharedQuizzes={opts?.sharedQuizzes ?? [S1, S2]}
       allocationTags={opts?.allocationTags ?? TAGS}
       classes={opts?.classes ?? CLASSES}
+      initialStatus={opts?.initialStatus}
     />
   );
 }
@@ -234,15 +257,53 @@ describe("QuizLibrary — My quizzes search/filter/sort", () => {
     expect(headings()).toEqual(["חידון אלגברה", "חידון גיאומטריה", "היסטוריה של רומא"]);
   });
 
-  it("filters by visibility, private and shared each on their own", async () => {
+  it("filters by visibility from a dropdown, private and shared each on their own", async () => {
     renderLibrary({
       myQuizzes: [Q1, { ...Q2, visibility: "shared" }, Q3],
     });
-    await userEvent.click(screen.getByRole("radio", { name: "משותף" }));
+    const visibility = screen.getByLabelText("נראות");
+    await userEvent.selectOptions(visibility, "משותף");
     expect(headings()).toEqual(["היסטוריה של רומא"]);
-    await userEvent.click(screen.getByRole("radio", { name: "פרטי" }));
+    await userEvent.selectOptions(visibility, "פרטי");
     expect(headings().sort()).toEqual(["חידון אלגברה", "חידון גיאומטריה"].sort());
-    await userEvent.click(screen.getByRole("radio", { name: "הכל" }));
+    await userEvent.selectOptions(visibility, "הכל");
+    expect(headings()).toHaveLength(3);
+  });
+});
+
+/**
+ * The status axis, and the deep link the teacher home's KPI tiles produce
+ * (`/dashboard/quizzes?status=active|finished`). Semantics are pinned in
+ * `test/unit/libraryFilters.test.ts`; here it is the wiring — the dropdown
+ * drives the grid, and the param decides where the dropdown starts.
+ */
+describe("QuizLibrary — status filter and its deep link", () => {
+  it("filters to active quizzes (live or scheduled anywhere)", async () => {
+    renderLibrary({ allocationTags: STATUS_TAGS });
+    await userEvent.selectOptions(screen.getByLabelText("מצב"), "פעילים");
+    expect(headings()).toEqual(["היסטוריה של רומא"]);
+  });
+
+  it("filters to finished quizzes — closed everywhere, nothing open", async () => {
+    renderLibrary({ allocationTags: STATUS_TAGS });
+    await userEvent.selectOptions(screen.getByLabelText("מצב"), "הסתיימו");
+    expect(headings()).toEqual(["חידון אלגברה"]);
+  });
+
+  it("opens pre-filtered from ?status=active and clears back to the full list", async () => {
+    renderLibrary({ allocationTags: STATUS_TAGS, initialStatus: "active" });
+    expect(headings()).toEqual(["היסטוריה של רומא"]);
+    await clearFilters();
+    expect(headings()).toHaveLength(3);
+  });
+
+  it("opens pre-filtered from ?status=finished", () => {
+    renderLibrary({ allocationTags: STATUS_TAGS, initialStatus: "finished" });
+    expect(headings()).toEqual(["חידון אלגברה"]);
+  });
+
+  it("leaves the grid unfiltered when no status is deep-linked", () => {
+    renderLibrary({ allocationTags: STATUS_TAGS });
     expect(headings()).toHaveLength(3);
   });
 });

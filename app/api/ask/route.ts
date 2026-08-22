@@ -234,29 +234,78 @@ export async function POST(req: NextRequest) {
 
   const service = createServiceClient();
 
-  // ── Lifetime per-quiz budget ───────────────────────────────────────────────
-  // Counted from `tutor_questions`, which already records every question asked,
-  // so this needs no state of its own. Scoped to the ASSIGNMENT (student + class
-  // + quiz): the same quiz assigned to two classes is two pieces of work and gets
-  // two budgets. Runs after the membership gate so a non-member learns nothing
-  // about a quiz they cannot reach.
-  //
-  // `student_id` is nullable and set null on anonymisation, so anonymised rows
-  // stop counting toward the budget. Acceptable for a guardrail — the alternative
-  // is retaining an identifier we deliberately dropped.
-  const { count: askedSoFar, error: countError } = await service
-    .from("tutor_questions")
-    .select("id", { count: "exact", head: true })
-    .eq("student_id", user.id)
-    .eq("class_id", classId)
-    .eq("quiz_id", quizId);
+  // ── Everything the answer needs, fetched concurrently ──────────────────────
+  // Five independent reads that must all land before the model is called. They
+  // run after the membership/mode gate, so a caller who fails authorization
+  // never reaches them; all are side-effect-free, so a request that goes on to
+  // fail the budget check below simply discards them.
+  const [budget, inProgress, attemptRow, questionRow, transcriptContext] =
+    await Promise.all([
+      // Lifetime per-quiz budget, scoped to the ASSIGNMENT (student + class +
+      // quiz): the same quiz in two classes is two pieces of work. `student_id`
+      // is nulled on anonymisation, so those rows stop counting — acceptable for
+      // a guardrail.
+      service
+        .from("tutor_questions")
+        .select("id", { count: "exact", head: true })
+        .eq("student_id", user.id)
+        .eq("class_id", classId)
+        .eq("quiz_id", quizId),
 
-  // A failed count must not silently disable the budget, nor deny a student their
-  // tutor over a transient database blip. Log it and let the request through: the
+      // Whether a question is on screen is derived from the caller's own
+      // in-progress attempt, never taken from the client.
+      service
+        .from("attempts")
+        .select("id")
+        .eq("student_id", user.id)
+        .eq("quiz_id", quizId)
+        .is("completed_at", null)
+        .limit(1),
+
+      // Client-supplied ids feed a service-role insert, so they are validated
+      // against the caller and the quiz rather than trusted.
+      attemptId
+        ? service
+            .from("attempts")
+            .select("student_id, quiz_id")
+            .eq("id", attemptId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+
+      activeQuestionId
+        ? service
+            .from("questions")
+            .select("quiz_id")
+            .eq("id", activeQuestionId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+
+      // Playhead-bounded context. Joins a fetch already running for this video
+      // rather than starting another — the student's quiz page warms on open, so
+      // a question asked moments later waits for that fetch instead of being
+      // answered ungrounded. A transcript failure must not break the tutor, so it
+      // resolves to no context rather than rejecting the batch.
+      getTranscript(service, ctxData.youtube_video_id)
+        .then((transcript) =>
+          transcript.state === "ready" && transcript.segments.length > 0
+            ? sliceTranscriptToPlayhead(
+                transcript.segments,
+                positionSeconds,
+                TRANSCRIPT_TOKEN_CAP
+              )
+            : ""
+        )
+        .catch((err) => {
+          console.error("[ask] transcript fetch failed:", err);
+          return "";
+        }),
+    ]);
+
+  // A failed count must not deny a student their tutor over a database blip; the
   // rate limit still bounds the damage.
-  if (countError) {
-    console.warn(`[ask] budget count failed quiz=${quizId}: ${countError.message}`);
-  } else if ((askedSoFar ?? 0) >= MAX_QUESTIONS_PER_QUIZ) {
+  if (budget.error) {
+    console.warn(`[ask] budget count failed quiz=${quizId}: ${budget.error.message}`);
+  } else if ((budget.count ?? 0) >= MAX_QUESTIONS_PER_QUIZ) {
     return jsonError(
       403,
       "question_limit_reached",
@@ -264,71 +313,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Server-side validation of client-supplied ids (B3) + active-question
-  //    derivation from SERVER state (A4) ────────────────────────────────────────
-  // The client cannot be trusted with attemptId/questionId (they feed a
-  // service-role insert) nor with whether a question is "active". We validate both
-  // against the DB and derive active-ness from the caller's own in-progress
-  // attempt on THIS quiz — the client's activeQuestionId may only ADD specificity.
-  let validatedAttemptId: string | null = null;
-  let validatedQuestionId: string | null = null;
-  let hasInProgressAttempt = false;
+  const hasInProgressAttempt =
+    Array.isArray(inProgress.data) && inProgress.data.length > 0;
 
-  {
-    const { data: inProg } = await service
-      .from("attempts")
-      .select("id")
-      .eq("student_id", user.id)
-      .eq("quiz_id", quizId)
-      .is("completed_at", null)
-      .limit(1);
-    hasInProgressAttempt = Array.isArray(inProg) && inProg.length > 0;
-  }
+  // Keep the attempt only if it is the caller's own AND on this exact quiz.
+  const att = attemptRow.data as {
+    student_id: string | null;
+    quiz_id: string;
+  } | null;
+  const validatedAttemptId =
+    att && att.student_id === user.id && att.quiz_id === quizId ? attemptId : null;
 
-  if (attemptId) {
-    const { data: att } = await service
-      .from("attempts")
-      .select("student_id, quiz_id")
-      .eq("id", attemptId)
-      .maybeSingle();
-    const a = att as { student_id: string | null; quiz_id: string } | null;
-    // Keep only if it is the caller's own attempt AND on this exact quiz.
-    if (a && a.student_id === user.id && a.quiz_id === quizId) {
-      validatedAttemptId = attemptId;
-    }
-  }
-
-  if (activeQuestionId) {
-    const { data: qn } = await service
-      .from("questions")
-      .select("quiz_id")
-      .eq("id", activeQuestionId)
-      .maybeSingle();
-    const q = qn as { quiz_id: string } | null;
-    // Keep only if the question actually belongs to this quiz.
-    if (q && q.quiz_id === quizId) {
-      validatedQuestionId = activeQuestionId;
-    }
-  }
-
-  // ── Playhead-bounded transcript context (never beyond the playhead) ─────────
-  let transcriptContext = "";
-  try {
-    // Joins a fetch already running for this video rather than starting another —
-    // the student's quiz page warms on open, so a question asked moments later
-    // waits for that fetch instead of being answered ungrounded.
-    const transcript = await getTranscript(service, ctxData.youtube_video_id);
-    if (transcript.state === "ready" && transcript.segments.length > 0) {
-      transcriptContext = sliceTranscriptToPlayhead(
-        transcript.segments,
-        positionSeconds,
-        TRANSCRIPT_TOKEN_CAP
-      );
-    }
-  } catch (err) {
-    // A transcript failure must not break the tutor — proceed with no context.
-    console.error("[ask] transcript fetch failed:", err);
-  }
+  // Keep the question only if it actually belongs to this quiz.
+  const qn = questionRow.data as { quiz_id: string } | null;
+  const validatedQuestionId =
+    qn && qn.quiz_id === quizId ? activeQuestionId : null;
 
   // Derived from SERVER state: a question is "active" when the caller has an
   // in-progress attempt on this quiz, or supplied a valid on-screen question id.

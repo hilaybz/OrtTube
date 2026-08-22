@@ -28,13 +28,19 @@ const BACK_LABEL = "הכיתות שלי";
  * `listMyClasses` doubles as the ownership/existence check (a class the caller
  * doesn't own is simply absent). Each read is isolated so a transient failure
  * degrades to a friendly Alert instead of crashing the page.
+ *
+ * The class list is the usual way in, but the overview's class cards open this
+ * page too, so back follows the origin in the URL when there is one.
  */
 export default async function ClassDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id } = await params;
+  const { from } = await searchParams;
   const client = (await createClient()) as unknown as SupabaseClient;
 
   let klass: ClassRow | null = null;
@@ -49,7 +55,7 @@ export default async function ClassDetailPage({
   if (lookupFailed || !klass) {
     return (
       <div className="mx-auto max-w-5xl py-2">
-        <BackLink href={BACK_HREF} label={BACK_LABEL} className="mb-4" />
+        <BackLink href={BACK_HREF} label={BACK_LABEL} from={from} className="mb-4" />
         {lookupFailed ? (
           <Alert variant="danger" title="לא ניתן לטעון את הכיתה">
             אירעה שגיאה בטעינת הכיתה. נסו לרענן את הדף.
@@ -81,7 +87,7 @@ export default async function ClassDetailPage({
     <div className="mx-auto max-w-5xl py-2">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-2">
-          <BackLink href={BACK_HREF} label={BACK_LABEL} />
+          <BackLink href={BACK_HREF} label={BACK_LABEL} from={from} />
           <h1 className="truncate text-3xl font-bold tracking-tight">
             {klass.name}
           </h1>

@@ -246,10 +246,12 @@ const PATHS = {
       <path d="M10 11.5v6M14 11.5v6" />
     </>
   ),
+  // Positioned by the plane's centre of area rather than its bounding box, so it
+  // sits centred inside a circular button.
   send: (
     <>
-      <path d="M21 3L10.5 13.5" />
-      <path d="M21 3l-6.5 18-4-8.5L2 8.5z" />
+      <path d="M18.9 5.6L9.5 15" />
+      <path d="M18.9 5.6L13.1 21.8L9.5 14.1L1.8 10.5Z" />
     </>
   ),
   search: (

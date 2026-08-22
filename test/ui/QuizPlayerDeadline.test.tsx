@@ -25,7 +25,10 @@ vi.mock("@/components/video/VideoStage", () => ({
   },
 }));
 
-vi.mock("@/components/student/AskAI", () => ({ AskAI: () => null }));
+vi.mock("@/components/student/AskAI", () => ({
+  AskAI: () => null,
+  AskAITrigger: () => null,
+}));
 
 import { QuizPlayer } from "@/components/student/QuizPlayer";
 
@@ -170,6 +173,33 @@ describe("QuizPlayer — scheduling-window cutoff", () => {
     expect(
       screen.queryByRole("list", { name: "נקודות העצירה בחידון" })
     ).not.toBeInTheDocument();
+  });
+
+  it("shows the time left before the student commits to starting", async () => {
+    // Device clock reads 12:00 while the server was at 12:05 — the countdown
+    // must report the true half hour left, not the device's 35 minutes.
+    vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
+    render(
+      <QuizPlayer
+        classId="class-1"
+        quizId="quiz-1"
+        state={{
+          ...BASE_STATE,
+          server_now: "2026-01-01T12:05:00.000Z",
+          available_until: "2026-01-01T12:35:00.000Z",
+        }}
+      />
+    );
+
+    expect(await screen.findByText("30:00")).toBeInTheDocument();
+    expect(screen.queryByText("35:00")).not.toBeInTheDocument();
+  });
+
+  it("says plainly that a quiz has no deadline instead of leaving the slot empty", () => {
+    vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
+    render(<QuizPlayer classId="class-1" quizId="quiz-1" state={BASE_STATE} />);
+
+    expect(screen.getByText("ללא מועד הגשה")).toBeInTheDocument();
   });
 
   it("never schedules a cutoff when the allocation has no window", async () => {

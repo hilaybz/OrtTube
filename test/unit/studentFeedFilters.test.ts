@@ -11,6 +11,7 @@ import {
   sectionSelected,
   feedClassOptions,
   feedHeading,
+  feedOutlook,
   DEFAULT_FEED_SORT,
   EMPTY_FEED_FILTERS,
   type FeedFilters,
@@ -205,5 +206,45 @@ describe("feedHeading", () => {
     expect(feedHeading(item({ title: "כותרת" }))).toBe("כותרת");
     expect(feedHeading(item({ title: null, video_title: "סרטון" }))).toBe("סרטון");
     expect(feedHeading(item({ title: null, video_title: null }))).toBe("חידון");
+  });
+});
+
+describe("feedOutlook", () => {
+  it("counts only what the student still has to submit", () => {
+    const outlook = feedOutlook([
+      item({ quiz_id: "a", status: "not_started" }),
+      item({ quiz_id: "b", status: "in_progress" }),
+      item({ quiz_id: "c", status: "completed" }),
+      item({ quiz_id: "d", status: "missed" }),
+    ]);
+    expect(outlook.pending).toBe(2);
+  });
+
+  it("picks the nearest deadline among the pending quizzes", () => {
+    const outlook = feedOutlook([
+      item({ quiz_id: "far", available_until: "2026-03-20T18:00:00.000Z" }),
+      item({ quiz_id: "near", available_until: "2026-03-15T18:00:00.000Z" }),
+      // Sooner than either, but already settled — not something to greet with.
+      item({
+        quiz_id: "done",
+        status: "completed",
+        available_until: "2026-03-14T18:00:00.000Z",
+      }),
+    ]);
+    expect(outlook.next?.quiz_id).toBe("near");
+  });
+
+  it("has no next when nothing pending carries a deadline", () => {
+    const outlook = feedOutlook([
+      item({ quiz_id: "a", available_until: null }),
+      item({ quiz_id: "b", available_until: null }),
+    ]);
+    expect(outlook.pending).toBe(2);
+    expect(outlook.next).toBeNull();
+  });
+
+  it("has no next when there is nothing pending at all", () => {
+    const outlook = feedOutlook([item({ status: "completed" })]);
+    expect(outlook).toEqual({ pending: 0, next: null });
   });
 });

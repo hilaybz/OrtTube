@@ -1,7 +1,9 @@
 /**
  * The editor's page structure, as the redesign fixed it:
  *
- * - the sections run title box → video → questions → הקצאות;
+ * - the sections run title box → video → questions → הקצאות, with the
+ *   quiz-level settings (visibility, duration) folded into that first box
+ *   rather than each holding a card of its own;
  * - the destructive action is a trash icon in the page header, not a text link
  *   buried in the settings box, and it still confirms before deleting;
  * - visibility is the choice itself (פרטי / משותף), with no "נראות" label;
@@ -129,6 +131,38 @@ describe("QuizEditor — page structure", () => {
     expect(screen.queryByText(/^נראות/)).not.toBeInTheDocument();
   });
 
+  it("keeps the quiz duration in the settings box, as a single opt-in cap", async () => {
+    renderEditor();
+    // Only the cap is offered: there is no second "estimate from the video"
+    // choice, because that IS the unchecked state.
+    const cap = screen.getByRole("checkbox", { name: "הגבלת זמן" });
+    expect(cap).not.toBeChecked();
+    expect(screen.queryByText("הערכה מהסרטון")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("משך החידון בדקות")).not.toBeInTheDocument();
+    // Folded into the first card: it precedes the video section rather than
+    // sitting in a card of its own between them.
+    const videoHeading = screen.getByRole("heading", { level: 2, name: "הסרטון" });
+    expect(
+      cap.compareDocumentPosition(videoHeading) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    await userEvent.click(cap);
+    expect(screen.getByLabelText("משך החידון בדקות")).toBeInTheDocument();
+  });
+
+  it("refuses to save a capped duration without a positive minute count", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderEditor();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "הגבלת זמן" }));
+    await userEvent.click(screen.getByRole("button", { name: "שמירת המשך" }));
+
+    expect(
+      screen.getByText("משך הזמן חייב להיות מספר שלם גדול מ־0.")
+    ).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("deletes through a trash icon in the header, and only after confirming", async () => {
     vi.stubGlobal(
       "fetch",
@@ -167,7 +201,7 @@ describe("QuizEditor — page structure", () => {
     await userEvent.click(screen.getByRole("button", { name: "report-ready" }));
     // Scoped to the header: the timeline under the player shows a duration too.
     // "אורך הסרטון", not "משך" — the quiz's own duration is a separate,
-    // teacher-controlled fact with its own block below.
+    // teacher-controlled fact, set in the settings box above.
     const identity = screen.getByRole("heading", { level: 1 }).parentElement!;
     expect(identity).toHaveTextContent("אורך הסרטון 10:00");
   });
@@ -192,7 +226,7 @@ describe("QuizEditor — page structure", () => {
     await userEvent.click(markers[9]);
 
     expect(stage.seekTo).toHaveBeenCalledWith(300);
-    expect(screen.getByText(/מתוך 10/).textContent).toContain("9–10");
+    expect(screen.getByText(/עמוד/).textContent).toContain("עמוד 2");
   });
 });
 

@@ -1,13 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  closedAtMeta,
   countQuizStates,
   recentlyFinishedQuizzes,
   summarizeClass,
   totalsFromSummaries,
   formatShortDate,
   quizHeading,
-  greetingFor,
-  firstName,
   RECENTLY_FINISHED_LOOKBACK_DAYS,
   type ClassAssignments,
 } from "@/components/teacher/overview/aggregate";
@@ -70,35 +69,68 @@ function quizStat(over: Partial<ClassStats["quizzes"][number]> = {}) {
 }
 
 describe("summarizeClass", () => {
-  it("counts only currently-assigned quizzes and their completions", () => {
+  const live = allocation({
+    quiz_id: "live",
+    available_until: "2026-09-01T00:00:00.000Z",
+  });
+  const scheduled = allocation({
+    quiz_id: "scheduled",
+    available_from: "2026-09-01T00:00:00.000Z",
+  });
+  const closed = allocation({
+    quiz_id: "closed",
+    available_until: "2026-08-18T00:00:00.000Z",
+  });
+  const draft = allocation({ quiz_id: "draft", published: false });
+
+  it("splits the class's own quizzes into active and finished, KPI semantics", () => {
     const summary = summarizeClass(
       klass("c1", "ט'1"),
       stats({
         class_id: "c1",
         current_member_count: 28,
-        quizzes: [
-          quizStat({ quiz_id: "q1", completion_count: 12 }),
-          quizStat({ quiz_id: "q2", completion_count: 5 }),
-          // A soft-deleted quiz contributes nothing at all.
-          quizStat({ quiz_id: "q3", completion_count: 99, deleted: true }),
-        ],
-      })
+        quizzes: [quizStat({ quiz_id: "live" }), quizStat({ quiz_id: "closed" })],
+      }),
+      [live, scheduled, closed, draft],
+      NOW
     );
     expect(summary).toEqual({
       id: "c1",
       name: "ט'1",
       memberCount: 28,
-      assignedCount: 2,
-      completions: 17,
+      // Scheduled counts as active exactly as it does in the KPI row; the draft
+      // is neither, since nobody has been given it yet.
+      activeQuizzes: 2,
+      finishedQuizzes: 1,
     });
   });
 
-  it("degrades to zeroes when a class's stats could not be read", () => {
-    expect(summarizeClass(klass("c1"), null)).toMatchObject({
+  it("keeps the roster when allocations could not be read", () => {
+    expect(
+      summarizeClass(
+        klass("c1"),
+        stats({ class_id: "c1", current_member_count: 14 }),
+        [],
+        NOW
+      )
+    ).toMatchObject({ memberCount: 14, activeQuizzes: 0, finishedQuizzes: 0 });
+  });
+
+  it("keeps the quiz split when the class's stats could not be read", () => {
+    expect(summarizeClass(klass("c1"), null, [live, closed], NOW)).toMatchObject({
       memberCount: 0,
-      assignedCount: 0,
-      completions: 0,
+      activeQuizzes: 1,
+      finishedQuizzes: 1,
     });
+  });
+
+  it("agrees with the KPI row on the same single class", () => {
+    const quizzes = [live, scheduled, closed, draft];
+    const summary = summarizeClass(klass("c1"), null, quizzes, NOW);
+    expect({
+      openQuizzes: summary.activeQuizzes,
+      finishedQuizzes: summary.finishedQuizzes,
+    }).toEqual(countQuizStates([{ klass: klass("c1"), quizzes }], NOW));
   });
 });
 
@@ -150,8 +182,8 @@ describe("countQuizStates", () => {
 describe("totalsFromSummaries", () => {
   it("sums classes and students and carries the quiz-state counts through", () => {
     const summaries = [
-      summarizeClass(klass("c1"), stats({ class_id: "c1", current_member_count: 28 })),
-      summarizeClass(klass("c2"), stats({ class_id: "c2", current_member_count: 14 })),
+      summarizeClass(klass("c1"), stats({ class_id: "c1", current_member_count: 28 }), []),
+      summarizeClass(klass("c2"), stats({ class_id: "c2", current_member_count: 14 }), []),
     ];
     expect(
       totalsFromSummaries(summaries, { openQuizzes: 3, finishedQuizzes: 2 })
@@ -241,20 +273,33 @@ describe("presentation helpers", () => {
     expect(formatShortDate("2026-08-25T22:30:00.000Z")).toBe("26.8");
   });
 
-  it("greets by the school's clock", () => {
-    // 06:00 in Jerusalem.
-    expect(greetingFor(new Date("2026-08-20T03:00:00.000Z"))).toBe("בוקר טוב");
-    // 15:00 in Jerusalem.
-    expect(greetingFor(new Date("2026-08-20T12:00:00.000Z"))).toBe("צהריים טובים");
-    // 20:00 in Jerusalem.
-    expect(greetingFor(new Date("2026-08-20T17:00:00.000Z"))).toBe("ערב טוב");
-    // 01:00 in Jerusalem — every Hebrew night greeting is a farewell.
-    expect(greetingFor(new Date("2026-08-19T22:00:00.000Z"))).toBe("שלום");
+  it("phrases a closing time by school-local calendar days", () => {
+    // NOW is 12:00 in Jerusalem on 20.8.
+    expect(closedAtMeta("2026-08-20T05:00:00.000Z", NOW)).toEqual({
+      phrase: "נסגר היום",
+      date: "20.8",
+    });
+    expect(closedAtMeta("2026-08-19T20:00:00.000Z", NOW)).toEqual({
+      phrase: "נסגר אתמול",
+      date: "19.8",
+    });
+    expect(closedAtMeta("2026-08-17T10:00:00.000Z", NOW)).toEqual({
+      phrase: "נסגר לפני 3 ימים",
+      date: "17.8",
+    });
   });
 
-  it("greets by first name only, and drops an empty one", () => {
-    expect(firstName("דנה כהן לוי")).toBe("דנה");
-    expect(firstName("   ")).toBeNull();
-    expect(firstName(null)).toBeNull();
+  it("counts the day the teacher lived through, not elapsed hours", () => {
+    // 21:30 UTC is already the next day in Jerusalem, so this closed "today"
+    // even though it is nearly twelve hours back.
+    expect(closedAtMeta("2026-08-19T21:30:00.000Z", NOW).phrase).toBe("נסגר היום");
+  });
+
+  it("drops the relative phrasing once it stops helping, keeping the date", () => {
+    // A week out, "לפני 7 ימים" says less than the date itself does.
+    expect(closedAtMeta("2026-08-13T10:00:00.000Z", NOW)).toEqual({
+      phrase: "נסגר ב־13.8",
+      date: null,
+    });
   });
 });

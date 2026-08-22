@@ -11,7 +11,6 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Alert } from "@/components/ui/Alert";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
-import { SegmentedToggle } from "@/components/ui/SegmentedToggle";
 import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { Pager } from "@/components/ui/Pager";
 import { usePagedList, type PagedList } from "@/components/ui/usePagedList";
@@ -26,11 +25,14 @@ import {
   matchesText,
   matchesClassFilter,
   matchesVisibility,
+  matchesStatus,
   UNASSIGNED_CLASS,
   SORT_LABELS,
   SORT_OPTIONS,
-  VISIBILITY_SEGMENTS,
+  VISIBILITY_OPTIONS,
+  STATUS_OPTIONS,
   type SortOption,
+  type StatusFilter,
   type VisibilityFilter,
 } from "@/lib/libraryFilters";
 import { QuizCard, CatalogQuizCard, cardHeading, LANG_LABEL } from "@/components/teacher/QuizCard";
@@ -58,6 +60,7 @@ export function QuizLibrary({
   sharedQuizzes,
   allocationTags,
   classes = [],
+  initialStatus = "all",
 }: {
   myQuizzes: MyQuiz[];
   sharedQuizzes: SharedQuiz[];
@@ -65,6 +68,14 @@ export function QuizLibrary({
   allocationTags: Record<string, QuizAllocationTags>;
   /** The teacher's full class roster — options for the "My quizzes" class filter. */
   classes?: ClassRow[];
+  /**
+   * Where the status filter starts, read from the page's `?status=` param —
+   * the contract the teacher home's KPI tiles link with. It seeds state rather
+   * than driving it, so the teacher can then change the filter without the URL
+   * fighting them; the page re-keys this component when the param itself
+   * changes, so a fresh deep link always wins.
+   */
+  initialStatus?: StatusFilter;
 }) {
   const [tab, setTab] = useState<TabKey>("mine");
 
@@ -80,7 +91,12 @@ export function QuizLibrary({
         ]}
       />
       {tab === "mine" ? (
-        <MineTab quizzes={myQuizzes} allocationTags={allocationTags} classes={classes} />
+        <MineTab
+          quizzes={myQuizzes}
+          allocationTags={allocationTags}
+          classes={classes}
+          initialStatus={initialStatus}
+        />
       ) : (
         <SchoolTab quizzes={sharedQuizzes} />
       )}
@@ -170,6 +186,45 @@ function LanguageFilter({
   );
 }
 
+/**
+ * A single-value filter as a labelled dropdown — the same control the sort uses,
+ * so "נראות" and "מצב" sit in the bar as peers of it rather than as a third
+ * kind of widget (they were a `SegmentedToggle` and nothing, respectively).
+ */
+function FilterSelect<T extends string>({
+  label,
+  name,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  value: T;
+  options: ReadonlyArray<{ value: T; label: string }>;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <Select
+      label={label}
+      name={name}
+      value={value}
+      onChange={(e) => onChange(e.target.value as T)}
+    >
+      {options.map((opt) => (
+        <option key={opt.value} value={opt.value}>
+          {opt.label}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
+const SORT_SELECT_OPTIONS = SORT_OPTIONS.map((value) => ({
+  value,
+  label: SORT_LABELS[value],
+}));
+
 function SortSelect({
   value,
   onChange,
@@ -180,18 +235,13 @@ function SortSelect({
   name: string;
 }) {
   return (
-    <Select
+    <FilterSelect<SortOption>
       label="מיון"
       name={name}
       value={value}
-      onChange={(e) => onChange(e.target.value as SortOption)}
-    >
-      {SORT_OPTIONS.map((opt) => (
-        <option key={opt} value={opt}>
-          {SORT_LABELS[opt]}
-        </option>
-      ))}
-    </Select>
+      options={SORT_SELECT_OPTIONS}
+      onChange={onChange}
+    />
   );
 }
 
@@ -234,10 +284,12 @@ function MineTab({
   quizzes,
   allocationTags,
   classes,
+  initialStatus,
 }: {
   quizzes: MyQuiz[];
   allocationTags: Record<string, QuizAllocationTags>;
   classes: ClassRow[];
+  initialStatus: StatusFilter;
 }) {
   const router = useRouter();
   const [pendingDelete, setPendingDelete] = useState<MyQuiz | null>(null);
@@ -248,19 +300,22 @@ function MineTab({
   const [languages, setLanguages] = useState<Set<Language>>(new Set());
   const [classFilter, setClassFilter] = useState<Set<string>>(new Set());
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>(initialStatus);
   const [sort, setSort] = useState<SortOption>("date_desc");
 
   const dirty =
     search !== "" ||
     languages.size > 0 ||
     classFilter.size > 0 ||
-    visibility !== "all";
+    visibility !== "all" ||
+    status !== "all";
 
   function clearFilters() {
     setSearch("");
     setLanguages(new Set());
     setClassFilter(new Set());
     setVisibility("all");
+    setStatus("all");
   }
 
   const visibleQuizzes = useMemo(() => {
@@ -269,14 +324,15 @@ function MineTab({
         matchesText([q.title, q.video_title, q.channel_name], search) &&
         (languages.size === 0 || languages.has(q.base_language)) &&
         matchesVisibility(visibility, q.visibility) &&
+        matchesStatus(status, allocationTags[q.quiz_id]) &&
         matchesClassFilter(classFilter, allocationTags[q.quiz_id])
     );
     return sortQuizzes(filtered, sort);
-  }, [quizzes, search, languages, visibility, classFilter, sort, allocationTags]);
+  }, [quizzes, search, languages, visibility, status, classFilter, sort, allocationTags]);
 
   const paged = usePagedList(visibleQuizzes, {
     pageSize: PAGE_SIZE,
-    resetKey: `${search}|${[...languages].sort().join()}|${[...classFilter].sort().join()}|${visibility}|${sort}`,
+    resetKey: `${search}|${[...languages].sort().join()}|${[...classFilter].sort().join()}|${visibility}|${status}|${sort}`,
   });
 
   async function confirmDelete() {
@@ -321,15 +377,20 @@ function MineTab({
               onChange={setSearch}
               placeholder="לפי כותרת, שם הסרטון או היוצר"
             />
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-[var(--heading)]">נראות</span>
-              <SegmentedToggle<VisibilityFilter>
-                segments={VISIBILITY_SEGMENTS}
-                value={visibility}
-                onChange={setVisibility}
-                ariaLabel="נראות"
-              />
-            </div>
+            <FilterSelect<StatusFilter>
+              label="מצב"
+              name="mine-status"
+              value={status}
+              options={STATUS_OPTIONS}
+              onChange={setStatus}
+            />
+            <FilterSelect<VisibilityFilter>
+              label="נראות"
+              name="mine-visibility"
+              value={visibility}
+              options={VISIBILITY_OPTIONS}
+              onChange={setVisibility}
+            />
             <LanguageFilter selected={languages} onChange={setLanguages} />
             {classes.length > 0 && (
               <MultiSelectDropdown

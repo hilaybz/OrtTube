@@ -1,7 +1,14 @@
+/**
+ * The tutor chat. `open` is owned by the quiz page (the video column shrinks to
+ * make room for the panel, which the panel itself cannot do), so these render it
+ * already open and pin what the panel does with what it is given: streams a
+ * turn, renders Markdown rather than asterisks, waits visibly, reports errors —
+ * and, closed, stays out of the way of a keyboard entirely.
+ */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
-import { AskAI } from "@/components/student/AskAI";
+import { AskAI, AskAITrigger } from "@/components/student/AskAI";
 
 const ctx = { positionSeconds: 42, attemptId: "a1", activeQuestionId: "q1" };
 
@@ -15,9 +22,28 @@ function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
   });
 }
 
-/** Open the drawer. Its trigger names the tutor, so match on that. */
-async function open() {
-  await userEvent.click(screen.getByRole("button", { name: /שאל/ }));
+/** The panel as the quiz page mounts it: trigger in the header, panel beside the
+ *  video, with `open` held above both. */
+function renderChat(
+  tutorMode: "off" | "hints" | "full" = "hints",
+  open = true
+): { onClose: ReturnType<typeof vi.fn>; onToggle: ReturnType<typeof vi.fn> } {
+  const onClose = vi.fn();
+  const onToggle = vi.fn();
+  render(
+    <>
+      <AskAITrigger tutorMode={tutorMode} open={open} onClick={onToggle} />
+      <AskAI
+        classId="c"
+        quizId="q"
+        tutorMode={tutorMode}
+        context={ctx}
+        open={open}
+        onClose={onClose}
+      />
+    </>
+  );
+  return { onClose, onToggle };
 }
 
 /** Type a question and press the send icon button. */
@@ -27,26 +53,40 @@ async function send(question: string) {
 }
 
 describe("AskAI", () => {
-  it("is hidden when tutor mode is off", () => {
-    render(<AskAI classId="c" quizId="q" tutorMode="off" context={ctx} />);
+  it("is hidden — trigger and panel both — when tutor mode is off", () => {
+    renderChat("off");
     expect(screen.queryByRole("button", { name: /שאל/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "OrtAI" })).not.toBeInTheDocument();
   });
 
-  it("names the tutor OrtAI, not the teacher", async () => {
-    render(<AskAI classId="c" quizId="q" tutorMode="hints" context={ctx} />);
+  it("names the tutor OrtAI, not the teacher", () => {
+    renderChat();
     expect(screen.getByRole("button", { name: "שאל/י את OrtAI" })).toBeInTheDocument();
-    await open();
-    expect(screen.getByRole("dialog", { name: "OrtAI" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "OrtAI" })).toBeInTheDocument();
     expect(screen.queryByText(/את המורה/)).not.toBeInTheDocument();
   });
 
-  it("streams the tutor answer into the dialog", async () => {
+  it("hands the open/close decision to the page rather than keeping it", async () => {
+    const { onToggle, onClose } = renderChat();
+    await userEvent.click(screen.getByRole("button", { name: /שאל/ }));
+    expect(onToggle).toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "סגירה" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("keeps the closed panel out of the tab order — off-screen is not hidden", () => {
+    renderChat("hints", false);
+    // Still mounted (the conversation survives a close), but inert.
+    const panel = document.querySelector("aside");
+    expect(panel).toHaveAttribute("inert");
+  });
+
+  it("streams the tutor answer into the panel", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({ ok: true, body: streamOf(["חשוב ", "לחזור ל-03:40"]) }))
     );
-    render(<AskAI classId="c" quizId="q" tutorMode="hints" context={ctx} />);
-    await open();
+    renderChat();
     await send("מה הרעיון המרכזי?");
     expect(await screen.findByText(/חשוב לחזור ל-03:40/)).toBeInTheDocument();
   });
@@ -59,8 +99,7 @@ describe("AskAI", () => {
         body: streamOf(["זה **חשוב** מאוד\n\n- נקודה ", "ראשונה"]),
       }))
     );
-    render(<AskAI classId="c" quizId="q" tutorMode="hints" context={ctx} />);
-    await open();
+    renderChat();
     await send("מה הרעיון?");
 
     const bold = await screen.findByText("חשוב");
@@ -79,8 +118,7 @@ describe("AskAI", () => {
       },
     });
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, body })));
-    render(<AskAI classId="c" quizId="q" tutorMode="hints" context={ctx} />);
-    await open();
+    renderChat();
     await send("שאלה");
 
     // Nothing to show yet, so the wait happens where the answer will appear.
@@ -105,8 +143,7 @@ describe("AskAI", () => {
         json: async () => ({ error: { code: "tutor_off" } }),
       }))
     );
-    render(<AskAI classId="c" quizId="q" tutorMode="hints" context={ctx} />);
-    await open();
+    renderChat();
     await send("שאלה");
     expect(await screen.findByRole("alert")).toBeInTheDocument();
   });

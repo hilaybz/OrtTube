@@ -20,6 +20,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import {
   getTranscript,
+  resetTranscriptMemoryCache,
   TRANSCRIPT_BUCKET,
   type TranscriptOutcome,
 } from "@/lib/transcriptCache";
@@ -108,6 +109,7 @@ const online = await stackOnline();
 describe.skipIf(!online)("getTranscript (transcript cache)", () => {
   beforeEach(async () => {
     await resetDb();
+    resetTranscriptMemoryCache();
     scraper.mockReset();
   });
 
@@ -252,6 +254,73 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
     const result = await getTranscript(getServiceClient(), youtubeId);
     expect(scraper).not.toHaveBeenCalled();
     expect(ready(result)?.language).toBe("he");
+    expect(ready(result)?.segments).toHaveLength(2);
+  });
+
+  it("serves a repeat read from memory without touching the row or the object", async () => {
+    const youtubeId = "memhit00001";
+    await clearCachedTranscript(youtubeId);
+    await givenVideo(youtubeId, { status: "pending" });
+    youtubeReturns(manualHebrewTrack());
+    await getTranscript(getServiceClient(), youtubeId);
+
+    // Remove BOTH backing stores. A read that still succeeds can only have come
+    // from memory.
+    await clearCachedTranscript(youtubeId);
+    await getPool().query(
+      `UPDATE public.videos SET transcript_status = 'pending', fetched_at = NULL
+       WHERE youtube_video_id = $1`,
+      [youtubeId]
+    );
+    scraper.mockClear();
+
+    const remembered = await getTranscript(getServiceClient(), youtubeId);
+    expect(ready(remembered)?.segments).toHaveLength(2);
+    expect(scraper).not.toHaveBeenCalled();
+  });
+
+  it("goes back to the row and the object once the memory entry is gone", async () => {
+    const youtubeId = "memmiss0001";
+    await clearCachedTranscript(youtubeId);
+    await givenVideo(youtubeId, { status: "pending" });
+    youtubeReturns(manualHebrewTrack());
+    await getTranscript(getServiceClient(), youtubeId);
+
+    resetTranscriptMemoryCache();
+    await clearCachedTranscript(youtubeId);
+    await getPool().query(
+      `UPDATE public.videos SET transcript_status = 'unavailable', fetched_at = now()
+       WHERE youtube_video_id = $1`,
+      [youtubeId]
+    );
+    scraper.mockClear();
+
+    // The fresh 'unavailable' verdict now stands, which it could not have while
+    // the memory entry was live.
+    expect((await getTranscript(getServiceClient(), youtubeId)).state).toBe("throttled");
+    expect(scraper).not.toHaveBeenCalled();
+  });
+
+  it("does not serve an explicit retry from memory", async () => {
+    const youtubeId = "memforce001";
+    await clearCachedTranscript(youtubeId);
+    await givenVideo(youtubeId, { status: "pending" });
+    youtubeReturns(manualHebrewTrack());
+    await getTranscript(getServiceClient(), youtubeId);
+
+    // A state a memory hit would hide: no object, and a fresh 'unavailable'
+    // verdict that only an explicit retry may override.
+    await clearCachedTranscript(youtubeId);
+    await getPool().query(
+      `UPDATE public.videos SET transcript_status = 'unavailable', fetched_at = now()
+       WHERE youtube_video_id = $1`,
+      [youtubeId]
+    );
+    scraper.mockClear();
+    youtubeReturns(manualHebrewTrack());
+
+    const result = await getTranscript(getServiceClient(), youtubeId, { force: true });
+    expect(scraper).toHaveBeenCalledTimes(1);
     expect(ready(result)?.segments).toHaveLength(2);
   });
 });

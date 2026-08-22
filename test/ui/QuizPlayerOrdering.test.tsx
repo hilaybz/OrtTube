@@ -46,7 +46,10 @@ vi.mock("@/components/video/VideoStage", () => ({
   },
 }));
 
-vi.mock("@/components/student/AskAI", () => ({ AskAI: () => null }));
+vi.mock("@/components/student/AskAI", () => ({
+  AskAI: () => null,
+  AskAITrigger: () => null,
+}));
 
 import { QuizPlayer } from "@/components/student/QuizPlayer";
 

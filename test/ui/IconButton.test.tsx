@@ -48,4 +48,29 @@ describe("BackLink", () => {
     const link = screen.getByRole("link", { name: "כל הכיתות" });
     expect(link).toHaveAttribute("href", "/dashboard/classes");
   });
+
+  it("follows the ?from= key back to where the user actually came from", () => {
+    // The motivating bug: the "+" on the teacher home opens the new-quiz page,
+    // whose own default back link points at "החידונים שלי".
+    render(<BackLink href="/dashboard/quizzes" label="החידונים שלי" from="overview" />);
+    const link = screen.getByRole("link", { name: "סקירה" });
+    expect(link).toHaveAttribute("href", "/dashboard");
+    expect(screen.queryByRole("link", { name: "החידונים שלי" })).toBeNull();
+  });
+
+  it("keeps its own destination when the key is missing or unrecognised", () => {
+    const { rerender } = render(
+      <BackLink href="/dashboard/quizzes" label="החידונים שלי" from={undefined} />
+    );
+    expect(screen.getByRole("link", { name: "החידונים שלי" })).toHaveAttribute(
+      "href",
+      "/dashboard/quizzes"
+    );
+
+    rerender(<BackLink href="/dashboard/quizzes" label="החידונים שלי" from="nowhere" />);
+    expect(screen.getByRole("link", { name: "החידונים שלי" })).toHaveAttribute(
+      "href",
+      "/dashboard/quizzes"
+    );
+  });
 });

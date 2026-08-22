@@ -10,9 +10,11 @@ import {
   type StudentAttemptState,
   type StudentQuestion,
 } from "@/lib/attempts";
+import { cn } from "@/components/ui/cn";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Icon } from "@/components/ui/Icon";
 import { BackLink } from "@/components/ui/BackLink";
+import { VideoStage } from "@/components/video/VideoStage";
 import { ReviewList, type ReviewItem } from "@/components/student/ReviewList";
 import { gradeOf } from "@/components/student/grade";
 
@@ -47,6 +49,27 @@ function ScoreHeader({ correct, total }: { correct: number; total: number }) {
   );
 }
 
+/**
+ * The video, beside the results, so reviewing an answer and re-watching the
+ * moment it came from are the same visit. Free seeking (`maxSeek={null}`): the
+ * block-skip gate exists to keep a student from skipping questions they have
+ * not answered, and on this page every question is behind them.
+ *
+ * Absent only when the video can't be named — the closed-window fallback below
+ * reads the attempt straight off `attempts`, which carries a score but not the
+ * video it was scored on. A score with no re-watch beats no page at all.
+ */
+function VideoPanel({ videoId, title }: { videoId: string; title: string | null }) {
+  return (
+    <div className="flex flex-col gap-2 lg:sticky lg:top-4">
+      <VideoStage videoId={videoId} maxSeek={null} />
+      <p className="text-xs text-[var(--body-subtle)]">
+        {title ?? "צפייה חוזרת"} · אפשר לצפות שוב תוך כדי הסקירה
+      </p>
+    </div>
+  );
+}
+
 export default async function ResultsPage({
   params,
 }: {
@@ -56,10 +79,25 @@ export default async function ResultsPage({
   const client = (await createClient()) as unknown as SupabaseClient;
   const playerHref = `/student/quiz/${classId}/${quizId}`;
 
-  const wrap = (children: React.ReactNode) => (
-    <div className="mx-auto flex max-w-2xl flex-col gap-5 py-6">
+  // The score banner spans the full width; below it the video and the review sit
+  // side by side on a wide screen and stack on a narrow one — score, then video,
+  // then answers, which is the order a student wants them in either way.
+  const wrap = (
+    score: React.ReactNode,
+    video: React.ReactNode,
+    detail: React.ReactNode
+  ) => (
+    <div className={cn("mx-auto flex flex-col gap-5 py-6", video ? "max-w-6xl" : "max-w-2xl")}>
       <BackLink href="/student" label="הפיד שלי" />
-      {children}
+      {score}
+      {video ? (
+        <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[22rem_minmax(0,1fr)] lg:items-start">
+          {video}
+          <div className="flex flex-col gap-5">{detail}</div>
+        </div>
+      ) : (
+        detail
+      )}
     </div>
   );
 
@@ -100,8 +138,14 @@ export default async function ResultsPage({
     lastNumQuestions = fallback.num_questions;
   }
 
+  const video = state ? (
+    <VideoPanel videoId={state.youtube_video_id} title={state.video_title} />
+  ) : null;
+
   if (!attemptId) {
     return wrap(
+      null,
+      video,
       <GlassCard className="flex flex-col items-center gap-4 text-center">
         <h1 className="text-xl font-bold">עדיין לא סיימת את החידון</h1>
         <p className="text-[var(--body)]">סיימו ניסיון כדי לראות את הסיכום.</p>
@@ -123,9 +167,9 @@ export default async function ResultsPage({
   // aggregate score is exposed — never per-question correctness.
   if (!review.revealed) {
     return wrap(
-      <>
-        <ScoreHeader correct={correct} total={total} />
-        <GlassCard className="flex flex-col items-center gap-3 text-center">
+      <ScoreHeader correct={correct} total={total} />,
+      video,
+      <GlassCard className="flex flex-col items-center gap-3 text-center">
           <Icon name="lock" size={22} label="נעול" className="text-[var(--body-subtle)]" />
           <p className="text-sm text-[var(--body)]">
             פירוט התשובות והנימוקים ייחשף לאחר שלא יישארו ניסיונות נוספים.
@@ -140,7 +184,6 @@ export default async function ResultsPage({
             </Link>
           )}
         </GlassCard>
-      </>
     );
   }
 
@@ -172,9 +215,8 @@ export default async function ResultsPage({
   });
 
   return wrap(
-    <>
-      <ScoreHeader correct={correct} total={total} />
-      <ReviewList items={items} />
-    </>
+    <ScoreHeader correct={correct} total={total} />,
+    video,
+    <ReviewList items={items} />
   );
 }

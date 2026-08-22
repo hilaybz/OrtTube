@@ -40,14 +40,6 @@ const VISIBILITY_SEGMENTS: ReadonlyArray<Segment<QuizVisibility>> = [
   { value: "shared", label: "משותף לביה\u05f4ס" },
 ];
 
-// How a quiz's length is decided: estimated from the video (the default, shown
-// to students with a `~`) or a minute count the teacher states outright.
-type DurationMode = "estimated" | "restricted";
-const DURATION_SEGMENTS: ReadonlyArray<Segment<DurationMode>> = [
-  { value: "estimated", label: "הערכה מהסרטון" },
-  { value: "restricted", label: "הגבלת זמן" },
-];
-
 // A quiz can accumulate questions indefinitely (each AI run adds up to 20), so
 // the list pages. The timeline above it always shows every marker, and picking
 // one jumps to the page its question is on.
@@ -666,35 +658,30 @@ export function QuizEditor({
           </span>
           {metaBusy && <Spinner size={16} />}
         </div>
-      </GlassCard>
 
-      {/* Quiz length: its own block, not a field buried in the settings box.
-          Unrestricted is the default and shows the estimate the student will
-          see; restricting it asks for the one number that then replaces it. */}
-      <GlassCard className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-col gap-0.5">
+        {/* Quiz length — one row of this same settings card rather than a card
+            of its own: it is a single checkbox and a single number, and a whole
+            glass block for it pushed the video and the questions off the first
+            screen. Unchecked is the default and means students see the estimate
+            derived from the video's length; checking it asks for the one number
+            that replaces that estimate. */}
+        <div className="flex flex-col gap-2 border-t border-[var(--glass-border)] pt-4">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-[var(--heading)]">
               משך החידון
             </span>
-            <span className="text-xs text-[var(--body-subtle)]">
-              {timeRestricted
-                ? "התלמידים יראו את המשך שתקבעו."
-                : estimatedMinutes != null
-                  ? `התלמידים יראו הערכה מאורך הסרטון: ~${estimatedMinutes} דקות.`
-                  : "אורך הסרטון אינו ידוע — לא תוצג הערכה."}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <SegmentedToggle<DurationMode>
-              segments={DURATION_SEGMENTS}
-              value={timeRestricted ? "restricted" : "estimated"}
-              onChange={(mode) => {
-                setTimeRestricted(mode === "restricted");
-                setDurationDirty(true);
-              }}
-              ariaLabel="אופן קביעת משך החידון"
-            />
+            <label className="flex items-center gap-2 text-sm text-[var(--body)]">
+              <input
+                type="checkbox"
+                checked={timeRestricted}
+                onChange={(e) => {
+                  setTimeRestricted(e.target.checked);
+                  setDurationDirty(true);
+                }}
+                className="h-4 w-4 rounded-[var(--radius-sm)] border border-[var(--glass-border)] accent-[var(--brand)]"
+              />
+              הגבלת זמן
+            </label>
             {timeRestricted && (
               <label className="flex items-center gap-2 text-sm text-[var(--body)]">
                 <input
@@ -715,14 +702,21 @@ export function QuizEditor({
             )}
             {durationDirty && (
               <Button size="sm" onClick={saveDuration} disabled={metaBusy}>
-                {metaBusy ? <Spinner size={16} /> : "שמירה"}
+                {metaBusy ? <Spinner size={16} /> : "שמירת המשך"}
               </Button>
             )}
+            <span className="text-xs text-[var(--body-subtle)]">
+              {timeRestricted
+                ? "התלמידים יראו את המשך שתקבעו."
+                : estimatedMinutes != null
+                  ? `ללא הגבלה — התלמידים יראו הערכה מאורך הסרטון: ~${estimatedMinutes} דקות.`
+                  : "אורך הסרטון אינו ידוע — לא תוצג הערכה."}
+            </span>
           </div>
+          {durationError && (
+            <p className="text-sm text-[var(--fg-danger)]">{durationError}</p>
+          )}
         </div>
-        {durationError && (
-          <p className="text-sm text-[var(--fg-danger)]">{durationError}</p>
-        )}
       </GlassCard>
 
       {/* 2 · The video itself — the real player, with the checkpoint timeline

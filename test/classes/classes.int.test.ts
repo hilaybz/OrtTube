@@ -573,7 +573,7 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     });
   });
 
-  it("list_my_quiz_allocation_tags buckets live vs scheduled; drafts/closed appear with empty buckets; unallocated quizzes are absent", async () => {
+  it("list_my_quiz_allocation_tags buckets live vs scheduled vs closed; drafts appear with empty buckets; unallocated quizzes are absent", async () => {
     const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
     const liveClass = await teacher.openClass({ name: "Live", language: "he" });
     const scheduledClass = await teacher.openClass({ name: "Scheduled", language: "he" });
@@ -600,13 +600,19 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     expect(forQuiz).toBeTruthy();
     expect(forQuiz!.live.map((c) => c.class_id)).toEqual([liveClass.id]);
     expect(forQuiz!.scheduled.map((c) => c.class_id)).toEqual([scheduledClass.id]);
-    // Draft and closed land in neither bucket, but the quiz itself still shows
-    // up (both buckets present, both empty of THOSE classes) — it just isn't
-    // tagged live or scheduled for draftClass/closedClass.
-    expect(forQuiz!.live.map((c) => c.class_id)).not.toContain(draftClass.id);
+    // A window that has closed gets its own bucket — without it, "ended" and
+    // "never published" reached the card as the same pair of empty arrays, and
+    // the library could not offer a finished/active status axis at all.
+    expect(forQuiz!.closed.map((c) => c.class_id)).toEqual([closedClass.id]);
+    // A draft lands in no bucket, but the quiz itself still shows up.
+    for (const bucket of [forQuiz!.live, forQuiz!.scheduled, forQuiz!.closed]) {
+      expect(bucket.map((c) => c.class_id)).not.toContain(draftClass.id);
+    }
+    // Each published state claims exactly one bucket: no class is double-counted.
     expect(forQuiz!.live.map((c) => c.class_id)).not.toContain(closedClass.id);
-    expect(forQuiz!.scheduled.map((c) => c.class_id)).not.toContain(draftClass.id);
     expect(forQuiz!.scheduled.map((c) => c.class_id)).not.toContain(closedClass.id);
+    expect(forQuiz!.closed.map((c) => c.class_id)).not.toContain(liveClass.id);
+    expect(forQuiz!.closed.map((c) => c.class_id)).not.toContain(scheduledClass.id);
     // A quiz with no allocation at all doesn't appear.
     expect(tags.some((t) => t.quiz_id === untouchedQuiz.id)).toBe(false);
   });

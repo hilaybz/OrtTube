@@ -57,6 +57,7 @@ export function IconButton({
   variant?: Variant;
   size?: Size;
   busy?: boolean;
+  /** Preferred tooltip side; the bubble flips and clamps itself when it must. */
   tooltipPlacement?: "top" | "bottom";
 }) {
   const { box, icon } = SIZE[size];
@@ -96,6 +97,7 @@ export function IconLink({
   href: string;
   variant?: Variant;
   size?: Size;
+  /** Preferred tooltip side; the bubble flips and clamps itself when it must. */
   tooltipPlacement?: "top" | "bottom";
 }) {
   const { box, icon } = SIZE[size];

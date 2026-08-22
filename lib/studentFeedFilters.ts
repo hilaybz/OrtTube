@@ -148,3 +148,38 @@ export function feedClassOptions(
     .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label, "he"));
 }
+
+// ── What's next ──────────────────────────────────────────────────────────────
+
+/**
+ * The one-line read on a student's feed, for the greeting header: how much is
+ * still owed and which of it is due soonest.
+ *
+ * "Owed" is the `not_yet` section — not started or mid-attempt. A completed
+ * quiz is settled and a missed one can no longer be acted on, so neither is
+ * something to greet a student with.
+ */
+export interface FeedOutlook {
+  /** How many quizzes the student still has to submit. */
+  pending: number;
+  /**
+   * The pending quiz with the nearest deadline, or `null` when nothing pending
+   * has one. A deadline-less quiz is never "due next": there is no date for it
+   * to be next *by*, and calling the arbitrary first one next would tell a
+   * student to hurry over the one thing that isn't urgent.
+   */
+  next: StudentFeedItem | null;
+}
+
+export function feedOutlook(items: StudentFeedItem[]): FeedOutlook {
+  const pending = items.filter((i) => sectionOf(i) === "not_yet");
+  const dated = pending.filter((i) => i.available_until != null);
+  const next = dated.reduce<StudentFeedItem | null>((soonest, item) => {
+    if (!soonest) return item;
+    return new Date(item.available_until as string).getTime() <
+      new Date(soonest.available_until as string).getTime()
+      ? item
+      : soonest;
+  }, null);
+  return { pending: pending.length, next };
+}

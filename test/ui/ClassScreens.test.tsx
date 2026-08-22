@@ -4,10 +4,10 @@
  * What is asserted here is mostly what is NOT there any more: a teacher does
  * not manage membership (no add/remove student), a row does not repeat its
  * section's name as a "פעיל" tag or carry a bare attempts count, and the
- * withdrawn group has no heading and no analytics. The rest pins the
- * replacements — one status sentence per row, icon actions with accessible
- * names, search + filter, and a student row that leads to that student's
- * analytics.
+ * withdrawn group offers no analytics. The rest pins the replacements — one
+ * status sentence per row, a headed section per lifecycle state with open work
+ * in green and the closed states neutral, icon actions with accessible names,
+ * search + filter, and a student row that leads to that student's analytics.
  */
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -165,11 +165,28 @@ describe("AssignedQuizzesSection rows", () => {
     );
   });
 
-  it("keeps the withdrawn group unheaded, and out of analytics", () => {
+  it("heads every lifecycle group, withdrawn rows included", () => {
     renderAssigned();
     expect(screen.getByRole("heading", { name: "פעילים" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "הסתיימו" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "מוסתרים" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "מוסתרים" })).toBeInTheDocument();
+  });
+
+  it("colours open work green and leaves ended and hidden work neutral", () => {
+    renderAssigned();
+    // The inversion this pins: open used to be red and ended green.
+    expect(screen.getByRole("heading", { name: "פעילים" }).className).toContain(
+      "text-[var(--fg-success)]"
+    );
+    for (const name of ["הסתיימו", "מוסתרים"]) {
+      const heading = screen.getByRole("heading", { name }).className;
+      expect(heading).not.toContain("--fg-success");
+      expect(heading).not.toContain("--fg-danger");
+    }
+  });
+
+  it("keeps the withdrawn group out of analytics", () => {
+    renderAssigned();
     expect(
       within(row("חידון מוסתר")).queryByRole("link", {
         name: "אנליטיקה של החידון בכיתה",
@@ -197,6 +214,14 @@ describe("AssignedQuizzesSection search and filter", () => {
     expect(screen.getByText("חידון שהסתיים")).toBeInTheDocument();
     expect(screen.queryByText("חידון פעיל")).toBeNull();
     expect(screen.queryByText("חידון מוסתר")).toBeNull();
+  });
+
+  it("filters down to the hidden quizzes", async () => {
+    renderAssigned();
+    await userEvent.click(screen.getByRole("radio", { name: "מוסתרים" }));
+    expect(screen.getByText("חידון מוסתר")).toBeInTheDocument();
+    expect(screen.queryByText("חידון פעיל")).toBeNull();
+    expect(screen.queryByText("חידון שהסתיים")).toBeNull();
   });
 
   it("searches across every section at once", async () => {

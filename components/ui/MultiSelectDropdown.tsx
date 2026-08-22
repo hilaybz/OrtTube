@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "./Icon";
 import { cn } from "./cn";
@@ -9,7 +9,8 @@ export interface MultiSelectOption<T extends string> {
   label: string;
 }
 
-const PANEL_WIDTH = 224; // px — matches the panel's own w-56.
+/** Smallest gap the panel keeps from a viewport edge. */
+const EDGE = 8;
 
 /**
  * A labelled, glass-styled trigger that opens a checkbox panel — the
@@ -19,6 +20,10 @@ const PANEL_WIDTH = 224; // px — matches the panel's own w-56.
  * control instead of an unbounded row of chips. The option list itself caps
  * at `max-h-64` with internal scroll, so a long roster scrolls rather than
  * growing the panel unboundedly.
+ *
+ * The panel is as wide as its own longest option label (between a min and a max)
+ * rather than a fixed width, so a filter over short class names is a short
+ * dropdown instead of a slab far wider than anything in it.
  */
 export function MultiSelectDropdown<T extends string>({
   label,
@@ -37,11 +42,19 @@ export function MultiSelectDropdown<T extends string>({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
+  // Null until the open panel has been measured once — see the layout effect.
+  const [panelStyle, setPanelStyle] = useState<React.CSSProperties | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const id = useId();
   const labelId = `${id}-label`;
+
+  // Closing forgets the measured position, so the next open measures afresh
+  // instead of flashing at wherever the trigger used to be.
+  const close = useCallback(() => {
+    setOpen(false);
+    setPanelStyle(null);
+  }, []);
 
   // The filter bar sits inside a `.glass` card, which sets `overflow: hidden`
   // for its own blur/edge-highlight effect — an absolutely-positioned panel
@@ -52,29 +65,35 @@ export function MultiSelectDropdown<T extends string>({
   // "closes on scroll" would also fire while scrolling the panel's own
   // internal option list, which is exactly the wrong behaviour here.
   //
-  // useLayoutEffect (not useEffect): `panelStyle` starts as `{}`, and on the
-  // FIRST open of an instance a plain effect wouldn't compute real
+  // useLayoutEffect (not useEffect): `panelStyle` is null until measured, and on
+  // the FIRST open of an instance a plain effect wouldn't compute real
   // coordinates until after the browser had already painted the portaled div
   // at its default flow position (the very bottom of <body>) for one frame.
   // On a second open, it would paint at whatever stale position was left
   // over from the previous close. Running synchronously before paint avoids
-  // both.
+  // both — the unmeasured frame is laid out (so it can be measured) but
+  // hidden.
+  //
+  // The panel's WIDTH is the browser's business, not a constant: the panel is
+  // `w-max` between a min and a max, so it ends up as wide as its longest
+  // option label plus the row padding — a class filter listing "ז׳1" no longer
+  // gets the same slab of width as one listing a long course name. That is why
+  // the panel is measured here rather than positioned from a known width.
   useLayoutEffect(() => {
     if (!open) return;
     function place() {
       const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const overflowsRight = rect.left + PANEL_WIDTH > window.innerWidth - 8;
-      setPanelStyle(
-        overflowsRight
-          ? {
-              position: "fixed",
-              top: rect.bottom + 4,
-              right: window.innerWidth - rect.right,
-              width: PANEL_WIDTH,
-            }
-          : { position: "fixed", top: rect.bottom + 4, left: rect.left, width: PANEL_WIDTH }
+      const panel = panelRef.current;
+      if (!rect || !panel) return;
+      const width = panel.offsetWidth;
+      // RTL: anchor the panel's inline start (its right edge) to the trigger's,
+      // then clamp so a wide panel slides inward instead of off-screen.
+      const anchored = rect.right - width;
+      const left = Math.min(
+        Math.max(EDGE, anchored),
+        Math.max(EDGE, window.innerWidth - width - EDGE)
       );
+      setPanelStyle({ position: "fixed", top: rect.bottom + 4, left });
     }
     place();
     window.addEventListener("resize", place);
@@ -94,10 +113,10 @@ export function MultiSelectDropdown<T extends string>({
       const target = e.target as Node;
       const insideTrigger = triggerRef.current?.contains(target);
       const insidePanel = panelRef.current?.contains(target);
-      if (!insideTrigger && !insidePanel) setOpen(false);
+      if (!insideTrigger && !insidePanel) close();
     }
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") close();
     }
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -105,7 +124,7 @@ export function MultiSelectDropdown<T extends string>({
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [open]);
+  }, [open, close]);
 
   function toggle(value: T) {
     const next = new Set(selected);
@@ -132,11 +151,13 @@ export function MultiSelectDropdown<T extends string>({
         aria-haspopup="true"
         aria-expanded={open}
         aria-labelledby={labelId}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? close() : setOpen(true))}
         className={cn(
           "flex min-w-[10rem] items-center justify-between gap-2 rounded-[var(--radius)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--heading)]",
-          "border border-[var(--glass-border)] outline-none backdrop-blur-[20px] transition-colors",
-          "focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+          // No focus ring of its own: this is a button, so the app-wide
+          // keyboard-only `:focus-visible` outline already covers it, and a
+          // brand ring here painted a green box on a plain click.
+          "border border-[var(--glass-border)] backdrop-blur-[20px] transition-colors"
         )}
       >
         <span className="truncate">{summary}</span>
@@ -152,8 +173,16 @@ export function MultiSelectDropdown<T extends string>({
           <div
             ref={panelRef}
             aria-labelledby={labelId}
-            style={panelStyle}
-            className="z-50 max-h-64 w-56 overflow-y-auto rounded-[var(--radius-d)] border border-[var(--glass-border)] bg-white p-1 shadow-[var(--shadow-md)]"
+            style={
+              panelStyle ?? {
+                // First frame: laid out for measurement, not yet painted.
+                position: "fixed",
+                top: 0,
+                left: 0,
+                visibility: "hidden",
+              }
+            }
+            className="z-50 max-h-64 w-max min-w-[10rem] max-w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-[var(--radius-d)] border border-[var(--glass-border)] bg-white p-1 shadow-[var(--shadow-md)] [scrollbar-gutter:stable]"
           >
             {options.map((o) => (
               <label

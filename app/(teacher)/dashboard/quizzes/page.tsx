@@ -4,13 +4,28 @@ import { listMyQuizzes, type MyQuiz } from "@/lib/quiz";
 import { listSharedQuizzes, type SharedQuiz } from "@/lib/sharing";
 import { listMyQuizAllocationTags, type QuizAllocationTags } from "@/lib/allocations";
 import { listMyClasses, type ClassRow } from "@/lib/classes";
+import { normalizeStatusParam } from "@/lib/libraryFilters";
 import Link from "next/link";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { QuizLibrary } from "@/components/teacher/library/QuizLibrary";
 
-export default async function QuizzesPage() {
+/**
+ * The teacher's quiz library. The `status` param is the deep link the home
+ * page's KPI tiles produce ("חידונים פעילים" / "חידונים שהסתיימו"): read here,
+ * on the server, and handed to the client library as its initial filter value —
+ * the shape this Next version prescribes for a server-rendered page whose
+ * filtering is client-side (`useSearchParams` would force the whole library
+ * under a Suspense boundary to say the same thing).
+ */
+export default async function QuizzesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const initialStatus = normalizeStatusParam((await searchParams).status);
+
   let myQuizzes: MyQuiz[] = [];
   let sharedQuizzes: SharedQuiz[] = [];
   let allocationTags: Record<string, QuizAllocationTags> = {};
@@ -59,10 +74,16 @@ export default async function QuizzesPage() {
         <Alert variant="danger">לא ניתן לטעון את החידונים. נסו לרענן.</Alert>
       ) : (
         <QuizLibrary
+          // Re-keyed by the deep-linked status so arriving from a different
+          // KPI tile (or losing the param entirely) starts the filter bar
+          // over, instead of leaving the previous tile's filter in place with
+          // nothing in the URL to explain it.
+          key={initialStatus}
           myQuizzes={myQuizzes}
           sharedQuizzes={sharedQuizzes}
           allocationTags={allocationTags}
           classes={classes}
+          initialStatus={initialStatus}
         />
       )}
     </div>

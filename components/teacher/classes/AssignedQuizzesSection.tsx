@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { Field } from "@/components/ui/Field";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
-import { Icon } from "@/components/ui/Icon";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { IconButton, IconLink } from "@/components/ui/IconButton";
 import { SegmentedToggle } from "@/components/ui/SegmentedToggle";
 import { Pager } from "@/components/ui/Pager";
@@ -38,23 +38,24 @@ const SECTION_ORDER: AllocationState[] = ["live", "scheduled", "done", "draft"];
 
 /**
  * How each section reads. A coloured rail down the inline start plus a heading
- * in the same colour groups the rows without tinting the glass: open work is
- * red (it has a clock running), ended work is green (it's settled), scheduled
- * is amber (it hasn't started).
+ * in the same colour groups the rows without tinting the glass. Colour follows
+ * availability: open work is green (students can reach it right now), scheduled
+ * is amber (it hasn't started), ended is neutral gray (it's settled and closed).
  *
- * `draft` has no title and no rail on purpose: quizzes withdrawn from students
- * aren't a phase of the lifecycle a teacher is working through, they're rows
- * parked to one side — so they render dimmed at the end, with no heading to
- * give them equal billing and no analytics (nobody has taken them).
+ * Hidden rows share that neutral gray but draw the rail as a broken line and
+ * carry an eye-off glyph in the heading, because gray alone can't tell "closed"
+ * from "never shown". They also sit last and render dimmed: quizzes withdrawn
+ * from students aren't a phase of the lifecycle a teacher works through, they
+ * are rows parked to one side (and they get no analytics — nobody took them).
  */
 const SECTION_STYLE: Record<
   AllocationState,
-  { title: string | null; frame: string; heading: string }
+  { title: string; icon?: IconName; frame: string; heading: string }
 > = {
   live: {
     title: "פעילים",
-    frame: "border-s-2 border-s-[var(--fg-danger)] ps-4",
-    heading: "text-[var(--fg-danger)]",
+    frame: "border-s-2 border-s-[var(--fg-success)] ps-4",
+    heading: "text-[var(--fg-success)]",
   },
   scheduled: {
     title: "מתוזמנים",
@@ -63,32 +64,39 @@ const SECTION_STYLE: Record<
   },
   done: {
     title: "הסתיימו",
-    frame: "border-s-2 border-s-[var(--fg-success)] ps-4",
-    heading: "text-[var(--fg-success)]",
+    frame: "border-s-2 border-s-[var(--gray)] ps-4",
+    heading: "text-[var(--body)]",
   },
-  // A rule instead of a heading: enough to mark the break, not enough to
-  // announce a section.
   draft: {
-    title: null,
-    frame: "border-t border-[var(--glass-border-subtle)] pt-5",
-    heading: "",
+    title: "מוסתרים",
+    icon: "eyeOff",
+    frame: "border-s-2 border-dashed border-s-[var(--gray)] ps-4",
+    heading: "text-[var(--body-subtle)]",
   },
 };
 
-/** The three things a teacher asks of this list. */
-type QuizFilter = "all" | "active" | "done";
+/** The things a teacher asks of this list. */
+type QuizFilter = "all" | "active" | "done" | "hidden";
 
 const FILTER_SEGMENTS = [
   { value: "all", label: "הכול" },
   { value: "active", label: "פעילים" },
   { value: "done", label: "הסתיימו" },
+  { value: "hidden", label: "מוסתרים" },
 ] as const;
 
 /** Which lifecycle sections a filter admits. */
 export function sectionInFilter(state: AllocationState, filter: QuizFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "active") return state === "live";
-  return state === "done";
+  switch (filter) {
+    case "all":
+      return true;
+    case "active":
+      return state === "live";
+    case "done":
+      return state === "done";
+    case "hidden":
+      return state === "draft";
+  }
 }
 
 /**
@@ -634,9 +642,9 @@ export function AssignedQuizzesSection({
 }
 
 /**
- * One lifecycle section: its heading (unless it's the withdrawn group, which
- * has none), its rows, and its own pager — each section pages independently so
- * a long list of ended quizzes never pushes the open ones off the screen.
+ * One lifecycle section: its heading, its rows, and its own pager — each
+ * section pages independently so a long list of ended quizzes never pushes the
+ * open ones off the screen.
  */
 function AllocationSection({
   classId,
@@ -668,14 +676,17 @@ function AllocationSection({
 
   return (
     <section className={`flex flex-col gap-3 ${style.frame}`}>
-      {style.title && (
-        <div className="flex items-center gap-2">
-          <h4 className={`text-sm font-semibold ${style.heading}`}>{style.title}</h4>
-          <Badge variant="gray">
-            <span className="tabular-nums">{rows.length}</span>
-          </Badge>
-        </div>
-      )}
+      <div className="flex items-center gap-2">
+        <h4
+          className={`flex items-center gap-1.5 text-sm font-semibold ${style.heading}`}
+        >
+          {style.icon && <Icon name={style.icon} size={14} />}
+          {style.title}
+        </h4>
+        <Badge variant="gray">
+          <span className="tabular-nums">{rows.length}</span>
+        </Badge>
+      </div>
       <ul className={`flex flex-col gap-3 ${state === "draft" ? "opacity-60" : ""}`}>
         {paged.slice.map((a) => (
           <AssignedQuizRow

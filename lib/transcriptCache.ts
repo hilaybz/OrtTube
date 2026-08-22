@@ -185,6 +185,61 @@ async function markUnavailable(client: SupabaseClient, youtubeId: string): Promi
 const inFlight = new Map<string, Promise<TranscriptOutcome>>();
 
 /**
+ * Transcripts already read on THIS instance, so a repeat read costs nothing.
+ *
+ * `inFlight` shares a fetch between callers overlapping in time; this covers the
+ * far more common case of callers arriving one after another — the tutor reads a
+ * transcript per student question, and a class shares one canonical video, so
+ * the same object was downloaded and re-parsed per question. Only a confirmed
+ * `ready` result is stored, never a stale-fallback or a failure, so a degraded
+ * answer cannot outlive the window the row-level TTLs chose for it.
+ *
+ * Bounded by entry count, since an hour-long lecture is a few hundred KB of
+ * segments; insertion order is recency order, so the first key is the one to
+ * evict. Short-lived because a hit skips the freshness read, and cleared by an
+ * explicit retry, which exists to go and look again.
+ */
+const MEMORY_TTL_MS = 3 * 60 * 1000;
+const MEMORY_MAX_ENTRIES = 20;
+
+const memory = new Map<
+  string,
+  { expiresAt: number; segments: TranscriptSegment[]; language: string | null }
+>();
+
+function memoryGet(youtubeId: string): TranscriptOutcome | null {
+  const hit = memory.get(youtubeId);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    memory.delete(youtubeId);
+    return null;
+  }
+  memory.delete(youtubeId);
+  memory.set(youtubeId, hit);
+  return { state: "ready", segments: hit.segments, language: hit.language };
+}
+
+function memorySet(youtubeId: string, outcome: TranscriptOutcome): void {
+  if (outcome.state !== "ready") return;
+  memory.delete(youtubeId);
+  memory.set(youtubeId, {
+    expiresAt: Date.now() + MEMORY_TTL_MS,
+    segments: outcome.segments,
+    language: outcome.language,
+  });
+  while (memory.size > MEMORY_MAX_ENTRIES) {
+    const oldest = memory.keys().next();
+    if (oldest.done) break;
+    memory.delete(oldest.value);
+  }
+}
+
+/** Drops the cache. For tests, whose row-level assertions a warm entry masks. */
+export function resetTranscriptMemoryCache(): void {
+  memory.clear();
+}
+
+/**
  * Runs the upstream fetch and records its verdict. Never rejects — a throw here
  * would reject every joined caller, and the whole point of sharing is that a
  * joiner is no worse off than the caller that started it.
@@ -274,6 +329,14 @@ export async function getTranscript(
   opts: { force?: boolean } = {}
 ): Promise<TranscriptOutcome> {
   const force = opts.force === true;
+
+  if (force) {
+    memory.delete(youtubeId);
+  } else {
+    const remembered = memoryGet(youtubeId);
+    if (remembered) return remembered;
+  }
+
   const video = await readVideo(client, youtubeId);
 
   // Storage is only read once a decision needs it. Reading it up front cost a
@@ -281,7 +344,11 @@ export async function getTranscript(
   // to use ~8KB of it or none at all.
   if (isFresh(video)) {
     const cached = await readCached(client, youtubeId);
-    if (cached) return readyFrom(cached);
+    if (cached) {
+      const outcome = readyFrom(cached);
+      memorySet(youtubeId, outcome);
+      return outcome;
+    }
   }
 
   // No canonical row → nothing to fetch against; serve stale cache if any.
@@ -299,6 +366,7 @@ export async function getTranscript(
   }
 
   const outcome = await sharedFetch(client, youtubeId);
+  memorySet(youtubeId, outcome);
 
   // A failed refresh must not lose a transcript we already hold.
   if (outcome.state === "failed") {

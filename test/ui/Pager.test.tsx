@@ -6,17 +6,38 @@ import { Pager } from "@/components/ui/Pager";
 import { usePagedList, usePagedRpc } from "@/components/ui/usePagedList";
 
 describe("Pager", () => {
-  const props = { page: 1, pageCount: 3, total: 25, pageSize: 10 };
+  const props = { page: 1, pageCount: 3, pageSize: 10 };
 
-  it("reads out the visible range and disables the edges", () => {
+  it("reads out which page the reader is on, and disables the edges", () => {
     const { rerender } = render(<Pager {...props} page={0} onPageChange={() => {}} />);
-    expect(screen.getByText(/מתוך 25/)).toHaveTextContent("1–10 מתוך 25");
+    // A page readout, not a row range: "מציג 1–12 מתוך 13" made a reader do
+    // arithmetic to discover there was one more page.
+    expect(screen.getByText(/עמוד/)).toHaveTextContent("עמוד 1 מתוך 3");
     expect(screen.getByRole("button", { name: "העמוד הקודם" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "העמוד הבא" })).toBeEnabled();
 
     rerender(<Pager {...props} page={2} onPageChange={() => {}} />);
-    expect(screen.getByText(/מתוך 25/)).toHaveTextContent("21–25 מתוך 25");
+    expect(screen.getByText(/עמוד/)).toHaveTextContent("עמוד 3 מתוך 3");
     expect(screen.getByRole("button", { name: "העמוד הבא" })).toBeDisabled();
+  });
+
+  it("announces the readout and isolates its numbers from the RTL sentence", () => {
+    render(<Pager {...props} onPageChange={() => {}} />);
+    const readout = screen.getByText(/עמוד/);
+    expect(readout).toHaveAttribute("aria-live", "polite");
+    expect(readout.className).toContain("tabular-nums");
+    // Both numbers are bidi-isolated so they cannot be reordered into "3 מתוך 2".
+    expect([...readout.querySelectorAll("bdi")].map((b) => b.textContent)).toEqual([
+      "2",
+      "3",
+    ]);
+  });
+
+  it("still takes a spread straight from usePagedList", () => {
+    // `total` is no longer a prop; `<Pager {...paged} />` must keep working.
+    const paged = { page: 0, pageCount: 2, total: 13, pageSize: 12 };
+    render(<Pager {...paged} onPageChange={() => {}} />);
+    expect(screen.getByText(/עמוד/)).toHaveTextContent("עמוד 1 מתוך 2");
   });
 
   it("steps the page in both directions", async () => {
@@ -32,7 +53,7 @@ describe("Pager", () => {
 
   it("renders nothing for a list that fits on one page", () => {
     const { container } = render(
-      <Pager page={0} pageCount={1} total={4} pageSize={10} onPageChange={() => {}} />
+      <Pager page={0} pageCount={1} pageSize={10} onPageChange={() => {}} />
     );
     expect(container).toBeEmptyDOMElement();
   });

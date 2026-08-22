@@ -1,5 +1,6 @@
 import { IconLink } from "@/components/ui/IconButton";
-import { formatToday, greetingFor } from "./aggregate";
+import { withBackTarget } from "@/components/ui/backTarget";
+import { formatToday, greetingFor } from "@/lib/schoolClock";
 
 /**
  * A brighter wash over the panel, in the app gradient's own lilac and mint.
@@ -44,13 +45,22 @@ export function WelcomeHeader({
           </h1>
           <p className="mt-2 max-w-prose text-[var(--body)]">{subtitle}</p>
         </div>
+        {/* The one action on the overview: author a quiz. `label` is both the
+            accessible name and the hover text, so the "+" always says what it
+            makes. It points upward because the button sits on the panel's
+            bottom edge — with a bubble below it, there is nothing between the
+            trigger and the end of the surface for the label to sit on.
+
+            The origin travels with the link so the new-quiz page — and the
+            editor it hands off to — send the teacher back here rather than to
+            the quiz library they never visited. */}
         <IconLink
           name="plus"
           label="חידון חדש"
-          href="/dashboard/quizzes/new"
+          href={withBackTarget("/dashboard/quizzes/new", "overview")}
           variant="brand"
           size="lg"
-          tooltipPlacement="bottom"
+          tooltipPlacement="top"
         />
       </div>
     </header>

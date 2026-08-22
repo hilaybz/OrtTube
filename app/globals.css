@@ -70,7 +70,10 @@
   /* button glint */
   --color-1-400: rgba(255, 255, 255, 0.3);
   --color-1-700: rgba(0, 0, 0, 0.08);
+
+  /* elevation: xs for small controls, md for popovers and dropdown panels */
   --shadow-xs: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 
   /* radius scale */
   --radius: 20px;
@@ -152,10 +155,52 @@ h4 {
   }
 }
 
+/*
+ * Focus is a keyboard affordance, so it is drawn for `:focus-visible` only — a
+ * control the user merely clicked gets nothing. The outline follows the
+ * element's own `border-radius`, which is why none is declared here: a
+ * hard-coded radius would round a focused 20px card down to a 4px box.
+ */
 :focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
-  border-radius: 4px;
+}
+
+/*
+ * Text-entry controls are the exception that needs handling, not an exemption:
+ * browsers match `:focus-visible` on an input, a textarea or a select even when
+ * it was merely clicked, so the brand outline (and the `focus:border-[--brand]`
+ * / `focus:ring-*` utilities that inputs across the app carry) painted a green
+ * box around a field the moment it was clicked into. They get a quiet border
+ * shift instead — unmistakably active, nothing shouting.
+ *
+ * Deliberately outside every `@layer`: unlayered declarations beat layered ones
+ * regardless of specificity, so this also neutralises those Tailwind focus
+ * utilities wherever an ad-hoc input carries them, and the treatment is the same
+ * on every field in the app rather than only the ones built from `Field`.
+ * `box-shadow: none` is what cancels a `focus:ring-*`; no input in this app
+ * carries a resting shadow that it would take with it.
+ *
+ * Checkboxes, radios and the button-like input types keep the outline — they are
+ * not text entry, and a click on them does not imply a caret. `aria-invalid`
+ * fields keep theirs too: an error border has to stay visible while it is being
+ * fixed.
+ */
+input:not(
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="file"],
+    [type="button"],
+    [type="submit"],
+    [type="reset"],
+    [aria-invalid="true"]
+  ):focus,
+textarea:not([aria-invalid="true"]):focus,
+select:not([aria-invalid="true"]):focus {
+  outline: none;
+  border-color: var(--body-subtle);
+  box-shadow: none;
 }
 
 ::selection {

@@ -15,18 +15,25 @@ import { TranscriptWarmer } from "@/components/TranscriptWarmer";
  * rather than crashing. Also reads the teacher's classes (isolated — a
  * failure here degrades the allocations section rather than the whole page)
  * so the allocations section can offer bulk-assign candidates.
+ *
+ * The library is only one of the ways in — the overview's quiz row, the
+ * new-quiz flow and the analytics hub all open the editor too — so back follows
+ * the origin in the URL when there is one.
  */
 export default async function EditQuizPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id } = await params;
+  const { from } = await searchParams;
   const client = (await createClient()) as unknown as SupabaseClient;
 
   const backLink = (
     <div className="mb-4">
-      <BackLink href="/dashboard/quizzes" label="החידונים שלי" />
+      <BackLink href="/dashboard/quizzes" label="החידונים שלי" from={from} />
     </div>
   );
 

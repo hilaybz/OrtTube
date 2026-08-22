@@ -3,9 +3,15 @@ import { cn } from "./cn";
 import { IconButton } from "./IconButton";
 
 /**
- * Offset pager for any list that can grow: previous / next plus a range readout
- * ("מציג 1–10 מתוך 57"). RTL-correct — "previous" sits at the inline start and
- * its chevron points there — with disabled edges and labelled controls.
+ * Offset pager for any list that can grow: previous / next plus a page readout
+ * ("עמוד 1 מתוך 2"). RTL-correct — "previous" sits at the inline start and its
+ * chevron points there — with disabled edges and labelled controls.
+ *
+ * The readout names the page rather than the row range it happens to contain:
+ * where the reader *is* and how much is left is what the control is for, and
+ * "מציג 1–12 מתוך 13" made a reader do arithmetic to learn there was one more
+ * page. `total` is therefore not a prop — `<Pager {...paged} />` still works,
+ * since a spread carries the extra key harmlessly.
  *
  * Built to be fed straight from `usePagedList` / `usePagedRpc`:
  * `<Pager {...paged} />`. It renders nothing for a list that fits on one page,
@@ -17,7 +23,6 @@ import { IconButton } from "./IconButton";
 export function Pager({
   page,
   pageCount,
-  total,
   pageSize,
   onPageChange,
   setPageSize,
@@ -28,7 +33,6 @@ export function Pager({
   /** 0-based. */
   page: number;
   pageCount: number;
-  total: number;
   pageSize: number;
   onPageChange: (page: number) => void;
   setPageSize?: (size: number) => void;
@@ -39,8 +43,6 @@ export function Pager({
 }) {
   if (pageCount <= 1) return null;
 
-  const from = total === 0 ? 0 : page * pageSize + 1;
-  const to = Math.min(total, (page + 1) * pageSize);
   const showSizes = !!setPageSize && !!pageSizeOptions?.length;
 
   return (
@@ -59,13 +61,10 @@ export function Pager({
           disabled={page <= 0}
           onClick={() => onPageChange(page - 1)}
         />
-        {/* The counts are isolated so the bidi algorithm cannot reorder the
-            range into "10–1" inside the RTL sentence. */}
+        {/* Each number is isolated so the bidi algorithm cannot swap the two
+            around inside the RTL sentence. */}
         <span aria-live="polite" className="px-1 tabular-nums">
-          <bdi dir="ltr">
-            {from}–{to}
-          </bdi>{" "}
-          מתוך {total}
+          עמוד <bdi dir="ltr">{page + 1}</bdi> מתוך <bdi dir="ltr">{pageCount}</bdi>
         </span>
         <IconButton
           name="chevronLeft"
@@ -83,7 +82,7 @@ export function Pager({
             aria-label="מספר שורות בעמוד"
             value={pageSize}
             onChange={(e) => setPageSize?.(Number(e.target.value))}
-            className="rounded-[var(--radius-sm)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-2 py-1 text-xs text-[var(--heading)] outline-none focus:border-[var(--brand)]"
+            className="rounded-[var(--radius-sm)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-2 py-1 text-xs text-[var(--heading)]"
           >
             {pageSizeOptions?.map((size) => (
               <option key={size} value={size}>

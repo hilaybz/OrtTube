@@ -17,15 +17,17 @@ import type { IconName } from "@/components/ui/Icon";
  */
 
 export const STATE_LABEL: Record<AllocationState, string> = {
-  draft: "טיוטה",
+  draft: "מוסתר",
   scheduled: "מתוזמן",
   live: "פעיל",
   done: "הסתיים",
 };
 
+/** Same colour per state as `allocationStatus`, so one allocation cannot read
+ *  as two different things depending on which screen shows it. */
 export const STATE_VARIANT: Record<AllocationState, "warning" | "gray" | "success"> = {
-  draft: "warning",
-  scheduled: "gray",
+  draft: "gray",
+  scheduled: "warning",
   live: "success",
   done: "gray",
 };
@@ -133,15 +135,16 @@ export interface AllocationStatus {
   state: AllocationState;
   /** The whole story in one phrase — reads on its own, outside any section. */
   label: string;
-  /** Chip colour: red while a quiz is open, green once it has ended. */
-  variant: "success" | "danger" | "warning" | "gray";
+  /** Chip colour: green while a quiz is open, neutral once it has ended. */
+  variant: "success" | "warning" | "gray";
   icon: IconName;
 }
 
 /**
  * The one status treatment for an allocation, in every state. Colour follows
- * the lifecycle rather than urgency (open = red, ended = green) so a row's chip
- * always matches the section it sits in.
+ * availability rather than urgency — open is green (students can reach it),
+ * ended is neutral gray (settled and closed) — so a row's chip always matches
+ * the section it sits in.
  *
  * Takes the same structural shape `allocationState` does, so it serves both an
  * `AssignedQuiz` (class → quizzes) and a `QuizAllocation` (quiz → classes).
@@ -162,7 +165,7 @@ export function allocationStatus(
     case "live":
       return {
         state,
-        variant: "danger",
+        variant: "success",
         icon: "timer",
         label: until ? `נסגר ${formatUntilThen(until, now)}` : "פעיל · ללא מועד סיום",
       };
@@ -176,7 +179,7 @@ export function allocationStatus(
     case "done":
       return {
         state,
-        variant: "success",
+        variant: "gray",
         icon: "checkCircle",
         label: until ? `הסתיים ${formatSinceThen(until, now)}` : "הסתיים",
       };

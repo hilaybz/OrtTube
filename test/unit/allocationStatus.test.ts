@@ -5,13 +5,19 @@
  * next from the chip alone, without a second date range beside it. So the test
  * pins the wording, the dual forms Hebrew actually uses ("שעתיים", not
  * "2 שעות"), and the point where a relative countdown gives way to a plain
- * date — plus the colour, which is what makes a row match its section.
+ * date — plus the colour, which is what makes a row match its section: green
+ * while students can reach the quiz, neutral once they can't.
  *
  * Every instant is built with the local-time `Date` constructor so the
  * calendar-day arithmetic ("מחר", "אתמול") holds in any timezone.
  */
 import { describe, it, expect } from "vitest";
-import { allocationStatus, formatShortDate } from "@/components/teacher/scheduleFormat";
+import {
+  allocationStatus,
+  formatShortDate,
+  STATE_LABEL,
+  STATE_VARIANT,
+} from "@/components/teacher/scheduleFormat";
 
 /** Monday 15 June 2026, midday, local. */
 const NOW = new Date(2026, 5, 15, 12, 0, 0);
@@ -62,9 +68,9 @@ describe("allocationStatus — open", () => {
     expect(allocationStatus(live(null), NOW).label).toBe("פעיל · ללא מועד סיום");
   });
 
-  it("reads red, matching the section open quizzes sit in", () => {
+  it("reads green, matching the section open quizzes sit in", () => {
     const status = allocationStatus(live(at(2026, 5, 18, 12)), NOW);
-    expect(status.variant).toBe("danger");
+    expect(status.variant).toBe("success");
     expect(status.icon).toBe("timer");
   });
 });
@@ -86,7 +92,8 @@ describe("allocationStatus — ended", () => {
     const status = allocationStatus(live(at(2026, 5, 14, 9)), NOW);
     expect(status.state).toBe("done");
     expect(status.label).toBe("הסתיים אתמול");
-    expect(status.variant).toBe("success");
+    // Neutral, not green: a closed window is settled, not a success.
+    expect(status.variant).toBe("gray");
     expect(status.icon).toBe("checkCircle");
   });
 
@@ -119,5 +126,28 @@ describe("formatShortDate", () => {
   it("omits the year within the current one and keeps it outside", () => {
     expect(formatShortDate(new Date(2026, 7, 26), NOW)).toBe("26.8");
     expect(formatShortDate(new Date(2025, 7, 26), NOW)).toBe("26.8.2025");
+  });
+});
+
+describe("state chip", () => {
+  it("colours a state the same way the richer status treatment does", () => {
+    for (const state of ["draft", "scheduled", "live", "done"] as const) {
+      expect(STATE_VARIANT[state]).toBe(
+        allocationStatus(
+          {
+            published: state !== "draft",
+            available_from:
+              state === "scheduled" ? "2026-07-01T00:00:00.000Z" : null,
+            available_until:
+              state === "done" ? "2026-05-01T00:00:00.000Z" : null,
+          },
+          NOW
+        ).variant
+      );
+    }
+  });
+
+  it("names a withdrawn allocation for what it does, not for an authoring stage", () => {
+    expect(STATE_LABEL.draft).toBe("מוסתר");
   });
 });

@@ -23,6 +23,10 @@ import type { AnalyticsScope } from "@/lib/analytics";
  *
  * `scope` is validated and `id` must look like a uuid, so a hand-edited URL
  * lands on the search screen rather than a failed read.
+ *
+ * Back normally goes up one level, to the search screen for the same scope. A
+ * link from outside analytics (the overview's class cards) names its own origin
+ * instead, so it does not strand the reader on a search box.
  */
 
 const SCOPES: AnalyticsScope[] = ["student", "class", "quiz"];
@@ -75,6 +79,7 @@ export default async function AnalyticsHubPage({
         <BackLink
           href={`/dashboard/analytics?scope=${scope}`}
           label="חיפוש באנליטיקה"
+          from={params.from}
         />
         <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
           <Icon

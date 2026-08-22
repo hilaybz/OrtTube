@@ -13,15 +13,16 @@ import { listMyQuizAllocationTags, type QuizAllocationTags } from "@/lib/allocat
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
+import { withBackTarget } from "@/components/ui/backTarget";
 import { StatTile } from "@/components/teacher/StatTile";
 import { QuizCard } from "@/components/teacher/QuizCard";
 import { ClassCard } from "@/components/teacher/overview/ClassCard";
 import { WelcomeHeader } from "@/components/teacher/overview/WelcomeHeader";
 import { ScrollRow, ScrollRowItem } from "@/components/teacher/overview/ScrollRow";
 import { FinishedQuizCard } from "@/components/teacher/overview/FinishedQuizCard";
+import { firstName } from "@/lib/schoolClock";
 import {
   countQuizStates,
-  firstName,
   recentlyFinishedQuizzes,
   summarizeClass,
   totalsFromSummaries,
@@ -34,8 +35,9 @@ import {
  * just closed, the quizzes in play, and the classes themselves.
  *
  * There is no rollup RPC, so the page fans out per class — `class_stats` for
- * roster size and completions, `list_class_quizzes` for the allocation windows
- * the lifecycle counts and the "recently finished" row are derived from. Each
+ * roster size, `list_class_quizzes` for the allocation windows every lifecycle
+ * count (the KPI tiles, each class card's split) and the "recently finished"
+ * row are derived from. Each
  * read is isolated so one owner/transient error degrades that class to "no
  * data" instead of sinking the page; failing to list classes at all degrades to
  * an Alert. Everything runs through the caller's session, so RLS applies.
@@ -91,7 +93,11 @@ export default async function DashboardPage() {
     loadActiveQuizzes(client),
   ]);
 
-  const summaries = classes.map((c, i) => summarizeClass(c, perClassStats[i]));
+  // `assignments` is built by mapping over `classes`, so index i is the same
+  // class in both arrays — each summary pairs a class with its own allocations.
+  const summaries = classes.map((c, i) =>
+    summarizeClass(c, perClassStats[i], assignments[i].quizzes, now)
+  );
   const totals = totalsFromSummaries(summaries, countQuizStates(assignments, now));
   const finished = recentlyFinishedQuizzes(assignments, now);
 
@@ -107,11 +113,21 @@ export default async function DashboardPage() {
               href="/dashboard/classes"
             />
             <StatTile label="תלמידים" value={totals.studentCount} icon="users" />
-            <StatTile label="חידונים פעילים" value={totals.openQuizzes} icon="play" />
+            {/* The two quiz tiles drill into "החידונים שלי" pre-filtered to the
+                lifecycle they count. `?status=` is the contract the library page
+                reads; "תלמידים" has no such screen, so it stays a plain figure
+                rather than a link that goes nowhere useful. */}
+            <StatTile
+              label="חידונים פעילים"
+              value={totals.openQuizzes}
+              icon="play"
+              href="/dashboard/quizzes?status=active"
+            />
             <StatTile
               label="חידונים שהסתיימו"
               value={totals.finishedQuizzes}
               icon="checkCircle"
+              href="/dashboard/quizzes?status=finished"
             />
           </div>
         </section>
@@ -125,7 +141,7 @@ export default async function DashboardPage() {
             <ScrollRow label="חידונים שהסתיימו לאחרונה">
               {finished.map((quiz) => (
                 <ScrollRowItem key={quiz.key}>
-                  <FinishedQuizCard quiz={quiz} />
+                  <FinishedQuizCard quiz={quiz} now={now} />
                 </ScrollRowItem>
               ))}
             </ScrollRow>
@@ -151,7 +167,16 @@ export default async function DashboardPage() {
             <ScrollRow label="החידונים הפעילים שלי">
               {allocatedQuizzes.map(({ quiz, tags }) => (
                 <ScrollRowItem key={quiz.quiz_id}>
-                  <QuizCard quiz={quiz} tags={tags} />
+                  {/* Same editor the library opens, so the card states that it
+                      was followed from here and the editor's back link says so. */}
+                  <QuizCard
+                    quiz={quiz}
+                    tags={tags}
+                    href={withBackTarget(
+                      `/dashboard/quizzes/${quiz.quiz_id}/edit`,
+                      "overview"
+                    )}
+                  />
                 </ScrollRowItem>
               ))}
             </ScrollRow>

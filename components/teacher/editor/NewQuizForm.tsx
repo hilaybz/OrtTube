@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { Spinner } from "@/components/ui/Spinner";
 import { SegmentedToggle, type Segment } from "@/components/ui/SegmentedToggle";
+import { withBackTarget, type BackTargetKey } from "@/components/ui/backTarget";
 import { apiFetch, ApiError } from "@/lib/http";
 import { SUPPORTED_LANGUAGES, type Language } from "@/lib/lang";
 import type { CreatedQuiz } from "./types";
@@ -16,14 +17,6 @@ import { LANGUAGE_LABELS, isBareYouTubeId, parseYouTubeVideoId } from "./format"
 const LANGUAGE_SEGMENTS: ReadonlyArray<Segment<Language>> = SUPPORTED_LANGUAGES.map(
   (l) => ({ value: l, label: LANGUAGE_LABELS[l] })
 );
-
-// How the quiz's length is decided — the same two states the editor offers, so
-// a teacher meets one vocabulary for this in both places.
-type DurationMode = "estimated" | "restricted";
-const DURATION_SEGMENTS: ReadonlyArray<Segment<DurationMode>> = [
-  { value: "estimated", label: "הערכה מהסרטון" },
-  { value: "restricted", label: "הגבלת זמן" },
-];
 
 /**
  * Create-a-quiz flow, in two steps a teacher can see at once: identify the
@@ -41,7 +34,7 @@ const DURATION_SEGMENTS: ReadonlyArray<Segment<DurationMode>> = [
  * which makes two quizzes on one video indistinguishable. That is a form-level
  * rule, enforced in the client, with the server contract left alone.
  */
-export function NewQuizForm() {
+export function NewQuizForm({ from }: { from?: BackTargetKey }) {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -93,7 +86,10 @@ export function NewQuizForm() {
           durationMinutes: timeRestricted ? Number(durationMinutes) : undefined,
         }),
       });
-      router.push(`/dashboard/quizzes/${quiz.quiz_id}/edit`);
+      // The editor inherits this page's origin, so a teacher who started on the
+      // overview goes back there rather than into the quiz library.
+      const editor = `/dashboard/quizzes/${quiz.quiz_id}/edit`;
+      router.push(from ? withBackTarget(editor, from) : editor);
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "יצירת החידון נכשלה. בדקו את הקישור ונסו שוב."
@@ -121,12 +117,22 @@ export function NewQuizForm() {
           error={urlError}
           className="w-full"
         />
-        <p className="text-xs leading-relaxed text-[var(--body-subtle)]">
-          מדביקים קישור מ-YouTube — למשל{" "}
-          <bdi dir="ltr" className="rounded-[var(--radius-sm)] bg-[var(--neutral-tertiary)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--body)]">
+        {/* All the box needs is one well-formed example, pinned under it as a
+            quiet meta line: the sample is `<bdi dir="ltr">` so the bidi
+            algorithm cannot reorder its slashes inside the RTL sentence, and
+            it is monospaced so it reads as a value rather than as prose. The
+            paragraph that used to spell out which formats are accepted is
+            gone — the box takes watch links, Shorts and bare ids, and proves
+            it by echoing the video below rather than by promising it above. */}
+        <p className="-mt-1 flex flex-wrap items-center gap-1.5 text-xs text-[var(--body-subtle)]">
+          <Icon name="link" size={13} className="flex-none" />
+          לדוגמה
+          <bdi
+            dir="ltr"
+            className="rounded-[var(--radius-sm)] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--body)]"
+          >
             youtu.be/dQw4w9WgXcQ
-          </bdi>{" "}
-          — וגם קישור צפייה, Shorts או מזהה סרטון יזוהו.
+          </bdi>
         </p>
         <VideoEcho videoId={videoId} typing={url.trim() !== ""} />
       </section>
@@ -156,16 +162,22 @@ export function NewQuizForm() {
           </p>
         </div>
 
+        {/* One decision, not two: a quiz is capped or it isn't. The default
+            (unchecked) still shows students an estimate from the video's
+            length — that is what "no cap" means, so it needs no control of its
+            own, only the sentence under the box. */}
         <div className="flex flex-col gap-2">
           <span className="text-sm font-medium text-[var(--heading)]">משך החידון</span>
           <div className="flex flex-wrap items-center gap-3">
-            <SegmentedToggle<DurationMode>
-              segments={DURATION_SEGMENTS}
-              value={timeRestricted ? "restricted" : "estimated"}
-              onChange={(mode) => setTimeRestricted(mode === "restricted")}
-              ariaLabel="אופן קביעת משך החידון"
-              className="self-start"
-            />
+            <label className="flex items-center gap-2 text-sm text-[var(--body)]">
+              <input
+                type="checkbox"
+                checked={timeRestricted}
+                onChange={(e) => setTimeRestricted(e.target.checked)}
+                className="h-4 w-4 rounded-[var(--radius-sm)] border border-[var(--glass-border)] accent-[var(--brand)]"
+              />
+              הגבלת זמן
+            </label>
             {timeRestricted && (
               <label className="flex items-center gap-2 text-sm text-[var(--body)]">
                 <input
@@ -185,7 +197,7 @@ export function NewQuizForm() {
           <p className="text-xs text-[var(--body-subtle)]">
             {timeRestricted
               ? "התלמידים יראו את המשך שתקבעו."
-              : "התלמידים יראו הערכה המבוססת על אורך הסרטון. אפשר לשנות זאת בכל עת."}
+              : "ללא הגבלה — התלמידים יראו הערכה לפי אורך הסרטון. אפשר לשנות זאת בכל עת."}
           </p>
         </div>
       </section>

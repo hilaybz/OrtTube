@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Icon } from "@/components/ui/Icon";
 import { IconLink } from "@/components/ui/IconButton";
+import { withBackTarget } from "@/components/ui/backTarget";
 import {
   getQuizAnalyticsOverview,
   type QuizAnalyticsOverview,
@@ -88,7 +89,7 @@ export async function QuizAnalyticsView({ quizId }: { quizId: string }) {
         <IconLink
           name="edit"
           label="עריכת החידון"
-          href={`/dashboard/quizzes/${quizId}/edit`}
+          href={withBackTarget(`/dashboard/quizzes/${quizId}/edit`, "analytics")}
           tooltipPlacement="bottom"
         />
       </GlassCard>

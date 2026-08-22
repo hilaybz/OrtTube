@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/components/ui/cn";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -10,9 +10,10 @@ import { BackLink } from "@/components/ui/BackLink";
 import { Spinner } from "@/components/ui/Spinner";
 import { Alert } from "@/components/ui/Alert";
 import { apiFetch, ApiError } from "@/lib/http";
-import { gateDecision } from "@/components/video/gate";
-import { AskAI } from "./AskAI";
+import { canSeekTo, gateDecision } from "@/components/video/gate";
+import { AskAI, AskAITrigger } from "./AskAI";
 import { QuizProgress } from "./QuizProgress";
+import { DeadlineCountdown } from "./DeadlineCountdown";
 import { gradeOf } from "./grade";
 import { VideoStage, type VideoStageHandle } from "@/components/video/VideoStage";
 import {
@@ -67,6 +68,10 @@ export function QuizPlayer({
   const [phase, setPhase] = useState<Phase>("intro");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Owned here, not inside `AskAI`: on a wide screen the open chat is a column
+  // beside the video and the video column shrinks to make room, which is this
+  // layout's business rather than the panel's.
+  const [chatOpen, setChatOpen] = useState(false);
 
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<StudentQuestion[]>([]);
@@ -110,6 +115,17 @@ export function QuizPlayer({
   const allAnswered = questions.length > 0 && current === null;
   const gatePos = current?.position_seconds ?? null;
   const { atGate } = gateDecision(playhead, gatePos);
+
+  // Which checkpoints the student may jump back to is the gate's own rule read
+  // forwards: everything up to the question they are on, nothing past it. Every
+  // question answered opens the gate, and with it the whole timeline.
+  const seekableIds = useMemo(
+    () =>
+      new Set(
+        questions.filter((q) => canSeekTo(q.position_seconds, gatePos)).map((q) => q.id)
+      ),
+    [questions, gatePos]
+  );
 
   const start = useCallback(async () => {
     setBusy(true);
@@ -247,9 +263,12 @@ export function QuizPlayer({
   }, [phase, attemptId, state.available_until, clockOffsetMs, handleDeadline]);
 
   // ── INTRO ────────────────────────────────────────────────────────────────
+  // The screen that opens a quiz the student still owes: what it is, how many
+  // attempts are left, and how long they have. It is never a detour on the way
+  // to a finished quiz's results — a student with no attempt left is redirected
+  // straight to their results by the route itself, so there is no "show me my
+  // score" button here to press.
   if (phase === "intro") {
-    const noAttemptsLeft =
-      state.attempts_left != null && state.attempts_left <= 0 && !state.in_progress;
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-3 py-6">
         <BackLink href={FEED_HREF} label={FEED_LABEL} />
@@ -269,16 +288,17 @@ export function QuizPlayer({
                 ? "ניסיונות ללא הגבלה"
                 : `נותרו ${state.attempts_left} מתוך ${state.max_attempts} ניסיונות`}
             </p>
+            {/* Before starting, not during: the countdown is here so the
+                student can decide whether to begin at all, while the deadline
+                itself is enforced by the cutoff timer above once they have. */}
+            <DeadlineCountdown
+              availableUntil={state.available_until}
+              clockOffsetMs={clockOffsetMs}
+            />
             {error && <Alert variant="danger">{error}</Alert>}
-            {noAttemptsLeft ? (
-              <Button size="lg" onClick={() => router.push(resultsHref)}>
-                צפייה בתוצאות
-              </Button>
-            ) : (
-              <Button size="lg" onClick={start} disabled={busy}>
-                {busy ? <Spinner size={18} /> : state.in_progress ? "המשך החידון" : "התחלה"}
-              </Button>
-            )}
+            <Button size="lg" onClick={start} disabled={busy}>
+              {busy ? <Spinner size={18} /> : state.in_progress ? "המשך החידון" : "התחלה"}
+            </Button>
           </div>
         </GlassCard>
       </div>
@@ -337,6 +357,12 @@ export function QuizPlayer({
     label: `שאלה ${i + 1}`,
     state: answered.has(q.id) ? "done" : q.id === current?.id ? "current" : "upcoming",
   }));
+
+
+  function seekToCheckpoint(seconds: number) {
+    stageRef.current?.seekTo(seconds);
+    setPlayhead(seconds);
+  }
 
   const overlay =
     current && atGate ? (
@@ -417,11 +443,83 @@ export function QuizPlayer({
     ) : null;
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-3 py-4">
+    // The page grows wider only to hold the chat column, so the video keeps its
+    // usual size until there is a reason for it to give some up.
+    <div
+      className={cn(
+        "mx-auto flex w-full flex-col gap-3 py-4",
+        chatOpen ? "max-w-4xl min-[1100px]:max-w-6xl" : "max-w-4xl"
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackLink href={FEED_HREF} label={FEED_LABEL} />
         <div className="flex items-center gap-3">
           <QuizProgress answered={answered.size} total={questions.length} />
+          <AskAITrigger
+            tutorMode={state.tutor_mode}
+            open={chatOpen}
+            onClick={() => setChatOpen((o) => !o)}
+          />
+        </div>
+      </div>
+
+      {error && <Alert variant="danger">{error}</Alert>}
+
+      {/* Video and tutor side by side once the chat is open and the viewport can
+          hold both: the video column shrinks by exactly the chat's width rather
+          than being covered by it, so watching and asking are the same activity
+          instead of two modes. Narrower than that, the chat is a sheet over the
+          page and this stays a single column. */}
+      <div
+        className={cn(
+          "flex flex-col gap-3",
+          chatOpen &&
+            "min-[1100px]:grid min-[1100px]:grid-cols-[minmax(0,1fr)_380px] min-[1100px]:items-start min-[1100px]:gap-4"
+        )}
+      >
+        <div className="flex min-w-0 flex-col gap-3">
+          <VideoStage
+            ref={stageRef}
+            videoId={state.youtube_video_id}
+            maxSeek={gatePos}
+            overlay={overlay}
+            onProgress={onProgress}
+          />
+
+          {/* Checkpoints on the video's own time axis, with the watched portion
+              filled — a question at 0:53 of a 15-minute video belongs right at
+              the start of the bar, not a fifth of the way along it. Hovering a
+              marker shows its timestamp; the ones the gate already allows are
+              also the way back to that moment. */}
+          <div className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-white/50 px-5 py-2">
+            <CheckpointTimeline
+              readOnly
+              label="נקודות העצירה בחידון"
+              durationSeconds={duration}
+              currentSeconds={playhead}
+              markers={markers}
+              seekableIds={seekableIds}
+              onMarkerClick={(_id, seconds) => seekToCheckpoint(seconds)}
+            />
+          </div>
+
+          {allAnswered && (
+            <GlassCard className="flex flex-col items-center gap-3 text-center">
+              <span className="grid h-11 w-11 place-items-center rounded-full bg-[var(--brand-softer)]">
+                <Icon name="checkCircle" size={24} className="text-[var(--fg-brand)]" />
+              </span>
+              <h2 className="text-lg font-semibold">ענית על כל השאלות</h2>
+              <Button size="lg" onClick={finish} disabled={busy}>
+                {busy ? <Spinner size={18} /> : "סיום החידון"}
+              </Button>
+            </GlassCard>
+          )}
+        </div>
+
+        {/* Sticky in the column layout so the conversation stays put while the
+            page scrolls; in sheet mode the panel is `fixed` and this wrapper is
+            just where it lives in the tree. */}
+        <div className={cn(chatOpen && "min-[1100px]:sticky min-[1100px]:top-4")}>
           <AskAI
             classId={classId}
             quizId={quizId}
@@ -431,45 +529,11 @@ export function QuizPlayer({
               attemptId,
               activeQuestionId: current?.id ?? null,
             }}
+            open={chatOpen}
+            onClose={() => setChatOpen(false)}
           />
         </div>
       </div>
-
-      {error && <Alert variant="danger">{error}</Alert>}
-
-      <VideoStage
-        ref={stageRef}
-        videoId={state.youtube_video_id}
-        maxSeek={gatePos}
-        overlay={overlay}
-        onProgress={onProgress}
-      />
-
-      {/* Checkpoints on the video's own time axis, with the watched portion
-          filled — a question at 0:53 of a 15-minute video belongs right at the
-          start of the bar, not a fifth of the way along it. Read-only: seeking
-          is the block-skip gate's business. */}
-      <div className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-white/50 px-5 py-2">
-        <CheckpointTimeline
-          readOnly
-          label="נקודות העצירה בחידון"
-          durationSeconds={duration}
-          currentSeconds={playhead}
-          markers={markers}
-        />
-      </div>
-
-      {allAnswered && (
-        <GlassCard className="flex flex-col items-center gap-3 text-center">
-          <span className="grid h-11 w-11 place-items-center rounded-full bg-[var(--brand-softer)]">
-            <Icon name="checkCircle" size={24} className="text-[var(--fg-brand)]" />
-          </span>
-          <h2 className="text-lg font-semibold">ענית על כל השאלות</h2>
-          <Button size="lg" onClick={finish} disabled={busy}>
-            {busy ? <Spinner size={18} /> : "סיום החידון"}
-          </Button>
-        </GlassCard>
-      )}
     </div>
   );
 }

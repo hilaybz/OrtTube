@@ -89,6 +89,18 @@ describe("MultiSelectDropdown", () => {
     expect(screen.queryByRole("checkbox", { name: "אלף" })).not.toBeInTheDocument();
   });
 
+  it("sizes the panel to its own content instead of a fixed width", async () => {
+    render(<Harness />);
+    await userEvent.click(screen.getByRole("button", { name: "בחירה" }));
+    const panel = screen.getByRole("checkbox", { name: "אלף" }).closest("div")!;
+    // A filter over short class names must not be a slab far wider than
+    // anything in it: the panel is `w-max` between a min and a max, and its
+    // inline style only ever carries the position it was measured into.
+    expect(panel.className).toContain("w-max");
+    expect(panel.className).not.toContain("w-56");
+    expect(panel.style.width).toBe("");
+  });
+
   it("closes on Escape", async () => {
     render(<Harness />);
     await userEvent.click(screen.getByRole("button", { name: "בחירה" }));

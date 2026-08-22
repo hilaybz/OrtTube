@@ -18,17 +18,21 @@ import { grade } from "@/components/teacher/analytics/chartTheme";
  * agrees with the grade a student is shown on their own results page — and with
  * the class view one level up, which uses the same basis.
  *
- * The back affordance names the class's analytics view rather than the class
- * page: this is an analytics screen, and a reader who drilled in from either
- * place is looking for the level above THIS number, not for wherever their
- * browser history happens to point.
+ * By default the back affordance names the class's analytics view rather than
+ * the class page: this is an analytics screen, and a reader who drilled in
+ * through analytics is looking for the level above THIS number. The overview
+ * also links straight here, and such a link says so in the URL, which takes
+ * precedence — that reader was never in analytics at all.
  */
 export default async function ClassQuizAnalyticsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; quizId: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id: classId, quizId } = await params;
+  const { from } = await searchParams;
   const client = (await createClient()) as unknown as SupabaseClient;
 
   let analytics: ClassQuizAnalytics | null = null;
@@ -42,6 +46,7 @@ export default async function ClassQuizAnalyticsPage({
     <BackLink
       href={`/dashboard/analytics?scope=class&id=${classId}`}
       label="אנליטיקה של הכיתה"
+      from={from}
     />
   );
 

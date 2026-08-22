@@ -2,8 +2,10 @@ import { cn } from "@/components/ui/cn";
 
 /**
  * The shared geometry of a sidebar row, so the nav links and the pinned
- * sign-out control cannot drift apart. `collapsed` only bites from `md` up —
- * the mobile drawer is always the full-width, labelled version.
+ * sign-out control cannot drift apart. `collapsed` is the resting icon rail —
+ * it only bites from `md` up, because the mobile drawer is always the
+ * full-width, labelled version. Hovering the rail (or moving focus into it)
+ * expands it, which is simply this class set with `collapsed: false`.
  */
 export function navRowClass({
   active = false,
@@ -26,9 +28,10 @@ export function navRowClass({
 }
 
 /**
- * Label visibility inside a row: hidden from sight on a collapsed rail but kept
- * in the accessibility tree, so the link keeps its accessible name without a
- * duplicating `aria-label`.
+ * Label visibility inside a row: hidden from sight on the resting icon rail but
+ * kept in the accessibility tree, so the link keeps its accessible name without
+ * a duplicating `aria-label`. There is no tooltip standing in for it — hovering
+ * the rail is what reveals the labels.
  */
 export function navLabelClass(collapsed: boolean): string {
   return cn("truncate", collapsed && "md:sr-only");

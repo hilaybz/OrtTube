@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
-import { Icon } from "@/components/ui/Icon";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { cn } from "@/components/ui/cn";
 import type { MyQuiz } from "@/lib/quiz";
 import type { SharedQuiz } from "@/lib/sharing";
-import type { QuizAllocationTags } from "@/lib/allocations";
+import type { ClassTag, QuizAllocationTags } from "@/lib/allocations";
 import type { Language } from "@/lib/lang";
 import { quizDurationMinutes } from "@/lib/quizDuration";
 
@@ -64,12 +64,21 @@ function CardShell({
  * The 16:9 thumbnail band. YouTube's `mqdefault` is the only 16:9 still every
  * video has, so it never letterboxes. `children` are chips/overlays positioned
  * over it.
+ *
+ * Hover is a *lift*, not a dim: the still scales up a touch inside its own
+ * clipped band (the frame stays as bright as it was — nothing is greyed out to
+ * make room for text), and on a card that opens somewhere a light play disc
+ * fades in to say so. The old treatment dropped a flat 70%-black sheet over
+ * the whole image, which read as "disabled" rather than "hovered".
  */
 export function QuizThumb({
   youtubeVideoId,
+  playAffordance,
   children,
 }: {
   youtubeVideoId: string;
+  /** Show the hover play disc — only on a card that actually navigates. */
+  playAffordance?: boolean;
   children?: React.ReactNode;
 }) {
   return (
@@ -78,8 +87,18 @@ export function QuizThumb({
       <img
         src={`https://i.ytimg.com/vi/${youtubeVideoId}/mqdefault.jpg`}
         alt=""
-        className="h-full w-full object-cover"
+        className="h-full w-full object-cover transition-transform duration-300 ease-out group-focus-within:scale-[1.04] group-hover:scale-[1.04]"
       />
+      {playAffordance && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 flex items-center justify-center"
+        >
+          <span className="flex h-11 w-11 scale-90 items-center justify-center rounded-full bg-white/85 text-[var(--fg-brand-strong)] opacity-0 shadow-[var(--shadow-xs)] backdrop-blur-sm transition duration-200 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+            <Icon name="play" size={18} />
+          </span>
+        </span>
+      )}
       {children}
     </div>
   );
@@ -120,9 +139,21 @@ function ThumbChip({
 }
 
 /**
+ * The chips along the thumbnail's bottom edge share that edge with the hover
+ * details, so they step aside while the details are up — the band swaps its
+ * size facts for its identity facts instead of stacking both in one strip.
+ */
+const THUMB_CHIP_HOVER_HIDE =
+  "transition-opacity duration-200 group-focus-within:opacity-0 group-hover:opacity-0";
+
+/**
  * The secondary facts, revealed over the thumbnail on hover/focus: the source
  * video and its channel (skipped when the heading is already the video's own
  * title), the authoring teacher on a catalog card, and the base language.
+ *
+ * The backdrop is a bottom-up gradient rather than a flat sheet: the text sits
+ * on the darkest part of it while the top of the frame — the part that
+ * identifies the video — stays fully visible.
  */
 function ThumbDetails({
   quiz,
@@ -133,7 +164,7 @@ function ThumbDetails({
 }) {
   const showVideoTitle = !!quiz.title && !!quiz.video_title;
   return (
-    <div className="pointer-events-none absolute inset-0 flex flex-col justify-end gap-1 bg-black/70 p-3 text-[11px] leading-relaxed text-white opacity-0 backdrop-blur-[2px] transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100">
+    <div className="pointer-events-none absolute inset-0 flex flex-col justify-end gap-1 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-3 text-[11px] leading-relaxed text-white opacity-0 transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100">
       {showVideoTitle && (
         <p className="flex items-center gap-1.5">
           <Icon name="video" size={12} className="flex-none opacity-80" />
@@ -150,34 +181,84 @@ function ThumbDetails({
 }
 
 /**
- * Where the quiz stands, in one line — the single fact worth carrying on a
- * card. Deliberately NOT "טיוטה" when both buckets are empty:
- * `list_my_quiz_allocation_tags` only reports live/scheduled, so an allocation
- * whose window already closed looks identical to one that never existed.
- * "לא פעיל" is true either way. `undefined` tags mean "not fetched" and render
- * nothing at all.
+ * "In one class" reads as its name; more than one reads as a count — the whole
+ * roster would never fit on a card, and the count is what a teacher checks.
+ */
+function classesPhrase(verb: string, classes: ClassTag[]): string {
+  return classes.length === 1
+    ? `${verb} ב${classes[0].class_name}`
+    : `${verb} ב-${classes.length} כיתות`;
+}
+
+/** One state of the allocation line: an icon, a phrase, and its tone. */
+function AllocationTag({
+  icon,
+  text,
+  tone,
+}: {
+  icon: IconName;
+  text: string;
+  tone: string;
+}) {
+  return (
+    <span className={cn("flex min-w-0 items-center gap-1.5", tone)}>
+      <Icon name={icon} size={13} className="flex-none" />
+      <span className="truncate">{text}</span>
+    </span>
+  );
+}
+
+/**
+ * Where the quiz stands across its classes. Live and scheduled are shown
+ * TOGETHER: a quiz that is open in one class and starts next week in another
+ * used to report only the first, hiding the rollout the teacher planned.
+ *
+ * Closed classes only speak when nothing is open or upcoming — that is exactly
+ * the "finished" state the library's status filter and the home KPI tiles
+ * count — and with `closed` now a real bucket of
+ * `list_my_quiz_allocation_tags`, an all-drafts quiz is finally
+ * distinguishable from a finished one and says "טיוטה" honestly.
+ *
+ * Icons and tones follow `scheduleFormat`'s `allocationStatus`, so one quiz
+ * wears the same vocabulary on a card and in a class's allocation row.
+ * `undefined` tags mean the quiz has no allocation at all and render nothing.
  */
 function AllocationLine({ tags }: { tags: QuizAllocationTags | undefined }) {
   if (!tags) return null;
-  const live = tags.live;
-  const scheduled = tags.scheduled;
-
-  const [text, tone, dot] =
-    live.length === 1
-      ? [`זמין ב${live[0].class_name}`, "text-[var(--fg-success)]", "bg-[var(--fg-success)]"]
-      : live.length > 1
-        ? [`זמין ב-${live.length} כיתות`, "text-[var(--fg-success)]", "bg-[var(--fg-success)]"]
-        : scheduled.length === 1
-          ? [`מתוזמן ב${scheduled[0].class_name}`, "text-[var(--body)]", "bg-[var(--gray)]"]
-          : scheduled.length > 1
-            ? [`מתוזמן ב-${scheduled.length} כיתות`, "text-[var(--body)]", "bg-[var(--gray)]"]
-            : ["לא פעיל", "text-[var(--body-subtle)]", "bg-[var(--gray)]"];
+  const { live, scheduled, closed } = tags;
+  const open = live.length > 0 || scheduled.length > 0;
 
   return (
-    <p className={cn("mt-auto flex items-center gap-1.5 truncate text-xs font-medium", tone)}>
-      <span className={cn("h-1.5 w-1.5 flex-none rounded-full", dot)} />
-      <span className="truncate">{text}</span>
-    </p>
+    <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
+      {live.length > 0 && (
+        <AllocationTag
+          icon="timer"
+          text={classesPhrase("זמין", live)}
+          tone="text-[var(--fg-success)]"
+        />
+      )}
+      {scheduled.length > 0 && (
+        <AllocationTag
+          icon="calendar"
+          text={classesPhrase("מתוזמן", scheduled)}
+          tone="text-[var(--fg-warning)]"
+        />
+      )}
+      {!open && closed.length > 0 && (
+        <AllocationTag
+          icon="checkCircle"
+          text={classesPhrase("הסתיים", closed)}
+          tone="text-[var(--body)]"
+        />
+      )}
+      {!open && closed.length === 0 && (
+        <AllocationTag
+          icon="eyeOff"
+          text="טיוטה — מוסתר מתלמידים"
+          tone="text-[var(--body-subtle)]"
+        />
+      )}
+    </div>
   );
 }
 
@@ -214,13 +295,13 @@ export function QuizCard({
         aria-label={`עריכת ${heading}`}
         className="absolute inset-0 z-10 rounded-[inherit]"
       />
-      <QuizThumb youtubeVideoId={quiz.youtube_video_id}>
-        <ThumbChip className="bottom-2 start-2">
+      <QuizThumb youtubeVideoId={quiz.youtube_video_id} playAffordance>
+        <ThumbChip className={cn("bottom-2 start-2", THUMB_CHIP_HOVER_HIDE)}>
           <Icon name="quiz" size={12} />
           <span className="tabular-nums">{quiz.question_count}</span> שאלות
         </ThumbChip>
         {durationText && (
-          <ThumbChip className="bottom-2 end-2">
+          <ThumbChip className={cn("bottom-2 end-2", THUMB_CHIP_HOVER_HIDE)}>
             <Icon name="clock" size={12} />
             <span className="tabular-nums">{durationText}</span>
           </ThumbChip>
@@ -298,12 +379,12 @@ export function CatalogQuizCard({
   return (
     <CardShell className={className}>
       <QuizThumb youtubeVideoId={quiz.youtube_video_id}>
-        <ThumbChip className="bottom-2 start-2">
+        <ThumbChip className={cn("bottom-2 start-2", THUMB_CHIP_HOVER_HIDE)}>
           <Icon name="quiz" size={12} />
           <span className="tabular-nums">{quiz.question_count}</span> שאלות
         </ThumbChip>
         {durationText && (
-          <ThumbChip className="bottom-2 end-2">
+          <ThumbChip className={cn("bottom-2 end-2", THUMB_CHIP_HOVER_HIDE)}>
             <Icon name="clock" size={12} />
             <span className="tabular-nums">{durationText}</span>
           </ThumbChip>

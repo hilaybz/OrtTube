@@ -1,6 +1,7 @@
 import type { ClassStats } from "@/lib/analytics";
 import type { ClassRow, AssignedQuiz } from "@/lib/classes";
-import { allocationState } from "@/lib/allocationState";
+import { allocationState, type AllocationState } from "@/lib/allocationState";
+import { SCHOOL_TIME_ZONE, schoolDayNumber } from "@/lib/schoolClock";
 
 /**
  * Pure reductions behind the teacher overview. Everything here takes already
@@ -12,11 +13,6 @@ import { allocationState } from "@/lib/allocationState";
  * that predicate mirrors the SQL `_allocation_is_live` and is the one place
  * window semantics live.
  */
-
-/** The school's wall clock. Times arrive as UTC instants; every date the
- *  teacher reads — and the time-of-day greeting — must be Israeli local time,
- *  not the server's. */
-export const SCHOOL_TIME_ZONE = "Asia/Jerusalem";
 
 /**
  * How far back "recently finished" reaches. A week is one school cycle: long
@@ -32,18 +28,37 @@ export interface ClassAssignments {
 }
 
 /**
- * A per-class summary reduced from the raw `class_stats` payload, ready for a
- * class card: roster size, count of currently-assigned (non-deleted) quizzes,
- * and total completions. Average grade is deliberately absent — a
- * cross-quiz mean tells a teacher nothing actionable, and per-quiz averages are
- * one click away in analytics.
+ * A per-class summary ready for a class card: roster size and the class's own
+ * lifecycle split — how many quizzes it can answer, how many are behind it.
+ * Those two are the class-scoped reading of the same question the KPI row asks
+ * across all classes, so a teacher can tell at a glance which class is mid-work
+ * and which is idle.
+ *
+ * Neither an assigned-quiz total nor a completion count is here: a raw
+ * "3 quizzes" says nothing about whether any of them is running, and totals are
+ * one click away in analytics. Average grade is absent for the same reason — a
+ * cross-quiz mean flattens exactly the differences analytics exists to show.
  */
 export interface ClassSummary {
   id: string;
   name: string;
   memberCount: number;
-  assignedCount: number;
-  completions: number;
+  /** Quizzes this class can answer now, plus those scheduled to open. */
+  activeQuizzes: number;
+  /** Quizzes whose window has already closed for this class. */
+  finishedQuizzes: number;
+}
+
+/**
+ * The one definition of "active" behind both the KPI row and the class cards:
+ * a window the class is inside right now, or one that will open. Drafts are
+ * neither active nor finished — nobody has been given them yet.
+ *
+ * Both readings go through this predicate so a class card and the tile above it
+ * can never disagree about the same allocation.
+ */
+function isActive(state: AllocationState): boolean {
+  return state === "live" || state === "scheduled";
 }
 
 /** Cross-class totals for the KPI row. */
@@ -57,22 +72,36 @@ export interface OverviewTotals {
 }
 
 /**
- * Reduce one class's `class_stats` (paired with its roster row for the name)
- * into a `ClassSummary`. Only currently-assigned quizzes (`deleted === false`)
- * count toward the assigned/completion figures. Member count prefers the stats
- * denominator and falls back to zero when stats are unavailable.
+ * Reduce one class into a `ClassSummary`: the roster size comes from
+ * `class_stats`, the lifecycle split from that class's own allocation rows.
+ *
+ * The two sources fail independently and so degrade independently — a class
+ * whose stats could not be read still shows a truthful quiz split, and a class
+ * whose allocations could not be read still shows its roster.
+ *
+ * Each quiz has exactly one allocation per class, so counting allocation states
+ * here is already a per-quiz count; no de-duplication is needed (unlike the
+ * cross-class KPI row, where one quiz spans several classes).
  */
 export function summarizeClass(
   klass: ClassRow,
-  stats: ClassStats | null
+  stats: ClassStats | null,
+  quizzes: readonly AssignedQuiz[],
+  now: Date = new Date()
 ): ClassSummary {
-  const active = stats?.quizzes.filter((q) => !q.deleted) ?? [];
+  let activeQuizzes = 0;
+  let finishedQuizzes = 0;
+  for (const quiz of quizzes) {
+    const state = allocationState(quiz, now);
+    if (isActive(state)) activeQuizzes += 1;
+    else if (state === "done") finishedQuizzes += 1;
+  }
   return {
     id: klass.id,
     name: klass.name,
     memberCount: stats?.current_member_count ?? 0,
-    assignedCount: active.length,
-    completions: active.reduce((sum, q) => sum + q.completion_count, 0),
+    activeQuizzes,
+    finishedQuizzes,
   };
 }
 
@@ -92,7 +121,7 @@ export function countQuizStates(
     for (const quiz of quizzes) {
       const state = allocationState(quiz, now);
       const entry = byQuiz.get(quiz.quiz_id) ?? { openable: false, closed: false };
-      if (state === "live" || state === "scheduled") entry.openable = true;
+      if (isActive(state)) entry.openable = true;
       if (state === "done") entry.closed = true;
       byQuiz.set(quiz.quiz_id, entry);
     }
@@ -192,41 +221,31 @@ export function formatShortDate(iso: string): string {
 }
 
 /**
- * The greeting for a moment, keyed to the school's local time of day rather
- * than the server's clock — a Tel Aviv morning is the middle of the night in
- * UTC, and greeting a teacher "ערב טוב" at 09:00 is worse than not greeting
- * them. The small hours get a plain "שלום": every Hebrew night greeting is a
- * farewell.
+ * How a closing time reads on a finished-quiz card. Two parts rather than one
+ * sentence: a phrase the teacher can scan ("נסגר אתמול") and, next to it, the
+ * date itself — because "אתמול" answers "is this still fresh?" while the date
+ * answers "which lesson was that?".
+ *
+ * `date` is null exactly when the phrase already names the date, so the card
+ * never prints the same day twice.
  */
-export function greetingFor(now: Date): string {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-GB", {
-      hour: "numeric",
-      hourCycle: "h23",
-      timeZone: SCHOOL_TIME_ZONE,
-    }).format(now)
-  );
-  // The small hours are tested FIRST: they wrap past midnight, so an
-  // ascending chain that starts at 05:00 would greet 01:00 as noon.
-  if (hour < 5) return "שלום";
-  if (hour < 12) return "בוקר טוב";
-  if (hour < 17) return "צהריים טובים";
-  if (hour < 22) return "ערב טוב";
-  return "שלום";
+export interface ClosedAtMeta {
+  phrase: string;
+  date: string | null;
 }
 
-/** The name to greet by: the first word of a display name, or nothing. */
-export function firstName(displayName: string | null): string | null {
-  const first = displayName?.trim().split(/\s+/)[0];
-  return first ? first : null;
+/**
+ * Phrase a closing time relative to today, in *school-local calendar days* —
+ * a window that closed at 23:00 last night is "אתמול" even though barely a few
+ * hours passed, which is how a teacher thinks about it. Beyond a week the
+ * relative phrasing stops helping and the date carries it alone.
+ */
+export function closedAtMeta(iso: string, now: Date = new Date()): ClosedAtMeta {
+  const days = schoolDayNumber(now) - schoolDayNumber(new Date(iso));
+  if (days <= 0) return { phrase: "נסגר היום", date: formatShortDate(iso) };
+  if (days === 1) return { phrase: "נסגר אתמול", date: formatShortDate(iso) };
+  if (days < 7)
+    return { phrase: `נסגר לפני ${days} ימים`, date: formatShortDate(iso) };
+  return { phrase: `נסגר ב־${formatShortDate(iso)}`, date: null };
 }
 
-/** A long school-local weekday and date, e.g. `יום חמישי, 20 באוגוסט`. */
-export function formatToday(now: Date): string {
-  return new Intl.DateTimeFormat("he-IL", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    timeZone: SCHOOL_TIME_ZONE,
-  }).format(now);
-}
