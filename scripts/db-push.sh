@@ -33,4 +33,12 @@ if [ -n "${remote_only// /}" ]; then
   exit 1
 fi
 
+if [ ! -t 0 ] && [[ " $* " != *" --yes "* ]]; then
+  echo "refusing to push: supabase db push prompts for confirmation and stdin is" >&2
+  echo "not a terminal, so it would exit having applied nothing." >&2
+  echo "re-run as: npm run db:push -- --yes" >&2
+  exit 1
+fi
+
+supabase db push --dry-run "$@"
 exec supabase db push "$@"
