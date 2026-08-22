@@ -3,7 +3,7 @@
  * status semantics (spec §3.3).
  *
  * `fetchFreshTranscript` (the YouTube scrape) is mocked so no network I/O runs;
- * everything else exercises the REAL local Supabase stack — the `videos` claim
+ * everything else exercises the REAL local Supabase stack — the `videos`
  * marker (atomic single-flight UPDATE) and the `transcripts` Storage bucket.
  *
  * The actor DSL in `test/helpers/testbed` has no video/transcript vocabulary
@@ -12,13 +12,17 @@
  *   • `givenVideo`        — seed a `videos` row in a known transcript state.
  *   • `youtubeReturnsTrack` / `youtubeReturns` — script the mocked scraper.
  *   • `cachedTranscript`  — read back the Storage object.
- *   • `videoState`        — read back the row's status + claim fields.
+ *   • `videoState`        — read back the row's transcript state.
  *
  * Runs at the integration/gate step (which owns DB application). Skipped when the
  * local DB is unreachable so unit suites still pass without Supabase running.
  */
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
-import { getTranscript, TRANSCRIPT_BUCKET } from "@/lib/transcriptCache";
+import {
+  getTranscript,
+  TRANSCRIPT_BUCKET,
+  type TranscriptOutcome,
+} from "@/lib/transcriptCache";
 import { fetchFreshTranscript, type FetchOutcome } from "@/lib/transcript";
 import { resetDb, getPool, closePool, getServiceClient } from "../helpers/db";
 import { stackOnline } from "../helpers/stack";
@@ -41,9 +45,16 @@ function manualHebrewTrack(): FetchOutcome {
     status: "ok",
     segments: HEBREW_SEGMENTS,
     language: "he",
-    kind: "manual",
     trace: [],
   };
+}
+
+/** Narrows to the `ready` outcome, or null — so a test asserting on segments
+ * fails loudly rather than reading them off a verdict that carries none. */
+function ready(
+  outcome: TranscriptOutcome
+): Extract<TranscriptOutcome, { state: "ready" }> | null {
+  return outcome.state === "ready" ? outcome : null;
 }
 
 /** Script the mocked scraper to return one fixed outcome. These tests are about
@@ -56,20 +67,19 @@ function youtubeReturns(outcome: FetchOutcome): void {
 /** Seed a `videos` row for `youtubeId` in a known transcript state. */
 async function givenVideo(
   youtubeId: string,
-  state: { status?: string; fetchedAt?: string | null; claim?: string | null } = {}
+  state: { status?: string; fetchedAt?: string | null } = {}
 ): Promise<void> {
   await getPool().query(
-    `INSERT INTO public.videos
-       (youtube_video_id, transcript_status, fetched_at, transcript_fetch_started_at)
-     VALUES ($1, $2, $3, $4)`,
-    [youtubeId, state.status ?? "pending", state.fetchedAt ?? null, state.claim ?? null]
+    `INSERT INTO public.videos (youtube_video_id, transcript_status, fetched_at)
+     VALUES ($1, $2, $3)`,
+    [youtubeId, state.status ?? "pending", state.fetchedAt ?? null]
   );
 }
 
 /** The stored transcript-cache bookkeeping for a video. */
 async function videoState(youtubeId: string) {
   const { rows } = await getPool().query(
-    "SELECT transcript_status, fetched_at, transcript_fetch_started_at FROM public.videos WHERE youtube_video_id = $1",
+    "SELECT transcript_status, fetched_at FROM public.videos WHERE youtube_video_id = $1",
     [youtubeId]
   );
   return rows[0];
@@ -84,7 +94,6 @@ async function clearCachedTranscript(youtubeId: string): Promise<void> {
 async function cachedTranscript(youtubeId: string): Promise<{
   segments: unknown[];
   language: string | null;
-  kind: string;
 } | null> {
   const { data } = await getServiceClient()
     .storage.from(TRANSCRIPT_BUCKET)
@@ -114,21 +123,19 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
 
     const result = await getTranscript(getServiceClient(), youtubeId);
 
-    expect(result?.language).toBe("he");
-    expect(result?.segments).toHaveLength(2);
+    expect(ready(result)?.language).toBe("he");
+    expect(ready(result)?.segments).toHaveLength(2);
 
     const cached = await cachedTranscript(youtubeId);
     expect(cached?.language).toBe("he");
-    expect(cached?.kind).not.toBe("asr"); // manual track cached
     expect(cached?.segments).toHaveLength(2);
 
     const state = await videoState(youtubeId);
     expect(state.transcript_status).toBe("ready");
     expect(state.fetched_at).not.toBeNull();
-    expect(state.transcript_fetch_started_at).toBeNull(); // claim cleared
   });
 
-  it("marks a captions-less video 'unavailable' and returns null", async () => {
+  it("marks a captions-less video 'unavailable' and reports it as a verdict", async () => {
     const youtubeId = "nocaps00001";
     await clearCachedTranscript(youtubeId);
     await givenVideo(youtubeId, { status: "pending" });
@@ -136,10 +143,9 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
 
     const result = await getTranscript(getServiceClient(), youtubeId);
 
-    expect(result).toBeNull();
+    expect(result.state).toBe("unavailable");
     const state = await videoState(youtubeId);
     expect(state.transcript_status).toBe("unavailable");
-    expect(state.transcript_fetch_started_at).toBeNull();
   });
 
   it("does NOT downgrade a 'ready' video on a transient failure", async () => {
@@ -147,19 +153,18 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
     const fetchedLongAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(); // 40d old
     await clearCachedTranscript(youtubeId);
     await givenVideo(youtubeId, { status: "ready", fetchedAt: fetchedLongAgo });
-    youtubeReturns({ status: "error", reason: "page_not_loaded:http_429", trace: [] });
+    youtubeReturns({ status: "error", reason: "player_not_loaded:http_429", trace: [] });
 
     const result = await getTranscript(getServiceClient(), youtubeId);
 
-    expect(result).toBeNull(); // no cached object to serve
+    // `failed`, never `unavailable`: the fetch says nothing about whether this
+    // video has captions, and reporting it as a verdict is what stranded videos.
+    expect(result.state).toBe("failed");
     const state = await videoState(youtubeId);
     expect(state.transcript_status).toBe("ready"); // preserved
-    // The claim marker is deliberately RETAINED after a transient failure: it is
-    // the only timestamp such a failure has (status/fetched_at must not move), so
-    // it doubles as the negative cache that keeps automatic callers — above all
-    // the tutor, which runs per student question — from re-fetching immediately.
-    // It expires on the claim TTL, and an explicit retry beats a 30s floor.
-    expect(state.transcript_fetch_started_at).not.toBeNull();
+    // fetched_at must not move either: touching it would make a 40-day-old
+    // transcript look freshly confirmed on the strength of a fetch that failed.
+    expect(new Date(state.fetched_at).toISOString()).toBe(fetchedLongAgo);
   });
 
   it("does not re-fetch an 'unavailable' video while the negative verdict is fresh", async () => {
@@ -193,7 +198,7 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
     const result = await getTranscript(getServiceClient(), youtubeId);
 
     expect(scraper).toHaveBeenCalledTimes(1);
-    expect(result?.segments).toHaveLength(2);
+    expect(ready(result)?.segments).toHaveLength(2);
     expect((await videoState(youtubeId)).transcript_status).toBe("ready");
   });
 
@@ -211,7 +216,7 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
     const result = await getTranscript(getServiceClient(), youtubeId, { force: true });
 
     expect(scraper).toHaveBeenCalledTimes(1);
-    expect(result?.segments).toHaveLength(2);
+    expect(ready(result)?.segments).toHaveLength(2);
   });
 
   it("single-flights concurrent readers of a stale video (fetch runs once)", async () => {
@@ -230,7 +235,7 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
 
     expect(scraper).toHaveBeenCalledTimes(1); // loser did not double-fetch
     // At least one caller gets the transcript; neither triggered a second fetch.
-    expect([firstReader, secondReader].some((r) => r?.segments.length === 2)).toBe(true);
+    expect([firstReader, secondReader].some((r) => ready(r)?.segments.length === 2)).toBe(true);
   });
 
   it("serves a fresh cached object without re-fetching", async () => {
@@ -246,7 +251,7 @@ describe.skipIf(!online)("getTranscript (transcript cache)", () => {
     scraper.mockClear();
     const result = await getTranscript(getServiceClient(), youtubeId);
     expect(scraper).not.toHaveBeenCalled();
-    expect(result?.language).toBe("he");
-    expect(result?.segments).toHaveLength(2);
+    expect(ready(result)?.language).toBe("he");
+    expect(ready(result)?.segments).toHaveLength(2);
   });
 });

@@ -38,8 +38,20 @@ const EXIT_TIMEOUT_MS = 15_000;
 const CONNECT_TIMEOUT_MS = 5_000;
 
 /**
+ * How many exits one call may try before giving up.
+ *
+ * The pool is no longer ten distinct proxies. It is N draws from ONE rotating
+ * residential endpoint, and `replaceAgent` already redraws on failure — so
+ * walking every slot mostly means retrying the same endpoint N times, serially,
+ * at ~20s each against a 60s route budget and a metered bandwidth bill. Three
+ * draws answers "is this pool usable right now" nearly as well as ten, and keeps
+ * the worst case inside the request that is waiting for it.
+ */
+const MAX_EXITS_PER_CALL = 3;
+
+/**
  * After a sweep in which no exit answered, stop sweeping that ENDPOINT for this
- * long and try only the preferred exit.
+ * long and try a single exit.
  *
  * Two situations produce a fully-refused sweep, and they are indistinguishable
  * from inside: the pool is burned, or the resource is genuinely gated — an
@@ -75,12 +87,15 @@ let pool: Exit[] | null = null;
 let poolSource: string | undefined;
 
 /**
- * Index of the exit that last answered. Burned proxies are the common case, not
- * the exception (measured: 3 of 10 working, and which 3 drifts within hours), so
- * without this every request would pay for the dead ones ahead of it in the
- * list. Vercel reuses function instances, so this survives across requests.
+ * Where the next call starts in the pool, advanced once per call.
+ *
+ * This replaced a "last exit that answered" pointer. That made sense for ten
+ * fixed datacenter IPs, where which ones worked was a property worth
+ * remembering; it means nothing for a rotating endpoint whose exits are
+ * interchangeable draws and whose agents are rebuilt on every failure. Plain
+ * round-robin spreads load without pretending one slot is better than another.
  */
-let preferred = 0;
+let cursor = 0;
 
 /** endpoint (`host/path`) → epoch ms until which a full sweep is suppressed. */
 const sweepSuppressedUntil = new Map<string, number>();
@@ -179,18 +194,40 @@ function proxies(): Exit[] {
   // `pool` still held the previous agents, pinning a stale pool permanently.
   pool = built;
   poolSource = configured;
-  preferred = 0;
+  cursor = 0;
   sweepSuppressedUntil.clear();
   return pool;
 }
 
-/** 429/403/5xx mean "not from this IP, not now"; a bot-check body means the same. */
-function refused(status: number, body: string): boolean {
+/**
+ * Why an exit's answer doesn't count, or null if it does.
+ *
+ * The two are named apart for the trace: a 429 says "this IP is rate-limited"
+ * and a wall says "this IP is not trusted", and an operator reading a burned
+ * pool needs to tell them apart.
+ *
+ * A `LOGIN_REQUIRED` body is genuinely ambiguous — an age-gated or private video
+ * returns it from every IP on earth, identically to a bot wall — so it is treated
+ * as a refusal and the next exit decides. An earlier version short-circuited on
+ * it whenever the pool had recently succeeded, reasoning that a working pool
+ * makes the wall a property of the video. That is unsound here: every entry is an
+ * independent draw from ONE rotating endpoint, so a burned draw can return a wall
+ * while the next draw would have served the video. It traded a recoverable fetch
+ * for two saved requests. `MAX_EXITS_PER_CALL` already bounds the cost.
+ *
+ * Note that `UNPLAYABLE` and `ERROR` are deliberately NOT refusals: those are
+ * verdicts about the video that every IP returns identically, so retrying costs
+ * requests and changes nothing. They pass straight through to the caller, which
+ * records them as `not_playable:<status>`.
+ */
+function refusal(status: number, body: string): "status" | "bot_check" | null {
   // 403 matters as much as 429 here: YouTube answers a suspect IP with it at
-  // least as often, and treating it as an answer would mark a walled exit as
-  // last-known-good and give it first pick on every later request.
-  if (status === 429 || status === 403 || status === 401 || status >= 500) return true;
-  return BOT_CHECK.test(body);
+  // least as often, and treating it as an answer would let a walled exit look
+  // like a working one.
+  if (status === 429 || status === 403 || status === 401 || status >= 500) {
+    return "status";
+  }
+  return BOT_CHECK.test(body) ? "bot_check" : null;
 }
 
 /**
@@ -272,18 +309,26 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
     const url = String(input);
     const key = endpointKey(url);
 
-    // Cooling down after a fully-refused sweep of THIS endpoint: try the
-    // preferred exit only.
+    // Cooling down after a fully-refused sweep of THIS endpoint: one exit only.
     const cooling = Date.now() < (sweepSuppressedUntil.get(key) ?? 0);
-    const attempts = cooling ? 1 : exits.length;
+    const attempts = cooling ? 1 : Math.min(MAX_EXITS_PER_CALL, exits.length);
+    const start = cursor;
+    cursor = (cursor + 1) % exits.length;
 
     const notes: string[] = [];
     let lastResponse: Response | null = null;
     let lastError: unknown = null;
 
     for (let i = 0; i < attempts; i++) {
-      const index = (preferred + i) % exits.length;
-      const { agent, label } = exits[index];
+      // The caller's budget covers the whole fetch, not one request. Starting
+      // another exit once it has expired spends bandwidth on a response nobody
+      // is still waiting for.
+      if (init?.signal?.aborted) {
+        notes.push("budget exhausted");
+        break;
+      }
+      const index = (start + i) % exits.length;
+      const label = exits[index].label;
       try {
         // undici's `fetch` is required for `dispatcher` to be honoured: Node
         // bundles its own internal undici and rejects a dispatcher built by the
@@ -295,7 +340,10 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
           method: init?.method,
           headers: init?.headers as Record<string, string> | undefined,
           body: typeof init?.body === "string" ? init.body : undefined,
-          dispatcher: agent,
+          // Read at dispatch, never hoisted: a concurrent call that lost this
+          // exit has already closed the agent this slot held, and dispatching on
+          // a destroyed client fails as if the proxy were dead.
+          dispatcher: exits[index].agent,
           signal: init?.signal
             ? AbortSignal.any([init.signal, AbortSignal.timeout(EXIT_TIMEOUT_MS)])
             : AbortSignal.timeout(EXIT_TIMEOUT_MS),
@@ -307,15 +355,15 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
           new Headers(Object.fromEntries(res.headers.entries())),
           body
         );
-        if (!refused(res.status, body)) {
-          preferred = index;
+        const why = refusal(res.status, body);
+        if (!why) {
           sweepSuppressedUntil.delete(key);
           if (trace && notes.length) {
             trace.push(`egress → ${notes.join(", ")}, ${label} ok`);
           }
           return rebuilt;
         }
-        notes.push(`${label} refused(${res.status})`);
+        notes.push(`${label} refused(${why === "bot_check" ? "wall" : res.status})`);
         // This IP is walled. Retire it so the next request through this slot
         // leaves from a different one.
         replaceAgent(exits[index]);

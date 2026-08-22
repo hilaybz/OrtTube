@@ -231,30 +231,51 @@ describe("self-healing exits", () => {
   });
 });
 
-describe("last-known-good memo", () => {
-  it("sends the next request straight to the exit that worked", async () => {
-    // Burned proxies are the common case, so without this every request pays
-    // for the dead ones ahead of it in the list.
-    //
-    // Scripted by EXIT, not by call order: with an ordered mock the second
-    // request succeeds on its first attempt no matter which exit it picks, so
-    // a call-count assertion alone passes even with the memo deleted.
+/**
+ * This used to be a "last-known-good" memo that sent every request straight to
+ * whichever exit answered last. That was right for ten fixed datacenter IPs,
+ * where which ones worked was a durable property worth remembering. It is wrong
+ * for a rotating residential endpoint: the entries are interchangeable draws
+ * from one pool, an exit's IP changes whenever `replaceAgent` rebuilds it, and
+ * pinning one slot concentrates every request on a single exit IP — the exact
+ * behaviour that gets an IP burned.
+ *
+ * Scripted by EXIT rather than call order throughout: with an ordered mock a
+ * request succeeds on its first attempt no matter which exit it picks, so a
+ * call-count assertion alone would pass with the rotation deleted.
+ */
+describe("exit rotation", () => {
+  it("starts each request at a different exit", async () => {
+    undiciFetch.mockResolvedValue(reply(GOOD));
+    const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p,3.3.3.3:3:u:p");
+
+    await proxiedFetch("https://www.youtube.com/watch?v=a");
+    await proxiedFetch("https://www.youtube.com/watch?v=b");
+    await proxiedFetch("https://www.youtube.com/watch?v=c");
+
+    expect([exitOf(0), exitOf(1), exitOf(2)]).toEqual([
+      "1.1.1.1:1",
+      "2.2.2.2:2",
+      "3.3.3.3:3",
+    ]);
+  });
+
+  it("wraps around, and still falls through a refused exit", async () => {
     undiciFetch.mockImplementation(async (_url: string, opts: { dispatcher: { uri: string } }) =>
-      opts.dispatcher.uri.includes("1.1.1.1") ? reply(BOT_CHECK) : reply(GOOD)
+      opts.dispatcher.uri.includes("2.2.2.2") ? reply(BOT_CHECK) : reply(GOOD)
     );
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p");
 
-    await proxiedFetch("https://www.youtube.com/watch?v=x");
-    expect(undiciFetch).toHaveBeenCalledTimes(2);
+    await proxiedFetch("https://www.youtube.com/watch?v=a");
+    expect(undiciFetch).toHaveBeenCalledTimes(1);
     expect(exitOf(0)).toBe("1.1.1.1:1");
+
+    // Second request begins at the next slot, which is walled, and falls through
+    // to the one that works rather than reporting the wall to the caller.
+    const res = await proxiedFetch("https://www.youtube.com/watch?v=b");
     expect(exitOf(1)).toBe("2.2.2.2:2");
-
-    await proxiedFetch("https://www.youtube.com/watch?v=y");
-
-    // The burned exit is skipped entirely: one more call, and it went straight
-    // to the exit that answered last time.
-    expect(undiciFetch).toHaveBeenCalledTimes(3);
-    expect(exitOf(2)).toBe("2.2.2.2:2");
+    expect(exitOf(2)).toBe("1.1.1.1:1");
+    expect(await res.text()).toBe(GOOD);
   });
 });
 
@@ -281,15 +302,53 @@ describe("request forwarding", () => {
     );
   });
 
-  it("passes an abort signal, so a stalled proxy cannot hang the request", async () => {
-    // undici's own defaults are 300s for headers and body; on a sequential
-    // sweep that is long enough to outlive the caller.
+  it("aborts a stalled proxy on a SHORT deadline, not merely 'at some point'", async () => {
+    // undici's own defaults are 300s for headers and body; on a sequential sweep
+    // that is long enough to outlive the caller. This used to assert only
+    // `instanceof AbortSignal`, which still passed with the timeout set to fifty
+    // minutes — it pinned that a signal EXISTS, not that it carries a deadline.
+    // The value is asserted directly because `AbortSignal.timeout` is native and
+    // fake timers do not reach it.
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      undiciFetch.mockResolvedValue(reply(GOOD));
+      const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
+
+      await proxiedFetch("https://www.youtube.com/watch?v=x");
+
+      expect(undiciFetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+      expect(timeout).toHaveBeenCalledWith(15_000);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("honours the caller's own budget alongside the per-exit deadline", async () => {
+    // The transcript fetch owns a whole-fetch budget; without merging it here a
+    // sweep could keep spending exits after the request that wanted them died.
     undiciFetch.mockResolvedValue(reply(GOOD));
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
+    const caller = new AbortController();
 
-    await proxiedFetch("https://www.youtube.com/watch?v=x");
+    await proxiedFetch("https://www.youtube.com/watch?v=x", { signal: caller.signal });
+    const signal: AbortSignal = undiciFetch.mock.calls[0][1].signal;
 
-    expect(undiciFetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    expect(signal.aborted).toBe(false);
+    caller.abort();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("stops trying exits once the caller's budget is spent", async () => {
+    const caller = new AbortController();
+    undiciFetch.mockImplementation(async () => {
+      caller.abort(); // the budget expires during the first exit's request
+      return reply(BOT_CHECK);
+    });
+    const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p,3.3.3.3:3:u:p");
+
+    await proxiedFetch("https://www.youtube.com/watch?v=x", { signal: caller.signal });
+
+    expect(undiciFetch).toHaveBeenCalledTimes(1);
   });
 
   it("rejects shapes it would otherwise send with the body silently dropped", async () => {
@@ -467,5 +526,59 @@ describe("response rebuilding", () => {
 
     expect(out.status).toBe(204);
     expect(out.body).toBeNull();
+  });
+});
+
+/**
+ * The pool is no longer ten independent proxies — it is N draws from ONE
+ * rotating residential endpoint, billed by the gigabyte. Walking every slot
+ * therefore mostly means retrying the same endpoint N times, serially, and
+ * paying for each attempt.
+ */
+describe("sweep cost", () => {
+  const TEN = Array.from({ length: 10 }, (_, i) => `${i}.${i}.${i}.${i}:1:u:p`).join(",");
+
+  it("gives up after a few exits instead of walking the whole pool", async () => {
+    undiciFetch.mockResolvedValue(reply(BOT_CHECK));
+    const { proxiedFetch } = await loadEgress(TEN);
+
+    await proxiedFetch("https://www.youtube.com/api/timedtext?v=x");
+
+    expect(undiciFetch.mock.calls.length).toBeLessThanOrEqual(3);
+  });
+
+  it("keeps trying other exits after a login wall, even once the pool has worked", async () => {
+    // An age-gated video answers LOGIN_REQUIRED from every IP, byte-identically
+    // to a bot wall, so it is tempting to treat a wall as proof about the video
+    // whenever the pool recently succeeded and stop there. That is unsound: every
+    // entry is an independent draw from ONE rotating endpoint, so a burned draw
+    // can wall a video the next draw would serve. Giving up would trade a
+    // recoverable fetch for two saved requests.
+    const { proxiedFetch } = await loadEgress(TEN);
+    undiciFetch.mockResolvedValue(reply(GOOD));
+    await proxiedFetch("https://www.youtube.com/youtubei/v1/player");
+
+    undiciFetch.mockReset();
+    undiciFetch
+      .mockResolvedValueOnce(reply(BOT_CHECK))
+      .mockResolvedValue(reply(GOOD));
+    const res = await proxiedFetch("https://www.youtube.com/youtubei/v1/player?v=other");
+
+    expect(undiciFetch).toHaveBeenCalledTimes(2);
+    expect(await res.text()).toBe(GOOD);
+  });
+
+  it("passes a non-OK playability straight through rather than sweeping", async () => {
+    // UNPLAYABLE and ERROR are verdicts about the video that every IP returns
+    // identically. Retrying them costs requests and changes nothing.
+    undiciFetch.mockResolvedValue(
+      reply(JSON.stringify({ playabilityStatus: { status: "UNPLAYABLE" } }))
+    );
+    const { proxiedFetch } = await loadEgress(TEN);
+
+    const res = await proxiedFetch("https://www.youtube.com/youtubei/v1/player");
+
+    expect(undiciFetch).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
   });
 });

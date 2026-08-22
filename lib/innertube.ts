@@ -78,7 +78,8 @@ function describe(e: unknown): string {
  */
 export async function fetchPlayerResponse(
   videoId: string,
-  trace?: string[]
+  trace?: string[],
+  signal?: AbortSignal
 ): Promise<PlayerResult> {
   try {
     const res = await createProxiedFetch(trace)(INNERTUBE_URL, {
@@ -88,6 +89,9 @@ export async function fetchPlayerResponse(
         "User-Agent": INNERTUBE_USER_AGENT,
       },
       body: JSON.stringify({ context: INNERTUBE_CONTEXT, videoId }),
+      // Shares the caller's whole-fetch budget when there is one, so the player
+      // call cannot eat the time the download still needs.
+      signal,
     });
     trace?.push(`POST www.youtube.com/youtubei/v1/player → ${res.status}`);
     // Covers rate limiting (429) and bot walls (403) as well as outright

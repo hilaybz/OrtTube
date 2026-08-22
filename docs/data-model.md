@@ -91,7 +91,7 @@ erDiagram
         text channel_name "uploading channel, via oEmbed"
         int duration_seconds
         text transcript_status "pending | ready | unavailable"
-        timestamptz transcript_fetch_started_at "single-flight claim"
+        timestamptz transcript_fetch_started_at "unused; see lib/transcriptCache.ts"
     }
     quizzes {
         uuid id PK
@@ -199,9 +199,17 @@ erDiagram
 
 - **`videos`** — one row per YouTube video, deduped by `youtube_video_id` and
   shared across all quizzes/schools. No owner column. `transcript_status` +
-  `transcript_fetch_started_at` implement single-flight transcript fetching so
-  concurrent authors don't fetch the same transcript twice. Orphan videos (no
-  referencing quiz) are garbage-collected after a grace window.
+  `fetched_at` carry the transcript verdict and its age: `ready` is trusted for
+  ~30 days, a confirmed `unavailable` for ~2 days. Orphan videos (no referencing
+  quiz) are garbage-collected after a grace window.
+
+  `transcript_fetch_started_at` is **no longer read or written**. It was a
+  single-flight claim marker, and losing the claim meant giving up — so a teacher
+  pressing "generate" seconds after the editor warmed the cache was told the video
+  had no captions while the captions were downloading. Callers now share one
+  in-flight fetch per instance (`lib/transcriptCache.ts`), which cannot be stolen
+  and cannot lie; two instances fetching the same video twice is an accepted cost.
+  The column is left in place for a later migration to drop.
 
 ### Quizzes, questions, options, translations
 

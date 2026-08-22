@@ -1,49 +1,56 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { getTranscript, releaseClaim } from "@/lib/transcriptCache";
+import { getTranscript } from "@/lib/transcriptCache";
+import { createRateLimiter } from "@/lib/rateLimit";
 
 /**
  * POST /api/quizzes/[id]/transcript  — warm the transcript cache.
  *
  * Fetching is lazy: nothing pulls a transcript until a teacher presses generate
  * or a student asks the tutor, and by then they are waiting on it. A cold fetch
- * can take tens of seconds — proxy fallthrough, a ~1.2MB watch page, the
- * download itself — and if it fails, the single-flight claim throttles the next
- * automatic attempt for ten minutes, so the person who triggered it waits and
- * then gets nothing.
+ * can take tens of seconds — proxy fallthrough, the download itself — so this
+ * moves that work to page-open, where nobody is blocked on it. The teacher editor
+ * and the student player each fire it once on mount and ignore the result.
  *
- * This moves that work to page-open, where nobody is blocked on it. The teacher
- * editor and the student player each fire it once on mount and ignore the
- * result: by the time either feature is used the transcript is usually cached,
- * and if it could not be fetched that verdict is already recorded.
+ * A fetch already running when someone presses generate is JOINED, not raced:
+ * `getTranscript` shares one in-flight fetch per video per instance. Warming can
+ * therefore only ever make the wait shorter.
  *
- * Deliberately does NOT force. A forced fetch ignores the negative cache and
- * only respects a 30s floor, which is right for a human pressing a button but
- * wrong here — page opens are frequent and involuntary, and forcing would let a
- * teacher reloading the editor re-sweep the proxy pool every 30 seconds against
- * a metered bandwidth quota. Pressing "generate" still forces, as before.
+ * Deliberately does NOT force. Forcing ignores the negative cache, which is right
+ * for a human pressing a button and wrong here — page opens are frequent and
+ * involuntary, and forcing would let a teacher reloading the editor re-check a
+ * known caption-less video every time, against metered bandwidth.
  *
  * Body: `{ classId?: string }` — required for students, who are authorized by
  * class membership rather than ownership.
  *
- * Returns `{ status: "ready" | "unavailable" | "pending" | "skipped" }`.
- * `pending` means nobody has successfully read it yet: either the fetch is in
- * flight elsewhere, or the last attempt failed transiently and is being
- * throttled. `skipped` means no fetch was attempted because nothing on that
- * page could use the result.
+ * Returns 202 with an empty body: this is fire-and-forget, both callers ignore
+ * the response, and a status field nobody reads is a field nobody notices is
+ * wrong. The outcome is recorded on the video row and in the logs.
  *
  * Errors: `{ error: { code, message } }` with codes:
- *   unauthorized(401), not_found(404), forbidden(403).
+ *   unauthorized(401), not_found(404), forbidden(403), rate_limited(429),
+ *   internal_error(500).
  */
 export const runtime = "nodejs";
-// A cold fetch sweeps the proxy pool across several endpoints; the default
-// would cut it off partway and leave the cache exactly as cold as it started.
+// A cold fetch can try several exits across two endpoints; the default would cut
+// it off partway and leave the cache exactly as cold as it started.
 export const maxDuration = 60;
+
+/**
+ * Page opens are involuntary and this endpoint spends metered proxy bandwidth, so
+ * it needs the same protection `/api/ask` has for the same reason. Generous
+ * against real use — the client fires once per mount — and tight enough that a
+ * loop cannot turn page-opens into a bandwidth bill.
+ */
+const isRateLimited = createRateLimiter({ windowMs: 60_000, max: 6 });
 
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });
 }
+
+const accepted = () => new NextResponse(null, { status: 202 });
 
 export async function POST(
   req: NextRequest,
@@ -55,6 +62,10 @@ export async function POST(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return err("unauthorized", "Sign in required", 401);
+
+  if (isRateLimited(user.id)) {
+    return err("rate_limited", "Too many transcript warm requests", 429);
+  }
 
   let classId: string | null = null;
   try {
@@ -98,7 +109,11 @@ export async function POST(
       const msg = error.message ?? "";
       if (msg.includes("not_member")) return err("forbidden", "Not a class member", 403);
       if (msg.includes("not_assigned")) return err("not_found", "Quiz not assigned", 404);
-      return err("forbidden", "Not permitted", 403);
+      // Anything else is a fault, not a decision. Reporting a connection blip or
+      // a malformed id as "you are not permitted" is the same mistake this route
+      // exists to stop making about transcripts.
+      console.error(`[transcript-warm] get_tutor_mode failed quiz=${quizId}: ${msg}`);
+      return err("internal_error", "Could not check quiz access", 500);
     }
     const ctx = (Array.isArray(data) ? data[0] : data) as {
       youtube_video_id?: unknown;
@@ -107,11 +122,10 @@ export async function POST(
     // The transcript exists for this student only to ground the tutor. With the
     // tutor off for their class they can never ask, so fetching would spend
     // metered proxy bandwidth on something nobody can reach.
-    if (ctx?.tutor_mode === "off") {
-      return NextResponse.json({ status: "skipped" });
-    }
+    if (ctx?.tutor_mode === "off") return accepted();
     if (typeof ctx?.youtube_video_id === "string") {
-      return NextResponse.json({ status: await warm(ctx.youtube_video_id) });
+      await warm(ctx.youtube_video_id);
+      return accepted();
     }
     return err("not_found", "Quiz video not found", 404);
   } else {
@@ -126,32 +140,22 @@ export async function POST(
   const v = video as { youtube_video_id: string } | null;
   if (!v) return err("not_found", "Quiz video not found", 404);
 
-  return NextResponse.json({ status: await warm(v.youtube_video_id) });
+  await warm(v.youtube_video_id);
+  return accepted();
 }
 
 /**
  * Service client because the fetch writes back to `videos` and Storage, which a
  * student's own grants do not permit — the read above is what authorized this.
  */
-async function warm(youtubeVideoId: string): Promise<"ready" | "unavailable" | "pending"> {
-  const service = createServiceClient();
+async function warm(youtubeVideoId: string): Promise<void> {
   try {
-    const transcript = await getTranscript(service, youtubeVideoId);
-    if (transcript?.segments?.length) return "ready";
-    // No segments covers both "confirmed no captions" and "could not read them
-    // this time". The caller only needs to know it is not usable yet; the
-    // distinction is already recorded on the video row and logged with a trace.
-    if (transcript) return "unavailable";
-    // Nothing usable, and the attempt may have left the single-flight claim
-    // held. Release it: otherwise this page-open refuses the teacher's own
-    // "generate" moments later with "another attempt holds the claim", so the
-    // feature meant to remove a wait becomes the reason for a failure.
-    await releaseClaim(service, youtubeVideoId);
-    return "pending";
-  } catch {
-    // Warming is best-effort by definition. A failure here must never surface
-    // to a teacher opening the editor or a student opening a quiz.
-    await releaseClaim(service, youtubeVideoId).catch(() => {});
-    return "pending";
+    await getTranscript(createServiceClient(), youtubeVideoId);
+  } catch (e) {
+    // Warming is best-effort by definition. A failure here must never surface to
+    // a teacher opening the editor or a student opening a quiz.
+    console.warn(
+      `[transcript-warm] video=${youtubeVideoId} ${e instanceof Error ? e.message : String(e)}`
+    );
   }
 }

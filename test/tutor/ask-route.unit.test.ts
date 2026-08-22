@@ -134,6 +134,7 @@ beforeEach(() => {
   questionRowMock.mockResolvedValue({ data: { quiz_id: "quiz-uuid" } });
   inProgressMock.mockResolvedValue({ data: [] });
   getTranscriptMock.mockResolvedValue({
+    state: "ready",
     segments: [{ text: "watched content", offset: 0, duration: 5000 }],
     language: "he",
   });
@@ -327,6 +328,7 @@ describe("streaming, context, logging", () => {
 
   it("bounds transcript context to the playhead (no spoilers)", async () => {
     getTranscriptMock.mockResolvedValue({
+      state: "ready",
       segments: [
         { text: "watched intro", offset: 0, duration: 5000 },
         { text: "future spoiler content", offset: 300000, duration: 5000 },
@@ -437,7 +439,7 @@ describe("streaming, context, logging", () => {
   });
 
   it("still answers when no transcript is available", async () => {
-    getTranscriptMock.mockResolvedValue(null);
+    getTranscriptMock.mockResolvedValue({ state: "unavailable" });
     const response = await POST(askRequest(BASE_BODY));
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("Here is a hint.");

@@ -6,14 +6,6 @@ import { fetchFreshTranscript, type TranscriptSegment } from "./transcript";
 const CONTENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Single-flight claim timeout. The claim marker (`videos.transcript_fetch_
- * started_at`) is considered stale after this window so a crashed/abandoned
- * fetch cannot block re-fetching for the full content TTL. Kept well above a
- * realistic fetch duration (long external I/O) but far below CONTENT_TTL.
- */
-const CLAIM_TTL_MS = 10 * 60 * 1000;
-
-/**
  * NEGATIVE cache TTL: how long a "no usable captions" verdict is trusted before
  * we look again. A verdict is a judgement made at a point in time, not a
  * permanent property of the video — creators do add captions later, and a fetch
@@ -22,15 +14,6 @@ const CLAIM_TTL_MS = 10 * 60 * 1000;
  * captions added to a video in active use are picked up within days.
  */
 const NEGATIVE_TTL_MS = 2 * 24 * 60 * 60 * 1000;
-
-/**
- * Claim window for an EXPLICIT retry (a teacher pressing "generate"). A failed
- * attempt deliberately leaves its claim marker in place, which throttles the
- * automatic callers — but a human who just watched it fail should get a real
- * attempt rather than a silent no-op, so their claim only has to beat a short
- * floor. Two rapid clicks still collapse into one upstream fetch.
- */
-const FORCE_CLAIM_TTL_MS = 30 * 1000;
 
 /** Storage bucket holding one JSON transcript object per youtube_video_id. */
 export const TRANSCRIPT_BUCKET = process.env.TRANSCRIPT_BUCKET || "transcripts";
@@ -41,14 +24,29 @@ interface CachedTranscript {
   youtubeVideoId: string;
   segments: TranscriptSegment[];
   language: string | null;
-  kind: string;
   fetchedAt: string;
 }
 
-export interface TranscriptResult {
-  segments: TranscriptSegment[];
-  language: string | null;
-}
+/**
+ * What a transcript lookup actually concluded.
+ *
+ * Every one of these used to be `null`, and three callers each guessed at what
+ * that null meant — the warm route guessed "my fetch failed", `generate` guessed
+ * "this video has no captions", the tutor guessed "none exists". Two of those
+ * guesses are wrong most of the time, and the `generate` one told teachers a
+ * network problem was a fact about their video. Naming the outcomes is what
+ * stops a caller inferring content from infrastructure.
+ *
+ * `unavailable` is the ONLY member that says anything about the video itself.
+ */
+export type TranscriptOutcome =
+  | { state: "ready"; segments: TranscriptSegment[]; language: string | null }
+  /** Confirmed: the player answered, called the video playable, and listed no tracks. */
+  | { state: "unavailable" }
+  /** A recent `unavailable` verdict stands; no upstream call was made. */
+  | { state: "throttled" }
+  /** We tried and could not read it. Says nothing about whether captions exist. */
+  | { state: "failed"; reason: string };
 
 interface VideoFreshnessRow {
   transcript_status: "pending" | "ready" | "unavailable";
@@ -136,13 +134,12 @@ async function readCached(
 async function writeCached(
   client: SupabaseClient,
   youtubeId: string,
-  payload: { segments: TranscriptSegment[]; language: string | null; kind: string }
+  payload: { segments: TranscriptSegment[]; language: string | null }
 ): Promise<void> {
   const body: CachedTranscript = {
     youtubeVideoId: youtubeId,
     segments: payload.segments,
     language: payload.language,
-    kind: payload.kind,
     fetchedAt: new Date().toISOString(),
   };
   await client.storage
@@ -153,153 +150,49 @@ async function writeCached(
     });
 }
 
-/**
- * Atomically claims the single-flight fetch slot for `youtubeId`.
- *
- * Compiles to one `UPDATE videos SET transcript_fetch_started_at = now() WHERE
- * youtube_video_id = $1 AND (transcript_fetch_started_at IS NULL OR
- * transcript_fetch_started_at < now() - CLAIM_TTL) RETURNING id`. Because it is
- * a single statement, Postgres row-locking guarantees exactly one concurrent
- * caller sees the marker as claimable; the marker (not a session advisory lock)
- * is used so we never hold a DB lock across the long external fetch, which is
- * unsafe under the transaction-mode pooler.
- *
- * Returns true for the winner, false for losers.
- */
-async function claimFetch(
-  client: SupabaseClient,
-  youtubeId: string,
-  claimTtlMs: number = CLAIM_TTL_MS
-): Promise<boolean> {
-  const nowIso = new Date().toISOString();
-  const claimCutoff = new Date(Date.now() - claimTtlMs).toISOString();
-  const { data, error } = await client
-    .from("videos")
-    .update({ transcript_fetch_started_at: nowIso })
-    .eq("youtube_video_id", youtubeId)
-    .or(`transcript_fetch_started_at.is.null,transcript_fetch_started_at.lt.${claimCutoff}`)
-    .select("id");
-  return !error && Array.isArray(data) && data.length > 0;
-}
-
-/** Marks a confirmed transcript ready and clears the claim marker. */
+/** Marks a confirmed transcript ready. */
 async function markReady(client: SupabaseClient, youtubeId: string): Promise<void> {
   await client
     .from("videos")
-    .update({
-      transcript_status: "ready",
-      fetched_at: new Date().toISOString(),
-      transcript_fetch_started_at: null,
-    })
+    .update({ transcript_status: "ready", fetched_at: new Date().toISOString() })
     .eq("youtube_video_id", youtubeId);
 }
 
-/** Marks a confirmed no-captions video unavailable and clears the claim marker. */
+/** Marks a confirmed no-captions video unavailable. */
 async function markUnavailable(client: SupabaseClient, youtubeId: string): Promise<void> {
   await client
     .from("videos")
-    .update({
-      transcript_status: "unavailable",
-      fetched_at: new Date().toISOString(),
-      transcript_fetch_started_at: null,
-    })
+    .update({ transcript_status: "unavailable", fetched_at: new Date().toISOString() })
     .eq("youtube_video_id", youtubeId);
 }
 
-// (A `clearMarker` helper lived here. A transient failure now intentionally
-// leaves the claim marker set so it throttles automatic retries until the claim
-// TTL expires, so nothing clears it early any more. `markReady` /
-// `markUnavailable` clear it as part of recording their verdict.)
+/**
+ * Fetches in flight on THIS instance, so a second caller joins the first rather
+ * than starting its own.
+ *
+ * This replaced a `videos.transcript_fetch_started_at` claim marker. That marker
+ * was a distributed lock, and losing it meant giving up — so a teacher pressing
+ * "generate" seconds after the editor warmed the cache was told the video had no
+ * captions while the captions were downloading. Worse, the loser then cleared
+ * the WINNER's marker, so the mechanism that existed to prevent duplicate
+ * fetches was reliably causing them.
+ *
+ * A promise map is weaker (two Vercel instances still fetch twice) and better:
+ * joining a promise cannot fail, cannot lie, and cannot be stolen. Duplicate
+ * fetches across instances are a bandwidth cost we accept; false "this video has
+ * no captions" shown to a teacher is not.
+ */
+const inFlight = new Map<string, Promise<TranscriptOutcome>>();
 
 /**
- * Drops the single-flight claim so the next caller may fetch immediately.
- *
- * Exists for **opportunistic warming only**, and exists because warming
- * otherwise sabotages the thing it was built to help: the editor page warms on
- * open, the warm fails, and its claim then refuses the teacher's own "generate"
- * seconds later with "another attempt holds the claim". A background nicety must
- * never outrank an explicit human action.
- *
- * Deliberately NOT called on a real fetch failure. There the marker is the
- * throttle that stops the AI tutor re-hitting a blocked upstream on every
- * student question, which is the behaviour it was introduced for.
+ * Runs the upstream fetch and records its verdict. Never rejects — a throw here
+ * would reject every joined caller, and the whole point of sharing is that a
+ * joiner is no worse off than the caller that started it.
  */
-export async function releaseClaim(
+async function fetchAndRecord(
   client: SupabaseClient,
   youtubeId: string
-): Promise<void> {
-  await client
-    .from("videos")
-    .update({ transcript_fetch_started_at: null })
-    .eq("youtube_video_id", youtubeId);
-}
-
-/**
- * Returns the cached transcript for a canonical video, re-fetching from YouTube
- * when the Storage object is missing or `videos.fetched_at` is older than the
- * ~30-day TTL.
- *
- * Concurrency: a single-flight claim marker ensures only one concurrent reader
- * of a stale/missing object re-fetches; losers serve the stale object (or fall
- * back to null) rather than blocking or double-fetching. Status semantics: a
- * confirmed transcript → `ready`; a confirmed no-captions video → `unavailable`;
- * a transient/empty failure never downgrades an existing `ready`.
- *
- * The `videos` row must already exist (created by `ensureVideo` / the atomic
- * create); if it does not, this returns whatever is cached or null and does not
- * fetch (there is nothing to claim against).
- *
- * A recent `unavailable` verdict is trusted for `NEGATIVE_TTL_MS` and short-
- * circuits without an upstream call — see `isNegativeFresh`. Pass
- * `{ force: true }` for an EXPLICIT human retry (a teacher pressing "generate"),
- * which ignores that verdict and only has to beat a 30s floor. Automatic callers
- * — notably the AI tutor, which runs per student question — must leave it
- * `false` so they stay throttled.
- *
- * Requires a **service-role** client (writes the shared `videos` row + Storage).
- */
-export async function getTranscript(
-  client: SupabaseClient,
-  youtubeId: string,
-  opts: { force?: boolean } = {}
-): Promise<TranscriptResult | null> {
-  const force = opts.force === true;
-  const video = await readVideo(client, youtubeId);
-  const cached = await readCached(client, youtubeId);
-
-  if (isFresh(video) && cached) {
-    return { segments: cached.segments, language: cached.language };
-  }
-
-  // No canonical row → nothing to claim against; serve stale cache if any.
-  if (!video) {
-    return cached ? { segments: cached.segments, language: cached.language } : null;
-  }
-
-  // A recent "no usable captions" verdict stands, unless a human explicitly
-  // asked again. Without this the tutor re-fetches on every student question.
-  if (!force && isNegativeFresh(video)) {
-    // Logged only when it yields nothing, which is the case that reaches a user
-    // as a failure. Throttled hits that still serve a cached transcript are the
-    // mechanism working, and the tutor runs this per student question — logging
-    // those would bury the real failures.
-    if (!cached) log(youtubeId, "no fetch: recent unavailable verdict still stands");
-    return cached ? { segments: cached.segments, language: cached.language } : null;
-  }
-
-  const won = await claimFetch(
-    client,
-    youtubeId,
-    force ? FORCE_CLAIM_TTL_MS : CLAIM_TTL_MS
-  );
-  if (!won) {
-    // Loser: serve the stale object (or fall back) instead of double-fetching.
-    // Worth a line when it comes back empty: this is the one failure that makes
-    // NO upstream request, so without it the log shows a bare 409 and no cause.
-    if (!cached) log(youtubeId, "no fetch: another attempt holds the claim");
-    return cached ? { segments: cached.segments, language: cached.language } : null;
-  }
-
+): Promise<TranscriptOutcome> {
   try {
     const outcome = await fetchFreshTranscript(youtubeId);
 
@@ -307,39 +200,110 @@ export async function getTranscript(
       await writeCached(client, youtubeId, {
         segments: outcome.segments,
         language: outcome.language,
-        kind: outcome.kind,
       });
       await markReady(client, youtubeId);
-      return { segments: outcome.segments, language: outcome.language };
+      return { state: "ready", segments: outcome.segments, language: outcome.language };
     }
 
     if (outcome.status === "unavailable") {
-      // Traced as well as the failures: this verdict is sticky for two days and
-      // applies to every school, so it has to stay auditable after the fact.
+      // Traced as well as logged: this verdict is sticky for two days and applies
+      // to every school, so it has to stay auditable after the fact.
       log(
         youtubeId,
-        "confirmed no usable captions (page intact and playable)",
+        "confirmed no usable captions (player intact and playable)",
         outcome.trace
       );
       await markUnavailable(client, youtubeId);
-      return null;
+      return { state: "unavailable" };
     }
 
-    // Transient failure. Status/fetched_at stay untouched so a working `ready` is
-    // never downgraded — but the claim marker is deliberately LEFT IN PLACE. It
-    // doubles as the negative cache for this case: `unavailable` has fetched_at
-    // to age against, a transient failure has nothing, and the marker already
-    // carries a timestamp with a TTL. Automatic callers are therefore throttled
-    // for CLAIM_TTL_MS, while an explicit retry only has to beat the 30s force
-    // floor. A crashed fetch self-heals on the same expiry, exactly as before.
-    log(
-      youtubeId,
-      `transient failure reason=${outcome.reason} served_stale=${cached ? "yes" : "no"}`,
-      outcome.trace
-    );
-    return cached ? { segments: cached.segments, language: cached.language } : null;
+    // Transient. `transcript_status` / `fetched_at` stay untouched so a working
+    // `ready` is never downgraded by a fetch that merely failed to reach YouTube.
+    log(youtubeId, `transient failure reason=${outcome.reason}`, outcome.trace);
+    return { state: "failed", reason: outcome.reason };
   } catch (e) {
-    log(youtubeId, `threw: ${e instanceof Error ? e.message : String(e)}`);
-    return cached ? { segments: cached.segments, language: cached.language } : null;
+    const reason = e instanceof Error ? e.message : String(e);
+    log(youtubeId, `threw: ${reason}`);
+    return { state: "failed", reason };
   }
+}
+
+function sharedFetch(
+  client: SupabaseClient,
+  youtubeId: string
+): Promise<TranscriptOutcome> {
+  const existing = inFlight.get(youtubeId);
+  if (existing) return existing;
+  const started = fetchAndRecord(client, youtubeId).finally(() => {
+    inFlight.delete(youtubeId);
+  });
+  inFlight.set(youtubeId, started);
+  return started;
+}
+
+/** A cached object, as a `ready` outcome. */
+function readyFrom(cached: CachedTranscript): TranscriptOutcome {
+  return { state: "ready", segments: cached.segments, language: cached.language };
+}
+
+/**
+ * Returns the transcript for a canonical video, fetching from YouTube when the
+ * Storage object is missing or `videos.fetched_at` is older than the ~30-day TTL.
+ *
+ * Concurrency: callers on the same instance share one upstream fetch (see
+ * `inFlight`) — a student asking the tutor mid-warm waits for the warm's fetch
+ * rather than starting a second one or being told there is no transcript.
+ *
+ * Status semantics: a confirmed transcript → `ready`; a confirmed no-captions
+ * video → `unavailable`; a transient failure → `failed`, which never downgrades
+ * an existing `ready` and serves the stale object if there is one.
+ *
+ * The `videos` row must already exist (created by `create_video_and_quiz`); if it
+ * does not, this serves whatever is cached and does not fetch.
+ *
+ * A recent `unavailable` verdict is trusted for `NEGATIVE_TTL_MS` and short-
+ * circuits without an upstream call. Pass `{ force: true }` for an EXPLICIT human
+ * retry (a teacher pressing "generate") to ignore it. Automatic callers — notably
+ * the tutor, which runs per student question — must leave it `false`.
+ *
+ * Requires a **service-role** client (writes the shared `videos` row + Storage).
+ */
+export async function getTranscript(
+  client: SupabaseClient,
+  youtubeId: string,
+  opts: { force?: boolean } = {}
+): Promise<TranscriptOutcome> {
+  const force = opts.force === true;
+  const video = await readVideo(client, youtubeId);
+
+  // Storage is only read once a decision needs it. Reading it up front cost a
+  // full object download on every tutor question and on every negative-cache hit,
+  // to use ~8KB of it or none at all.
+  if (isFresh(video)) {
+    const cached = await readCached(client, youtubeId);
+    if (cached) return readyFrom(cached);
+  }
+
+  // No canonical row → nothing to fetch against; serve stale cache if any.
+  if (!video) {
+    const cached = await readCached(client, youtubeId);
+    return cached ? readyFrom(cached) : { state: "failed", reason: "no_video_row" };
+  }
+
+  // A recent "no usable captions" verdict stands, unless a human explicitly asked
+  // again. Without this the tutor re-fetches on every student question.
+  if (!force && isNegativeFresh(video)) {
+    const cached = await readCached(client, youtubeId);
+    if (cached) return readyFrom(cached);
+    return { state: "throttled" };
+  }
+
+  const outcome = await sharedFetch(client, youtubeId);
+
+  // A failed refresh must not lose a transcript we already hold.
+  if (outcome.state === "failed") {
+    const cached = await readCached(client, youtubeId);
+    if (cached) return readyFrom(cached);
+  }
+  return outcome;
 }

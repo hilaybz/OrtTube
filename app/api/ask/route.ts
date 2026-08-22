@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getTranscript } from "@/lib/transcriptCache";
+import { createRateLimiter } from "@/lib/rateLimit";
 import { sliceTranscriptToPlayhead } from "@/lib/transcript";
 import { resolveLanguage } from "@/lib/lang";
 import {
@@ -39,11 +40,8 @@ export const maxDuration = 60;
 
 const MAX_PROMPT_CHARS = 1000;
 
-// Per-user sliding-window rate limit. In-memory, so each serverless instance
-// counts separately — good enough to stop cost abuse at pilot scale; swap for a
-// shared store (e.g. Upstash) if the app grows.
-const RATE_WINDOW_MS = 60_000;
-const RATE_MAX_REQUESTS = 10;
+/** Per-user sliding-window rate limit, with its own buckets. */
+const isRateLimited = createRateLimiter({ windowMs: 60_000, max: 10 });
 
 /**
  * Lifetime tutor budget for one student on one assigned quiz, spanning EVERY
@@ -59,21 +57,6 @@ const RATE_MAX_REQUESTS = 10;
  * ever meet.
  */
 const MAX_QUESTIONS_PER_QUIZ = 200;
-const rateBuckets = new Map<string, number[]>();
-
-function isRateLimited(userId: string): boolean {
-  const now = Date.now();
-  const recent = (rateBuckets.get(userId) ?? []).filter(
-    (t) => now - t < RATE_WINDOW_MS
-  );
-  if (recent.length >= RATE_MAX_REQUESTS) {
-    rateBuckets.set(userId, recent);
-    return true;
-  }
-  recent.push(now);
-  rateBuckets.set(userId, recent);
-  return false;
-}
 
 interface AskBody {
   classId?: unknown;
@@ -331,8 +314,11 @@ export async function POST(req: NextRequest) {
   // ── Playhead-bounded transcript context (never beyond the playhead) ─────────
   let transcriptContext = "";
   try {
+    // Joins a fetch already running for this video rather than starting another —
+    // the student's quiz page warms on open, so a question asked moments later
+    // waits for that fetch instead of being answered ungrounded.
     const transcript = await getTranscript(service, ctxData.youtube_video_id);
-    if (transcript && transcript.segments.length > 0) {
+    if (transcript.state === "ready" && transcript.segments.length > 0) {
       transcriptContext = sliceTranscriptToPlayhead(
         transcript.segments,
         positionSeconds,

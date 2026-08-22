@@ -221,10 +221,10 @@ Three consequences:
   has no known caption state at the moment students start using it.
 - **Availability is decided per student request, so it differs between students
   in the same class.** The tutor route calls `getTranscript` on every question.
-  Whoever asks first triggers the fetch; if it succeeds the transcript is cached
-  and everyone after them gets a grounded tutor, and if it fails the claim marker
-  throttles the next callers for `CLAIM_TTL_MS` and they get nothing — without
-  even attempting. Over a longer horizon the TTL sweep deletes the object and the
+  Whoever asks first triggers the fetch; concurrent askers on the same instance
+  join it rather than starting their own, so they share its outcome. If it fails
+  they all get an ungrounded answer, and the next question re-attempts. Over a
+  longer horizon the TTL sweep deletes the object and the
   next request re-fetches, so a quiz that worked in September can stop working in
   October.
 
