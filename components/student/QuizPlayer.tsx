@@ -364,11 +364,31 @@ export function QuizPlayer({
     setPlayhead(seconds);
   }
 
+  /**
+   * The question card tightens exactly where the frame it sits in got smaller:
+   * from `xl` up with the tutor open, the video shares its width with the chat
+   * column. Below that the tutor is a sheet over a full-width video, so the
+   * card keeps its roomier proportions. Whatever is left over — a long prompt
+   * on a short screen — scrolls inside the frame rather than losing its heading
+   * and its submit button off both edges.
+   */
+  const tight = (base: string, atXl: string) => (chatOpen ? `${base} ${atXl}` : base);
+
   const overlay =
     current && atGate ? (
-      <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]">
-        <div className="quiz-pop glass w-full max-w-lg p-5">
-          <div className="mb-3 flex items-center justify-between gap-2">
+      <div
+        className={cn(
+          "absolute inset-0 z-30 flex overflow-y-auto overscroll-contain bg-black/55 p-3 backdrop-blur-[2px] sm:p-4",
+          chatOpen && "xl:p-3"
+        )}
+      >
+        <div className={cn("quiz-pop glass m-auto w-full max-w-lg", tight("p-5", "xl:p-3.5"))}>
+          <div
+            className={cn(
+              "flex items-center justify-between gap-2",
+              tight("mb-3", "xl:mb-2.5")
+            )}
+          >
             <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--fg-brand)]">
               נקודת עצירה · {mmss(current.position_seconds)}
               <Badge variant={current.kind === "multi" ? "brand" : "gray"} pill>
@@ -383,18 +403,28 @@ export function QuizPlayer({
               <Icon name="arrow" size={14} /> צפייה חוזרת בקטע
             </button>
           </div>
-          <h2 className="mb-1.5 text-lg font-semibold leading-snug">{current.prompt}</h2>
+          <h2
+            className={cn(
+              "mb-1.5 font-semibold leading-snug",
+              tight("text-lg", "xl:text-base")
+            )}
+          >
+            {current.prompt}
+          </h2>
           {/* How many answers to pick is said in words as well as shown in the
               control shape. Grading is exact-set-match, so a student who picks
               one answer on a multi-answer question loses the mark outright —
               this must not be something they have to infer. */}
-          <p className="mb-4 text-xs text-[var(--body-subtle)]">
+          <p className={cn("text-xs text-[var(--body-subtle)]", tight("mb-4", "xl:mb-3"))}>
             {current.kind === "multi"
               ? "בחרו את כל התשובות הנכונות"
               : "בחרו תשובה אחת"}
           </p>
           <div
-            className="mb-4 flex flex-col gap-2.5"
+            className={cn(
+              "flex flex-col",
+              tight("mb-4 gap-2.5", "xl:mb-3 xl:gap-1.5")
+            )}
             role={current.kind === "multi" ? "group" : "radiogroup"}
             aria-label={current.prompt}
           >
@@ -409,7 +439,8 @@ export function QuizPlayer({
                   role={single ? "radio" : "checkbox"}
                   aria-checked={active}
                   className={cn(
-                    "flex items-center gap-3 rounded-[var(--radius-d)] border p-3.5 text-start text-sm transition-colors",
+                    "flex items-center gap-3 rounded-[var(--radius-d)] border text-start text-sm transition-colors",
+                    tight("p-3.5", "xl:px-3 xl:py-2.5"),
                     active
                       ? "border-[var(--brand)] bg-[var(--brand-softer)] text-[var(--fg-brand-strong)]"
                       : "border-[var(--glass-border)] bg-white/50 hover:bg-white/70"
@@ -443,12 +474,13 @@ export function QuizPlayer({
     ) : null;
 
   return (
-    // The page grows wider only to hold the chat column, so the video keeps its
-    // usual size until there is a reason for it to give some up.
+    // The page grows wider to hold the chat column rather than taking the room
+    // out of the video: with both open the video is no smaller than it is on its
+    // own, so opening the tutor never shrinks what the student is watching.
     <div
       className={cn(
         "mx-auto flex w-full flex-col gap-3 py-4",
-        chatOpen ? "max-w-4xl min-[1100px]:max-w-6xl" : "max-w-4xl"
+        chatOpen ? "max-w-4xl xl:max-w-[84rem]" : "max-w-4xl"
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -466,18 +498,25 @@ export function QuizPlayer({
       {error && <Alert variant="danger">{error}</Alert>}
 
       {/* Video and tutor side by side once the chat is open and the viewport can
-          hold both: the video column shrinks by exactly the chat's width rather
-          than being covered by it, so watching and asking are the same activity
-          instead of two modes. Narrower than that, the chat is a sheet over the
-          page and this stays a single column. */}
+          hold both, so watching and asking are the same activity instead of two
+          modes. The pair is centred as a unit and the two columns are the same
+          height, so neither one trails off into empty page. Narrower than that,
+          the chat is a sheet over the page and this stays a single column. */}
       <div
         className={cn(
           "flex flex-col gap-3",
-          chatOpen &&
-            "min-[1100px]:grid min-[1100px]:grid-cols-[minmax(0,1fr)_380px] min-[1100px]:items-start min-[1100px]:gap-4"
+          chatOpen && "xl:flex-row xl:justify-center xl:gap-4"
         )}
       >
-        <div className="flex min-w-0 flex-col gap-3">
+        {/* The video takes whatever width is left, up to the width at which it
+            would grow taller than the screen — a video worth watching is one
+            you can see all of without scrolling, so height is what bounds it. */}
+        <div
+          className={cn(
+            "flex min-w-0 flex-col gap-3",
+            chatOpen && "xl:max-w-[calc((100dvh-15rem)*16/9)] xl:flex-1"
+          )}
+        >
           <VideoStage
             ref={stageRef}
             videoId={state.youtube_video_id}
@@ -516,10 +555,10 @@ export function QuizPlayer({
           )}
         </div>
 
-        {/* Sticky in the column layout so the conversation stays put while the
-            page scrolls; in sheet mode the panel is `fixed` and this wrapper is
-            just where it lives in the tree. */}
-        <div className={cn(chatOpen && "min-[1100px]:sticky min-[1100px]:top-4")}>
+        {/* A fixed-width column that stretches to the video's height, so the
+            panel is as tall as what it sits beside; in sheet mode the panel is
+            `fixed` and this wrapper is just where it lives in the tree. */}
+        <div className={cn(chatOpen && "xl:w-[20rem] xl:flex-none 2xl:w-[23rem]")}>
           <AskAI
             classId={classId}
             quizId={quizId}

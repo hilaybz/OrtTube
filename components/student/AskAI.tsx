@@ -82,15 +82,15 @@ export function AskAITrigger({
  * `MarkdownText`, which turns the model's light Markdown into elements rather
  * than showing raw `**asterisks**` (and never into HTML).
  *
- * Two shapes, one element. From 1100px up (the width where two columns still
- * leave the video worth watching — `min-[1100px]:` here and in `QuizPlayer`'s
- * grid, which have to agree) the panel is a real column in the page's flow,
- * sticky beside a video that shrank to make room:
- * nothing overlaps, nothing is dimmed, and the student can watch and ask at the
- * same time — which is the entire point of a tutor grounded in the part of the
- * video they have seen. Narrower than that there is no room for two columns, so
- * it slides in as a sheet over the page from the physical left (the nav rail is
- * on the right in this RTL app) with a scrim behind it.
+ * Two shapes, one element. From `xl` up (the width where two columns still
+ * leave the video worth watching — the same breakpoint drives `QuizPlayer`'s
+ * row, and the two have to agree) the panel is a real column in the page's
+ * flow, as tall as the video beside it: nothing overlaps, nothing is dimmed,
+ * and the student can watch and ask at the same time — which is the entire
+ * point of a tutor grounded in the part of the video they have seen. Narrower
+ * than that there is no room for two columns, so it slides in as a sheet over
+ * the page from the physical left (the nav rail is on the right in this RTL
+ * app) with a scrim behind it.
  *
  * `open` is owned by the caller for the same reason: the video column's width
  * depends on it, and a component cannot resize its sibling. The panel stays
@@ -213,7 +213,7 @@ export function AskAI({
           fully usable while the chat is open, so there is nothing to dim. */}
       <div
         className={cn(
-          "fixed inset-0 z-40 bg-black/30 transition-opacity min-[1100px]:hidden",
+          "fixed inset-0 z-40 bg-black/30 transition-opacity xl:hidden",
           open ? "opacity-100" : "pointer-events-none opacity-0"
         )}
         onClick={onClose}
@@ -230,10 +230,11 @@ export function AskAI({
           // Sheet: over the page, sliding in from the physical left.
           "fixed bottom-0 left-0 top-0 z-50 w-[min(420px,92vw)] rounded-none transition-transform duration-300",
           open ? "translate-x-0" : "-translate-x-full",
-          // Column: in the flow beside the video, sized by the grid cell the
-          // quiz page gives it, and never off-screen.
-          "min-[1100px]:relative min-[1100px]:bottom-auto min-[1100px]:left-auto min-[1100px]:top-auto min-[1100px]:z-auto min-[1100px]:h-[min(80vh,42rem)] min-[1100px]:w-full min-[1100px]:translate-x-0 min-[1100px]:rounded-[var(--radius)] min-[1100px]:transition-none",
-          !open && "min-[1100px]:hidden"
+          // Column: in the flow beside the video, filling the height of the
+          // column the quiz page gives it — the conversation ends where the
+          // video does — and never off-screen or taller than the viewport.
+          "xl:relative xl:bottom-auto xl:left-auto xl:top-auto xl:z-auto xl:h-full xl:min-h-[24rem] xl:max-h-[calc(100dvh-7rem)] xl:w-full xl:translate-x-0 xl:rounded-[var(--radius)] xl:transition-none",
+          !open && "xl:hidden"
         )}
       >
         <header className="flex items-center justify-between border-b border-[var(--glass-border-subtle)] p-4">
