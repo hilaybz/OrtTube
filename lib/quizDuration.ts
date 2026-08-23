@@ -62,3 +62,17 @@ export function formatQuizDuration(quiz: {
   if (!d) return null;
   return `${d.estimated ? "~" : ""}${d.minutes} דקות`;
 }
+
+/**
+ * The same length in the words a card chip has room for — `"~12 דק׳"`. `null`
+ * when nothing is known, so a caller can skip the chip rather than render an
+ * empty one.
+ */
+export function durationChipText(quiz: {
+  time_restricted: boolean;
+  duration_minutes: number | null;
+  duration_seconds: number | null;
+}): string | null {
+  const d = quizDurationMinutes(quiz);
+  return d ? `${d.estimated ? "~" : ""}${d.minutes} דק׳` : null;
+}

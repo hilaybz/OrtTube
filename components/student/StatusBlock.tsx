@@ -2,16 +2,15 @@ import { cn } from "@/components/ui/cn";
 import { Icon, type IconName } from "@/components/ui/Icon";
 
 /**
- * The one shape a student's "where does this quiz stand" line takes, wherever
- * it appears: an icon chip, a headline that answers the question, and a quiet
- * meta line with the detail behind it (a date, a wall-clock deadline).
+ * The panel form of a student's "where does this quiz stand": an icon chip, a
+ * headline that answers the question, and a quiet meta line with the detail
+ * behind it (a date, a wall-clock deadline).
  *
- * It exists because the answer differs per state but the reading shouldn't —
- * a finished quiz's grade, a missed one's closing date and an open one's
- * countdown all belong in the same slot of a card, at the same weight, so a
- * student scanning a feed compares them instead of re-learning each one. Only
- * the tone changes, and it carries meaning: green is done, amber is soon, red
- * is over, plain is "nothing pressing".
+ * This is the shape for a screen with room for it — the page that opens a quiz,
+ * where the countdown is a thing to look at. A feed card states the same fact
+ * in the tighter bar along its own bottom edge (`components/student/QuizCard`),
+ * and the two share their tone vocabulary so the reading carries over: green is
+ * done, amber is soon, red is over, plain is "nothing pressing".
  */
 export type StatusTone = "success" | "danger" | "warning" | "brand" | "neutral";
 

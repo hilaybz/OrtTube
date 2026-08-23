@@ -1,16 +1,16 @@
 /**
  * Unit tests for the student feed card's per-status derivations — badge, CTA,
- * attempts note, destination and status block — with no DB and no React.
+ * attempts chip, destination and status bar — with no DB and no React.
  *
  * `missed` appears only where it can: `QuizCard` renders its own fixed "פוספס"
- * badge and no CTA or attempts note for it (there is nothing to attempt), but it
- * does get a status block, so `feedStatus` covers it.
+ * badge and no CTA or attempts chip for it (there is nothing to attempt), but it
+ * does get a status bar, so `feedStatus` covers it.
  */
 import { describe, it, expect } from "vitest";
 import {
   badgeFor,
   ctaFor,
-  attemptsNote,
+  attemptsChipText,
   feedStatus,
   hrefFor,
 } from "@/components/student/QuizCard";
@@ -57,7 +57,7 @@ describe("badgeFor", () => {
     });
   });
 
-  it("completed → success, the state only; the grade is the status block's job", () => {
+  it("completed → success, the state only; the grade is the status bar's job", () => {
     const badge = badgeFor(
       item({ status: "completed", last_num_correct: 1, last_num_questions: 3 })
     );
@@ -99,15 +99,15 @@ describe("ctaFor", () => {
   });
 });
 
-describe("attemptsNote", () => {
+describe("attemptsChipText", () => {
   it("reports remaining vs. max when limited", () => {
-    expect(attemptsNote(item({ max_attempts: 3, attempts_left: 2 }))).toBe(
-      "נותרו 2 מתוך 3 ניסיונות"
+    expect(attemptsChipText(item({ max_attempts: 3, attempts_left: 2 }))).toBe(
+      "נותרו 2 מתוך 3"
     );
   });
 
   it("reports unlimited when max_attempts is null", () => {
-    expect(attemptsNote(item({ max_attempts: null }))).toBe("ניסיונות ללא הגבלה");
+    expect(attemptsChipText(item({ max_attempts: null }))).toBe("ללא הגבלה");
   });
 });
 
@@ -137,7 +137,7 @@ describe("hrefFor", () => {
 });
 
 /**
- * The status block's wording, at a fixed instant (11:00 Israeli time on Saturday
+ * The status bar's wording, at a fixed instant (11:00 Israeli time on Saturday
  * 14 March 2026) so "today" and "tomorrow" mean something stable.
  */
 describe("feedStatus", () => {

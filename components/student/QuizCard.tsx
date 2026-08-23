@@ -1,25 +1,31 @@
 import Link from "next/link";
-import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { QuizThumb, ThumbChip } from "@/components/ui/QuizThumb";
+import { cn } from "@/components/ui/cn";
 import type { StudentFeedItem } from "@/lib/classes";
 import { feedHeading } from "@/lib/studentFeedFilters";
-import { quizDurationMinutes } from "@/lib/quizDuration";
+import { durationChipText } from "@/lib/quizDuration";
 import { formatGrade, gradeOf } from "./grade";
-import { StatusBlock, type StatusTone } from "./StatusBlock";
+import type { StatusTone } from "./StatusBlock";
 import { formatDate } from "@/lib/datetime";
 import { deadlineView, URGENCY_TONE } from "./deadline";
 
-export function attemptsNote(item: StudentFeedItem): string {
+/**
+ * The attempt allowance, in the words a thumbnail chip has room for. The noun
+ * the sentence would spend its length on is carried by the chip's icon (and by
+ * that icon's label, for a reader who can't see it).
+ */
+export function attemptsChipText(item: StudentFeedItem): string {
   return item.max_attempts != null
-    ? `נותרו ${item.attempts_left} מתוך ${item.max_attempts} ניסיונות`
-    : "ניסיונות ללא הגבלה";
+    ? `נותרו ${item.attempts_left} מתוך ${item.max_attempts}`
+    : "ללא הגבלה";
 }
 
 /**
  * Badge shown on a not-started/in-progress/completed card (never `missed` — see
  * `QuizCard`). It names the state and nothing else: the grade a finished quiz
- * earned is the card's headline figure and belongs in the status block, where it
+ * earned is the card's headline figure and belongs in the status bar, where it
  * gets the room and the emphasis a grade deserves, rather than shrunk into a
  * corner pill that also has to carry the word "הושלם".
  */
@@ -72,10 +78,10 @@ export interface FeedStatus {
 }
 
 /**
- * The status block's content for one feed card — pure, so the wording of every
+ * The status bar's content for one feed card — pure, so the wording of every
  * state can be pinned by unit tests rather than read off a rendered card.
  *
- * Each status answers a different question, and the block answers whichever one
+ * Each status answers a different question, and the bar answers whichever one
  * the student actually has: a finished quiz answers "what did I get?", a missed
  * one "when did I lose it?", and one still open "how long do I have?".
  */
@@ -119,65 +125,62 @@ export function feedStatus(item: StudentFeedItem, now: Date = new Date()): FeedS
   };
 }
 
-function ClassTeacherLine({ item }: { item: StudentFeedItem }) {
-  return (
-    <p className="text-xs text-[var(--body-subtle)]">
-      {item.class_name}
-      {item.teacher_name && ` · ${item.teacher_name}`}
-    </p>
-  );
-}
+/**
+ * The status bar's tint. Same vocabulary as `StatusBlock`'s — green is done,
+ * amber is soon, red is over, and "nothing pressing" is a plain strip that
+ * still reads as the card's base — but without a border of its own: the bar
+ * runs edge to edge along the bottom of the card, so the card's own outline is
+ * the only frame it needs.
+ */
+const BAR_TONE: Record<StatusTone, string> = {
+  success: "bg-[var(--success-soft)] text-[var(--fg-success)]",
+  danger: "bg-[var(--danger-soft)] text-[var(--fg-danger)]",
+  warning: "bg-[var(--warning-soft)] text-[var(--fg-warning)]",
+  brand: "bg-[var(--brand-softer)] text-[var(--fg-brand-strong)]",
+  neutral: "bg-white/45 text-[var(--body)]",
+};
 
 /**
- * Length and attempt allowance on one quiet line — two small facts that used to
- * take a paragraph each. The duration half omits itself when nothing can be
- * shown (an unrestricted quiz whose video length isn't known yet — see
- * `lib/quizDuration.ts`).
+ * The card's footer: where this quiz stands, and what opening it will do.
+ *
+ * It is a full-bleed strip rather than a padded box floating in the body, and
+ * that is what keeps a grid of cards from looking hollow — cards in a row are
+ * stretched to the tallest one, and any slack now falls inside the body above a
+ * bar that is anchored to the card's bottom edge, instead of opening a visible
+ * gap between two stacked boxes.
+ *
+ * The status keeps the colour that means something; the call to action stays
+ * brand green in every tone, because it answers a different question ("what
+ * happens if I click?") and should not change its answer with the weather.
  */
-function MetaLine({ item }: { item: StudentFeedItem }) {
-  const d = quizDurationMinutes(item);
+function StatusBar({ status, cta }: { status: FeedStatus; cta?: string }) {
   return (
-    <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--body-subtle)]">
-      {d && (
-        <>
-          <span>
-            {d.estimated && "~"}
-            <span className="tabular-nums">{d.minutes}</span> דקות
-          </span>
-          <span aria-hidden="true">·</span>
-        </>
+    <div
+      className={cn(
+        "flex items-center gap-2.5 px-4 py-2.5",
+        BAR_TONE[status.tone]
       )}
-      <span>{attemptsNote(item)}</span>
-    </p>
-  );
-}
-
-function Thumbnail({
-  youtubeVideoId,
-  badge,
-  interactive,
-}: {
-  youtubeVideoId: string;
-  badge: { text: string; variant: "brand" | "gray" | "success" | "danger" };
-  interactive: boolean;
-}) {
-  return (
-    <div className="relative aspect-video overflow-hidden rounded-t-[var(--radius)] bg-black">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`https://i.ytimg.com/vi/${youtubeVideoId}/hqdefault.jpg`}
-        alt=""
-        className={
-          interactive
-            ? "h-full w-full object-cover opacity-95 transition group-hover:scale-[1.03]"
-            : "h-full w-full object-cover opacity-60"
-        }
-      />
-      <span className="absolute end-2 top-2">
-        <Badge variant={badge.variant} pill>
-          {badge.text}
-        </Badge>
+    >
+      <Icon name={status.icon} size={16} className="flex-none" />
+      <span className="min-w-0 flex-1">
+        <span
+          className={cn(
+            "block truncate leading-tight",
+            status.strong ? "text-[15px] font-bold" : "text-[13px] font-semibold"
+          )}
+        >
+          {status.headline}
+        </span>
+        {status.meta && (
+          <span className="block truncate text-[11px] opacity-75">{status.meta}</span>
+        )}
       </span>
+      {cta && (
+        <span className="flex flex-none items-center gap-1 text-[13px] font-semibold text-[var(--fg-brand-strong)]">
+          {cta}
+          <Icon name="arrow" size={14} />
+        </span>
+      )}
     </div>
   );
 }
@@ -187,67 +190,85 @@ function Thumbnail({
  *  - `missed` — a closed allocation the student never attempted at all. There is
  *    no page to send them to (the player/results reads would raise
  *    `not_assigned` for a closed, never-started allocation), so this is a plain,
- *    non-interactive card — no attempts-left UI, since none exists for it.
+ *    non-interactive card — no attempts-left chip, since no allowance exists for
+ *    it, and no call to action, since there is nothing to act on.
  *  - everything else (`not_started`/`in_progress`/`completed`) — the clickable
- *    card, carrying the class + teacher name, the length/attempts line, and the
- *    status block for whichever question this state raises (see `feedStatus`).
+ *    card, opened by a stretched link over the whole surface.
  *
- * Both shapes end in the same status block rather than a stray sentence: it is
- * the part a student reads first, so it is the part with a surface, an icon and
- * a colour that means something.
+ * The frame is the app's shared quiz card (`components/ui/QuizThumb`): a flush
+ * 16:9 band that identifies the video, a body whose only prominent text is the
+ * title, and one status. The size facts a student weighs before starting — how
+ * long it runs, how many tries are left — ride on the band as chips rather than
+ * as body lines, so the body holds the title and the class and nothing else,
+ * and the whole card stays short enough for a row of them to be scanned rather
+ * than read.
+ *
+ * The title is clamped to two lines for the same reason: a three-line title on
+ * one card used to stretch every card in its row, and the extra height went to
+ * whitespace on all the others.
  */
 export function QuizCard({ item }: { item: StudentFeedItem }) {
   const heading = feedHeading(item);
   const status = feedStatus(item);
-
-  if (item.status === "missed") {
-    return (
-      <GlassCard className="flex h-full flex-col gap-3 p-0">
-        <Thumbnail
-          youtubeVideoId={item.youtube_video_id}
-          badge={{ text: "פוספס", variant: "danger" }}
-          interactive={false}
-        />
-        <div className="flex flex-1 flex-col gap-2 px-4 pb-4">
-          <h3 className="font-semibold text-[var(--heading)]">{heading}</h3>
-          <ClassTeacherLine item={item} />
-          <StatusBlock
-            className="mt-auto"
-            icon={status.icon}
-            tone={status.tone}
-            headline={status.headline}
-            meta={status.meta}
-          />
-        </div>
-      </GlassCard>
-    );
-  }
-
-  const badge = badgeFor(item);
-  const cta = ctaFor(item);
+  const missed = item.status === "missed";
+  const badge = missed
+    ? { text: "פוספס", variant: "danger" as const }
+    : badgeFor(item);
+  const duration = durationChipText(item);
 
   return (
-    <Link href={hrefFor(item)} className="group block focus-visible:outline-none">
-      <GlassCard interactive className="flex h-full flex-col gap-3 p-0">
-        <Thumbnail youtubeVideoId={item.youtube_video_id} badge={badge} interactive />
-        <div className="flex flex-1 flex-col gap-2 px-4 pb-4">
-          <h3 className="font-semibold text-[var(--heading)]">{heading}</h3>
-          <ClassTeacherLine item={item} />
-          <MetaLine item={item} />
-          <StatusBlock
-            className="mt-auto"
-            icon={status.icon}
-            tone={status.tone}
-            headline={status.headline}
-            meta={status.meta}
-            strong={status.strong}
-          />
-          <span className="inline-flex items-center gap-1.5 pt-0.5 text-sm font-medium text-[var(--fg-brand)]">
-            {cta}
-            <Icon name="arrow" size={16} />
-          </span>
-        </div>
-      </GlassCard>
-    </Link>
+    <div
+      className={cn(
+        "glass relative flex h-full flex-col",
+        !missed &&
+          "group transition-[transform,background-color] duration-200 hover:-translate-y-0.5 hover:bg-[var(--glass-bg-hover)]"
+      )}
+    >
+      {!missed && (
+        <Link
+          href={hrefFor(item)}
+          aria-label={`${ctaFor(item)} — ${heading}`}
+          className="absolute inset-0 z-10 rounded-[inherit]"
+        />
+      )}
+
+      <QuizThumb youtubeVideoId={item.youtube_video_id} playAffordance={!missed}>
+        {/* A missed quiz's still is washed out, so a glance separates what is
+            over from what is still open before any label is read. */}
+        {missed && <div className="absolute inset-0 bg-white/45" />}
+        <span className="absolute end-2 top-2">
+          <Badge variant={badge.variant} pill>
+            {badge.text}
+          </Badge>
+        </span>
+        {duration && (
+          <ThumbChip className="bottom-2 start-2">
+            <Icon name="clock" size={12} label="אורך" />
+            <span className="tabular-nums">{duration}</span>
+          </ThumbChip>
+        )}
+        {!missed && (
+          <ThumbChip className="bottom-2 end-2">
+            <Icon name="refresh" size={12} label="ניסיונות" />
+            {attemptsChipText(item)}
+          </ThumbChip>
+        )}
+      </QuizThumb>
+
+      <div className="flex flex-1 flex-col gap-1 p-4">
+        <h3
+          className="line-clamp-2 text-[15px] font-semibold leading-snug text-[var(--heading)]"
+          title={heading}
+        >
+          {heading}
+        </h3>
+        <p className="truncate text-xs text-[var(--body-subtle)]">
+          {item.class_name}
+          {item.teacher_name && ` · ${item.teacher_name}`}
+        </p>
+      </div>
+
+      <StatusBar status={status} cta={missed ? undefined : ctaFor(item)} />
+    </div>
   );
 }

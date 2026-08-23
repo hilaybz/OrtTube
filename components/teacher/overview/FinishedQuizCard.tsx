@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { withBackTarget } from "@/components/ui/backTarget";
-import { QuizThumb } from "@/components/teacher/QuizCard";
+import { QuizThumb, ThumbChip } from "@/components/ui/QuizThumb";
 import { closedAtMeta, quizHeading, type RecentlyFinishedQuiz } from "./aggregate";
 
 /**
@@ -42,14 +42,14 @@ export function FinishedQuizCard({
         {/* The thumbnail of a closed quiz is desaturated, so a glance at the
             row separates "over" from "running" before any label is read. */}
         <div className="absolute inset-0 bg-white/45" />
-        <span className="absolute bottom-2 start-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
+        <ThumbChip className="bottom-2 start-2">
           <Icon name="quiz" size={12} />
           <span className="tabular-nums">{quiz.questionCount}</span> שאלות
-        </span>
-        <span className="absolute top-2 start-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
+        </ThumbChip>
+        <ThumbChip className="top-2 start-2">
           <Icon name="checkCircle" size={12} />
           הסתיים
-        </span>
+        </ThumbChip>
       </QuizThumb>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
