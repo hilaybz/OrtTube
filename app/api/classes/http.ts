@@ -1,7 +1,5 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { ClassError } from "@/lib/classes";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { err, requireAuth } from "../http";
 
 /**
  * Shared HTTP plumbing for the `/api/classes/*` route handlers.
@@ -11,9 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * same code the DB raised.
  */
 
-export function err(code: string, message: string, status: number) {
-  return NextResponse.json({ error: { code, message } }, { status });
-}
+export { err, requireAuth };
 
 /** Map a stable ClassError code to an HTTP status. */
 export function statusForCode(code: string): number {
@@ -56,22 +52,4 @@ export function handleError(e: unknown) {
 export function isValidIsoOrNull(value: unknown): boolean {
   if (value === null) return true;
   return typeof value === "string" && !Number.isNaN(Date.parse(value));
-}
-
-/**
- * Resolve the signed-in user + RLS-subject client, or an early 401 response.
- * Returns a discriminated result so callers can `if ("response" in ...) return`.
- */
-export async function requireAuth(): Promise<
-  | { client: SupabaseClient; userId: string; response?: undefined }
-  | { response: NextResponse; client?: undefined; userId?: undefined }
-> {
-  const client = (await createClient()) as unknown as SupabaseClient;
-  const {
-    data: { user },
-  } = await client.auth.getUser();
-  if (!user) {
-    return { response: err("unauthorized", "Sign in required", 401) };
-  }
-  return { client, userId: user.id };
 }

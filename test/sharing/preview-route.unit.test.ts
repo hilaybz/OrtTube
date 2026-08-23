@@ -12,9 +12,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-const getUserMock = vi.fn();
+const getClaimsMock = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
-  createClient: async () => ({ auth: { getUser: getUserMock } }),
+  createClient: async () => ({ auth: { getClaims: getClaimsMock } }),
 }));
 
 const getQuizForPreviewMock = vi.fn();
@@ -33,7 +33,7 @@ const TEACHER_ID = "teacher-uuid";
 const QUIZ_ID = "quiz-1";
 
 function signedIn(): void {
-  getUserMock.mockResolvedValue({ data: { user: { id: TEACHER_ID } } });
+  getClaimsMock.mockResolvedValue({ data: { claims: { sub: TEACHER_ID } } });
 }
 
 function previewQuiz(quizId = QUIZ_ID) {
@@ -43,7 +43,7 @@ function previewQuiz(quizId = QUIZ_ID) {
 
 describe("GET /api/quizzes/[id]/preview", () => {
   beforeEach(() => {
-    getUserMock.mockReset();
+    getClaimsMock.mockReset();
     getQuizForPreviewMock.mockReset();
   });
 
@@ -60,7 +60,7 @@ describe("GET /api/quizzes/[id]/preview", () => {
   });
 
   it("rejects an anonymous caller with 401 and never touches the RPC", async () => {
-    getUserMock.mockResolvedValue({ data: { user: null } });
+    getClaimsMock.mockResolvedValue({ data: null });
 
     const res = await previewQuiz();
 
