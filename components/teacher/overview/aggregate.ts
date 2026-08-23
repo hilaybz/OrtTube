@@ -1,4 +1,3 @@
-import type { ClassStats } from "@/lib/analytics";
 import type { ClassRow, AssignedQuiz } from "@/lib/classes";
 import { allocationState, type AllocationState } from "@/lib/allocationState";
 import { formatDate, schoolDayNumber } from "@/lib/datetime";
@@ -72,12 +71,12 @@ export interface OverviewTotals {
 }
 
 /**
- * Reduce one class into a `ClassSummary`: the roster size comes from
- * `class_stats`, the lifecycle split from that class's own allocation rows.
+ * Reduce one class into a `ClassSummary` from its roster size and its own
+ * allocation rows.
  *
- * The two sources fail independently and so degrade independently — a class
- * whose stats could not be read still shows a truthful quiz split, and a class
- * whose allocations could not be read still shows its roster.
+ * The two inputs are read separately and so degrade separately — a class whose
+ * roster could not be read still shows a truthful quiz split, and a class whose
+ * allocations could not be read still shows its roster.
  *
  * Each quiz has exactly one allocation per class, so counting allocation states
  * here is already a per-quiz count; no de-duplication is needed (unlike the
@@ -85,7 +84,7 @@ export interface OverviewTotals {
  */
 export function summarizeClass(
   klass: ClassRow,
-  stats: ClassStats | null,
+  memberCount: number,
   quizzes: readonly AssignedQuiz[],
   now: Date = new Date()
 ): ClassSummary {
@@ -99,7 +98,7 @@ export function summarizeClass(
   return {
     id: klass.id,
     name: klass.name,
-    memberCount: stats?.current_member_count ?? 0,
+    memberCount,
     activeQuizzes,
     finishedQuizzes,
   };

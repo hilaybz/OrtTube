@@ -4,11 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import {
   listMyClasses,
   listClassQuizzes,
+  countClassMembers,
   type ClassRow,
   type AssignedQuiz,
 } from "@/lib/classes";
 import { getMyProfile } from "@/lib/profile";
-import { getClassStats, type ClassStats } from "@/lib/analytics";
 import { listMyQuizzes, type MyQuiz } from "@/lib/quiz";
 import { listMyQuizAllocationTags, type QuizAllocationTags } from "@/lib/allocations";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -35,21 +35,22 @@ import {
  * The teacher's homepage: a greeting, cross-class KPI tiles, the quizzes that
  * just closed, the quizzes in play, and the classes themselves.
  *
- * There is no rollup RPC, so the page fans out per class — `class_stats` for
- * roster size, `list_class_quizzes` for the allocation windows every lifecycle
- * count (the KPI tiles, each class card's split) and the "recently finished"
- * row are derived from. Each
- * read is isolated so one owner/transient error degrades that class to "no
- * data" instead of sinking the page; failing to list classes at all degrades to
- * an Alert. Everything runs through the caller's session, so RLS applies.
+ * Roster sizes come from one batched membership read. There is no rollup RPC
+ * for the allocation windows, so those still fan out per class —
+ * `list_class_quizzes` feeds every lifecycle count (the KPI tiles, each class
+ * card's split) and the "recently finished" row. Each read is isolated so one
+ * owner/transient error degrades that class to "no data" instead of sinking the
+ * page; failing to list classes at all degrades to an Alert. Everything runs
+ * through the caller's session, so RLS applies.
  */
 export default async function DashboardPage() {
   const client = (await createClient()) as unknown as SupabaseClient;
   const now = new Date();
 
-  const [profile, classResult] = await Promise.all([
+  const [profile, classResult, allocatedQuizzes] = await Promise.all([
     loadGreetingName(client),
     loadClasses(client),
+    loadActiveQuizzes(client),
   ]);
 
   if (classResult.failed) {
@@ -88,16 +89,15 @@ export default async function DashboardPage() {
     );
   }
 
-  const [perClassStats, assignments, allocatedQuizzes] = await Promise.all([
-    loadClassStats(client, classes),
+  const [memberCounts, assignments] = await Promise.all([
+    loadMemberCounts(client, classes),
     loadAssignments(client, classes),
-    loadActiveQuizzes(client),
   ]);
 
   // `assignments` is built by mapping over `classes`, so index i is the same
   // class in both arrays — each summary pairs a class with its own allocations.
   const summaries = classes.map((c, i) =>
-    summarizeClass(c, perClassStats[i], assignments[i].quizzes, now)
+    summarizeClass(c, memberCounts.get(c.id) ?? 0, assignments[i].quizzes, now)
   );
   const totals = totalsFromSummaries(summaries, countQuizStates(assignments, now));
   const finished = recentlyFinishedQuizzes(assignments, now);
@@ -256,19 +256,19 @@ async function loadClasses(
   }
 }
 
-function loadClassStats(
+/** Roster sizes for every class in one read; a failure leaves every class at 0. */
+async function loadMemberCounts(
   client: SupabaseClient,
   classes: readonly ClassRow[]
-): Promise<(ClassStats | null)[]> {
-  return Promise.all(
-    classes.map(async (c) => {
-      try {
-        return await getClassStats(client, c.id);
-      } catch {
-        return null;
-      }
-    })
-  );
+): Promise<Map<string, number>> {
+  try {
+    return await countClassMembers(
+      client,
+      classes.map((c) => c.id)
+    );
+  } catch {
+    return new Map();
+  }
 }
 
 /** Per-class allocation rows — the source for both lifecycle counts and the

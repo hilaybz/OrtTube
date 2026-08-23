@@ -125,6 +125,36 @@ export async function listMyClasses(client: SupabaseClient): Promise<ClassRow[]>
   return (rows as unknown as ClassRow[]) ?? [];
 }
 
+/**
+ * Roster sizes for several classes at once, keyed by class id; a class with no
+ * members is absent from the map rather than zero.
+ *
+ * `class_stats` also reports a roster size, but it computes a full per-quiz
+ * analytics array alongside it — four correlated aggregates over every attempt
+ * of every assigned quiz — and it answers for one class per call. A caller that
+ * wants nothing but the head count for a list of classes pays that whole cost
+ * once per class. This reads the membership rows directly instead, in one round
+ * trip, and counts them here. `class_members_owner_select` confines the rows to
+ * classes the caller owns, so an id they don't own simply contributes nothing.
+ */
+export async function countClassMembers(
+  client: SupabaseClient,
+  classIds: readonly string[]
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (classIds.length === 0) return counts;
+  const rows = unwrap(
+    await client
+      .from("class_members")
+      .select("class_id")
+      .in("class_id", classIds as string[])
+  ) as unknown as { class_id: string }[] | null;
+  for (const row of rows ?? []) {
+    counts.set(row.class_id, (counts.get(row.class_id) ?? 0) + 1);
+  }
+  return counts;
+}
+
 // ── Roster (RPC) ──────────────────────────────────────────────────────────────
 
 export type AddStudentResult =

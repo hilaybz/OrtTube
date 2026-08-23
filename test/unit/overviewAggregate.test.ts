@@ -10,7 +10,6 @@ import {
   type ClassAssignments,
 } from "@/components/teacher/overview/aggregate";
 import type { ClassRow, AssignedQuiz } from "@/lib/classes";
-import type { ClassStats } from "@/lib/analytics";
 import { formatDate } from "@/lib/datetime";
 
 const NOW = new Date("2026-08-20T09:00:00.000Z");
@@ -48,28 +47,6 @@ function allocation(over: Partial<AssignedQuiz> & { quiz_id: string }): Assigned
   };
 }
 
-function stats(over: Partial<ClassStats> & { class_id: string }): ClassStats {
-  return { current_member_count: 0, quizzes: [], ...over };
-}
-
-function quizStat(over: Partial<ClassStats["quizzes"][number]> = {}) {
-  return {
-    quiz_id: "q",
-    title: null,
-    deleted: false,
-    content_updated_at: null,
-    excluded_attempt_count: 0,
-    tutor_mode: "hints" as const,
-    max_attempts: null,
-    attempt_count: 0,
-    completion_count: 0,
-    average_score: null,
-    members_completed: 0,
-    current_member_count: 0,
-    ...over,
-  };
-}
-
 describe("summarizeClass", () => {
   const live = allocation({
     quiz_id: "live",
@@ -88,11 +65,7 @@ describe("summarizeClass", () => {
   it("splits the class's own quizzes into active and finished, KPI semantics", () => {
     const summary = summarizeClass(
       klass("c1", "ט'1"),
-      stats({
-        class_id: "c1",
-        current_member_count: 28,
-        quizzes: [quizStat({ quiz_id: "live" }), quizStat({ quiz_id: "closed" })],
-      }),
+      28,
       [live, scheduled, closed, draft],
       NOW
     );
@@ -109,17 +82,12 @@ describe("summarizeClass", () => {
 
   it("keeps the roster when allocations could not be read", () => {
     expect(
-      summarizeClass(
-        klass("c1"),
-        stats({ class_id: "c1", current_member_count: 14 }),
-        [],
-        NOW
-      )
+      summarizeClass(klass("c1"), 14, [], NOW)
     ).toMatchObject({ memberCount: 14, activeQuizzes: 0, finishedQuizzes: 0 });
   });
 
-  it("keeps the quiz split when the class's stats could not be read", () => {
-    expect(summarizeClass(klass("c1"), null, [live, closed], NOW)).toMatchObject({
+  it("keeps the quiz split when the roster count could not be read", () => {
+    expect(summarizeClass(klass("c1"), 0, [live, closed], NOW)).toMatchObject({
       memberCount: 0,
       activeQuizzes: 1,
       finishedQuizzes: 1,
@@ -128,7 +96,7 @@ describe("summarizeClass", () => {
 
   it("agrees with the KPI row on the same single class", () => {
     const quizzes = [live, scheduled, closed, draft];
-    const summary = summarizeClass(klass("c1"), null, quizzes, NOW);
+    const summary = summarizeClass(klass("c1"), 0, quizzes, NOW);
     expect({
       openQuizzes: summary.activeQuizzes,
       finishedQuizzes: summary.finishedQuizzes,
@@ -184,8 +152,8 @@ describe("countQuizStates", () => {
 describe("totalsFromSummaries", () => {
   it("sums classes and students and carries the quiz-state counts through", () => {
     const summaries = [
-      summarizeClass(klass("c1"), stats({ class_id: "c1", current_member_count: 28 }), []),
-      summarizeClass(klass("c2"), stats({ class_id: "c2", current_member_count: 14 }), []),
+      summarizeClass(klass("c1"), 28, []),
+      summarizeClass(klass("c2"), 14, []),
     ];
     expect(
       totalsFromSummaries(summaries, { openQuizzes: 3, finishedQuizzes: 2 })
