@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getTranscript } from "@/lib/transcriptCache";
@@ -28,6 +28,14 @@ import { createRateLimiter } from "@/lib/rateLimit";
  * Returns 202 with an empty body: this is fire-and-forget, both callers ignore
  * the response, and a status field nobody reads is a field nobody notices is
  * wrong. The outcome is recorded on the video row and in the logs.
+ *
+ * The 202 is also sent BEFORE the fetch runs, via `after`. Awaiting the fetch
+ * first held the request open for as long as the work took — seconds, on a page
+ * that had just finished loading and was hydrating its player — for a response
+ * whose content nobody reads. `after` is what makes that honest: the platform
+ * keeps the invocation alive for the callback, so the work still completes,
+ * without a browser connection standing idle until it does. It does not make the
+ * fetch cheaper, only unobserved.
  *
  * Errors: `{ error: { code, message } }` with codes:
  *   unauthorized(401), not_found(404), forbidden(403), rate_limited(429),
@@ -124,7 +132,8 @@ export async function POST(
     // metered proxy bandwidth on something nobody can reach.
     if (ctx?.tutor_mode === "off") return accepted();
     if (typeof ctx?.youtube_video_id === "string") {
-      await warm(ctx.youtube_video_id);
+      const youtubeVideoId = ctx.youtube_video_id;
+      after(() => warm(youtubeVideoId));
       return accepted();
     }
     return err("not_found", "Quiz video not found", 404);
@@ -140,13 +149,16 @@ export async function POST(
   const v = video as { youtube_video_id: string } | null;
   if (!v) return err("not_found", "Quiz video not found", 404);
 
-  await warm(v.youtube_video_id);
+  after(() => warm(v.youtube_video_id));
   return accepted();
 }
 
 /**
  * Service client because the fetch writes back to `videos` and Storage, which a
  * student's own grants do not permit — the read above is what authorized this.
+ *
+ * Swallows its own failures rather than rejecting, because it runs detached from
+ * the response: there is no longer a caller left to hand an error to.
  */
 async function warm(youtubeVideoId: string): Promise<void> {
   try {

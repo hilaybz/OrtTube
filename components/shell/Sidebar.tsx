@@ -156,6 +156,14 @@ export function Sidebar({
                 <Link
                   key={item.href}
                   href={item.href}
+                  // Every nav target is a dynamic, session-scoped route, so a
+                  // prefetch cannot be served from the edge: it boots a function
+                  // and repeats the layout's auth reads to hand back a shell
+                  // worth under a kilobyte. With one of these links per page
+                  // view that is several invocations spent on pages the reader
+                  // mostly is not opening, competing with the navigation they
+                  // actually asked for.
+                  prefetch={false}
                   aria-current={active ? "page" : undefined}
                   className={navRowClass({ active, collapsed: !expanded })}
                 >

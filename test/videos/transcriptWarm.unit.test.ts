@@ -18,6 +18,19 @@ const getTranscript = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/transcriptCache", () => ({ getTranscript }));
 vi.mock("@/lib/supabase/service", () => ({ createServiceClient: () => ({}) }));
 
+/**
+ * The route answers 202 and does the fetch in `after`, so the work is detached
+ * from the response. Running the callback inline keeps every assertion below
+ * about what the route decided to do, which is the thing under test — the real
+ * `after` needs a request context these tests deliberately do not build.
+ */
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (fn: () => unknown) => {
+    void fn();
+  },
+}));
+
 const getUser = vi.hoisted(() => vi.fn());
 const from = vi.hoisted(() => vi.fn());
 const rpc = vi.hoisted(() => vi.fn());

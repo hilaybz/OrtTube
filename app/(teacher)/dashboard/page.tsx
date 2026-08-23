@@ -7,6 +7,7 @@ import {
   type ClassRow,
   type AssignedQuiz,
 } from "@/lib/classes";
+import { getMyProfile } from "@/lib/profile";
 import { getClassStats, type ClassStats } from "@/lib/analytics";
 import { listMyQuizzes, type MyQuiz } from "@/lib/quiz";
 import { listMyQuizAllocationTags, type QuizAllocationTags } from "@/lib/allocations";
@@ -232,23 +233,14 @@ function subtitleFor(openQuizzes: number): string {
 }
 
 /**
- * The teacher's own display name, for the greeting. Read directly (the
- * `profiles` self-select policy allows it) rather than through `getMyProfile`,
- * which intentionally does not carry the name; a failure just drops the name
- * from the greeting.
+ * The teacher's own display name, for the greeting. Comes off the same memoized
+ * profile the enclosing layout already read, so the name costs no extra round
+ * trip. A failure just drops the name from the greeting.
  */
 async function loadGreetingName(client: SupabaseClient): Promise<string | null> {
   try {
-    const {
-      data: { user },
-    } = await client.auth.getUser();
-    if (!user) return null;
-    const { data } = await client
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle();
-    return firstName((data as { display_name: string | null } | null)?.display_name ?? null);
+    const profile = await getMyProfile(client);
+    return firstName(profile?.display_name ?? null);
   } catch {
     return null;
   }
