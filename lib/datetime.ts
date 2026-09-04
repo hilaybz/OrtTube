@@ -55,22 +55,6 @@ export function formatDate(iso: string | Date): string {
   });
 }
 
-/**
- * "d.m" — the short form, for the one place a full date cannot fit: a chart's
- * x-axis, where thirty ticks share 460px at 11px type.
- *
- * Timezone-pinned like everything else here. The axis previously called
- * `toLocaleDateString` directly with no zone, so a late-evening completion could
- * be plotted on the wrong day.
- */
-export function formatDateShort(iso: string | Date): string {
-  return new Date(iso).toLocaleDateString(APP_LOCALE, {
-    day: "numeric",
-    month: "numeric",
-    timeZone: APP_TIME_ZONE,
-  });
-}
-
 /** "HH:mm" — a time with no date. */
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(APP_LOCALE, {

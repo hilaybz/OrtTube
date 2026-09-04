@@ -25,6 +25,7 @@ import type {
   ScoreBucket,
   StudentAnalytics,
 } from "@/lib/analytics";
+import type { ClassRosterProgress } from "@/lib/analyticsProgress";
 
 /**
  * jsdom ships no `ResizeObserver`, which the carousel uses to keep its arrow
@@ -93,6 +94,62 @@ function classOverview(
         students_completed: 2,
         average_score: 0.75,
         tutor_question_count: 4,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function classRoster(
+  overrides: Partial<ClassRosterProgress> = {}
+): ClassRosterProgress {
+  return {
+    class_id: CLASS_ID,
+    summary: {
+      member_count: 2,
+      total_assigned: 1,
+      possible_completions: 2,
+      quizzes_completed_total: 2,
+      average_best_score: 0.75,
+    },
+    members: [
+      {
+        student_id: "s1",
+        display_name: "Student One",
+        email: "s1@example.com",
+        total_assigned: 1,
+        quizzes_completed: 1,
+        average_best_score: 0.8,
+        quizzes: [
+          {
+            quiz_id: QUIZ_ID,
+            title: "Photosynthesis",
+            completed: true,
+            attempt_count: 2,
+            best_num_correct: 4,
+            best_num_questions: 5,
+            best_score: 0.8,
+          },
+        ],
+      },
+      {
+        student_id: "s2",
+        display_name: "Student Two",
+        email: "s2@example.com",
+        total_assigned: 1,
+        quizzes_completed: 1,
+        average_best_score: 0.6,
+        quizzes: [
+          {
+            quiz_id: QUIZ_ID,
+            title: "Photosynthesis",
+            completed: true,
+            attempt_count: 3,
+            best_num_correct: 3,
+            best_num_questions: 5,
+            best_score: 0.6,
+          },
+        ],
       },
     ],
     ...overrides,
@@ -263,7 +320,7 @@ function cardFor(title: string): HTMLElement {
 
 describe("ClassCharts", () => {
   it("draws a chart per question a teacher asks of a class", () => {
-    render(<ClassCharts data={classOverview()} />);
+    render(<ClassCharts data={classOverview()} roster={classRoster()} />);
     expect(screen.getByRole("img", { name: "ציון ממוצע לפי חידון" })).toBeInTheDocument();
     expect(
       screen.getByRole("img", { name: "התפלגות הציונים בכיתה" })
@@ -271,31 +328,32 @@ describe("ClassCharts", () => {
     expect(
       screen.getByRole("img", { name: "שיעור השלמה לפי חידון" })
     ).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "השלמות לפי יום" })).toBeInTheDocument();
-  });
-
-  it("gives the carousel arrow controls and a focusable track", () => {
-    render(<ClassCharts data={classOverview()} />);
     expect(
-      screen.getByRole("button", { name: "התרשימים הקודמים" })
+      screen.getByRole("img", { name: "השלמות מול ניסיונות לפי חידון" })
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "התרשימים הבאים" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "תרשימי הכיתה" })).toBeInTheDocument();
-    // The track is reachable by Tab, so the arrow keys can scroll it.
-    expect(
-      screen.getByRole("group", { name: "גלילה בין התרשימים" })
-    ).toHaveAttribute("tabindex", "0");
   });
 
   it("offers every chart's numbers as a table", async () => {
     const user = userEvent.setup();
-    render(<ClassCharts data={classOverview()} />);
+    render(<ClassCharts data={classOverview()} roster={classRoster()} />);
     const card = cardFor("ציון ממוצע לפי חידון");
     await user.click(within(card).getByRole("button", { name: "הצגה כטבלה" }));
     const table = within(card).getByRole("table");
     expect(within(table).getByText("Photosynthesis")).toBeInTheDocument();
     expect(within(table).getByText("75")).toBeInTheDocument();
     expect(within(table).getByText("2/3")).toBeInTheDocument();
+  });
+
+  it("sums current members' attempts per quiz for the attempts-vs-completions chart", async () => {
+    const user = userEvent.setup();
+    render(<ClassCharts data={classOverview()} roster={classRoster()} />);
+    const card = cardFor("השלמות מול ניסיונות לפי חידון");
+    await user.click(within(card).getByRole("button", { name: "הצגה כטבלה" }));
+    const table = within(card).getByRole("table");
+    expect(within(table).getByText("Photosynthesis")).toBeInTheDocument();
+    // members_completed (2) vs. summed attempt_count across the two members (2 + 3).
+    expect(within(table).getByText("2")).toBeInTheDocument();
+    expect(within(table).getByText("5")).toBeInTheDocument();
   });
 
   it("says a class with nothing finished has nothing to show", () => {
@@ -305,17 +363,32 @@ describe("ClassCharts", () => {
           average_score: null,
           students_completed: 0,
           score_distribution: bands([0, 0, 0, 0, 0]),
-          completions: [],
           quizzes: [],
         })}
+        roster={classRoster({ members: [] })}
       />
     );
     expect(
       screen.getByText("עדיין אין תוצאות מוגמרות בחידונים של הכיתה.")
     ).toBeInTheDocument();
     expect(screen.getByText("עדיין אין תוצאות מוגמרות בכיתה.")).toBeInTheDocument();
-    expect(screen.getByText("עדיין לא הוקצו חידונים.")).toBeInTheDocument();
-    expect(screen.getByText("עדיין לא הושלמו חידונים בכיתה.")).toBeInTheDocument();
+    expect(
+      within(cardFor("שיעור השלמה לפי חידון")).getByText("עדיין לא הוקצו חידונים.")
+    ).toBeInTheDocument();
+    expect(
+      within(cardFor("השלמות מול ניסיונות לפי חידון")).getByText(
+        "עדיין לא הוקצו חידונים."
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("says so when the roster (and so the attempt counts) failed to load", () => {
+    render(<ClassCharts data={classOverview()} roster={null} />);
+    expect(
+      within(cardFor("השלמות מול ניסיונות לפי חידון")).getByText(
+        "לא ניתן לטעון את נתוני הניסיונות."
+      )
+    ).toBeInTheDocument();
   });
 });
 

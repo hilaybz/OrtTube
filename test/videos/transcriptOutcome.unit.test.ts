@@ -92,6 +92,7 @@ beforeEach(() => {
   // answers a later one instantly and it never reaches the code it is checking.
   resetTranscriptMemoryCache();
   youtube.mockReset();
+  resetTranscriptMemoryCache();
 });
 
 describe("outcomes are never guesses", () => {
