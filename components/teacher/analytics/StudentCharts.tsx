@@ -1,6 +1,5 @@
 "use client";
 
-import { ChartCarousel, ChartSlide } from "./ChartCarousel";
 import { ChartCard } from "./ChartCard";
 import { ColumnChart } from "./ColumnChart";
 import { LineChart } from "./LineChart";
@@ -16,8 +15,8 @@ function shortTitle(title: string | null, index: number): string {
 }
 
 /**
- * One student's charts: how their grades have moved, and how each of those
- * grades sits against the class that took the same quiz.
+ * One student's charts, as a fixed 2×2 grid: how their grades have moved, and
+ * how each of those grades sits against the class that took the same quiz.
  *
  * The class average is a SERIES, not a reference line, because it moves per quiz
  * — a student can be above the class on one quiz and below on the next, and that
@@ -35,169 +34,167 @@ export function StudentCharts({ data }: { data: StudentAnalytics }) {
   const withTutorQuestions = data.quizzes.filter((q) => q.tutor_question_count > 0);
 
   return (
-    <ChartCarousel label="תרשימי התלמיד/ה">
-      <ChartSlide>
-        <ChartCard
-          title="מגמת ציונים"
-          hint="הציון האחרון בכל חידון, לפי סדר ההשלמה, מול ממוצע הכיתה"
-          legend={[
-            { label: STUDENT_LABEL, color: SERIES[0], shape: "line" },
-            { label: CLASS_LABEL, color: SERIES[1], shape: "line" },
-          ]}
-          empty={
-            completed.length < 2
-              ? "צריך שני חידונים מוגמרים לפחות כדי להראות מגמה."
-              : undefined
-          }
-          table={{
-            head: ["חידון", STUDENT_LABEL, CLASS_LABEL],
-            rows: completed.map((q, i) => [
-              trendLabels[i],
-              grade(q.latest_score),
-              grade(q.class_average_score),
-            ]),
-          }}
-        >
-          <LineChart
-            ariaLabel="מגמת ציונים מול ממוצע הכיתה"
-            categories={trendLabels}
-            max={1}
-            formatValue={(v) => grade(v)}
-            series={[
-              {
-                label: STUDENT_LABEL,
-                color: SERIES[0],
-                values: completed.map((q) =>
-                  q.latest_score == null ? null : Number(q.latest_score)
-                ),
-              },
-              {
-                label: CLASS_LABEL,
-                color: SERIES[1],
-                values: completed.map((q) =>
-                  q.class_average_score == null
-                    ? null
-                    : Number(q.class_average_score)
-                ),
-              },
-            ]}
-          />
-        </ChartCard>
-      </ChartSlide>
-
-      <ChartSlide>
-        <ChartCard
-          title="ציון ממוצע לפי כיתה"
-          hint="הממוצע של התלמיד/ה מול ממוצע הכיתה, בכל כיתה"
-          legend={[
-            { label: STUDENT_LABEL, color: SERIES[0] },
-            { label: CLASS_LABEL, color: SERIES[1] },
-          ]}
-          empty={classes.length === 0 ? "התלמיד/ה אינו/ה רשום/ה לכיתה." : undefined}
-          table={{
-            head: ["כיתה", STUDENT_LABEL, CLASS_LABEL],
-            rows: classes.map((c) => [
-              c.name,
-              grade(c.average_score),
-              grade(c.class_average_score),
-            ]),
-          }}
-        >
-          <ColumnChart
-            ariaLabel="ציון ממוצע לפי כיתה, מול ממוצע הכיתה"
-            categories={classes.map((c) => c.name)}
-            max={1}
-            formatValue={(v) => grade(v)}
-            series={[
-              {
-                label: STUDENT_LABEL,
-                color: SERIES[0],
-                values: classes.map((c) =>
-                  c.average_score == null ? null : Number(c.average_score)
-                ),
-              },
-              {
-                label: CLASS_LABEL,
-                color: SERIES[1],
-                values: classes.map((c) =>
-                  c.class_average_score == null
-                    ? null
-                    : Number(c.class_average_score)
-                ),
-              },
-            ]}
-          />
-        </ChartCard>
-      </ChartSlide>
-
-      <ChartSlide>
-        <ChartCard
-          title="שיעור השלמה לפי כיתה"
-          hint="כמה מהחידונים שהוקצו הושלמו"
-          empty={classes.length === 0 ? "התלמיד/ה אינו/ה רשום/ה לכיתה." : undefined}
-          table={{
-            head: ["כיתה", "הושלמו", "שיעור"],
-            rows: classes.map((c) => [
-              c.name,
-              `${c.quizzes_completed}/${c.total_assigned}`,
-              pct(
-                c.total_assigned > 0 ? c.quizzes_completed / c.total_assigned : null
+    <div
+      aria-label="תרשימי התלמיד/ה"
+      className="grid grid-cols-1 gap-4 lg:grid-cols-2"
+    >
+      <ChartCard
+        title="מגמת ציונים"
+        hint="הציון האחרון בכל חידון, לפי סדר ההשלמה, מול ממוצע הכיתה"
+        legend={[
+          { label: STUDENT_LABEL, color: SERIES[0], shape: "line" },
+          { label: CLASS_LABEL, color: SERIES[1], shape: "line" },
+        ]}
+        empty={
+          completed.length < 2
+            ? "צריך שני חידונים מוגמרים לפחות כדי להראות מגמה."
+            : undefined
+        }
+        table={{
+          head: ["חידון", STUDENT_LABEL, CLASS_LABEL],
+          rows: completed.map((q, i) => [
+            trendLabels[i],
+            grade(q.latest_score),
+            grade(q.class_average_score),
+          ]),
+        }}
+      >
+        <LineChart
+          ariaLabel="מגמת ציונים מול ממוצע הכיתה"
+          categories={trendLabels}
+          max={1}
+          formatValue={(v) => grade(v)}
+          series={[
+            {
+              label: STUDENT_LABEL,
+              color: SERIES[0],
+              values: completed.map((q) =>
+                q.latest_score == null ? null : Number(q.latest_score)
               ),
-            ]),
-          }}
-        >
-          <ColumnChart
-            ariaLabel="שיעור השלמה לפי כיתה"
-            categories={classes.map((c) => c.name)}
-            max={1}
-            formatValue={(v) => pct(v)}
-            series={[
-              {
-                label: "שיעור השלמה",
-                color: SERIES[2],
-                values: classes.map((c) =>
-                  c.total_assigned > 0
-                    ? c.quizzes_completed / c.total_assigned
-                    : null
-                ),
-              },
-            ]}
-          />
-        </ChartCard>
-      </ChartSlide>
+            },
+            {
+              label: CLASS_LABEL,
+              color: SERIES[1],
+              values: completed.map((q) =>
+                q.class_average_score == null
+                  ? null
+                  : Number(q.class_average_score)
+              ),
+            },
+          ]}
+        />
+      </ChartCard>
 
-      <ChartSlide>
-        <ChartCard
-          title="שאלות ל-OrtAI לפי חידון"
-          hint="איפה התלמיד/ה נעזר/ה במורה ה-AI"
-          empty={
-            withTutorQuestions.length === 0
-              ? "התלמיד/ה עדיין לא שאל/ה את OrtAI."
-              : undefined
-          }
-          table={{
-            head: ["חידון", "שאלות"],
-            rows: withTutorQuestions.map((q, i) => [
-              shortTitle(q.title, i),
-              q.tutor_question_count,
-            ]),
-          }}
-        >
-          <ColumnChart
-            ariaLabel="שאלות ל-OrtAI לפי חידון"
-            categories={withTutorQuestions.map((q, i) => shortTitle(q.title, i))}
-            max={Math.max(1, ...withTutorQuestions.map((q) => q.tutor_question_count))}
-            formatValue={(v) => String(Math.round(v))}
-            series={[
-              {
-                label: "שאלות",
-                color: SERIES[1],
-                values: withTutorQuestions.map((q) => q.tutor_question_count),
-              },
-            ]}
-          />
-        </ChartCard>
-      </ChartSlide>
-    </ChartCarousel>
+      <ChartCard
+        title="ציון ממוצע לפי כיתה"
+        hint="הממוצע של התלמיד/ה מול ממוצע הכיתה, בכל כיתה"
+        legend={[
+          { label: STUDENT_LABEL, color: SERIES[0] },
+          { label: CLASS_LABEL, color: SERIES[1] },
+        ]}
+        empty={classes.length === 0 ? "התלמיד/ה אינו/ה רשום/ה לכיתה." : undefined}
+        table={{
+          head: ["כיתה", STUDENT_LABEL, CLASS_LABEL],
+          rows: classes.map((c) => [
+            c.name,
+            grade(c.average_score),
+            grade(c.class_average_score),
+          ]),
+        }}
+      >
+        <ColumnChart
+          ariaLabel="ציון ממוצע לפי כיתה, מול ממוצע הכיתה"
+          categories={classes.map((c) => c.name)}
+          max={1}
+          formatValue={(v) => grade(v)}
+          showCategoryLabels={false}
+          series={[
+            {
+              label: STUDENT_LABEL,
+              color: SERIES[0],
+              values: classes.map((c) =>
+                c.average_score == null ? null : Number(c.average_score)
+              ),
+            },
+            {
+              label: CLASS_LABEL,
+              color: SERIES[1],
+              values: classes.map((c) =>
+                c.class_average_score == null
+                  ? null
+                  : Number(c.class_average_score)
+              ),
+            },
+          ]}
+        />
+      </ChartCard>
+
+      <ChartCard
+        title="שיעור השלמה לפי כיתה"
+        hint="כמה מהחידונים שהוקצו הושלמו"
+        empty={classes.length === 0 ? "התלמיד/ה אינו/ה רשום/ה לכיתה." : undefined}
+        table={{
+          head: ["כיתה", "הושלמו", "שיעור"],
+          rows: classes.map((c) => [
+            c.name,
+            `${c.quizzes_completed}/${c.total_assigned}`,
+            pct(
+              c.total_assigned > 0 ? c.quizzes_completed / c.total_assigned : null
+            ),
+          ]),
+        }}
+      >
+        <ColumnChart
+          ariaLabel="שיעור השלמה לפי כיתה"
+          categories={classes.map((c) => c.name)}
+          max={1}
+          formatValue={(v) => pct(v)}
+          showCategoryLabels={false}
+          series={[
+            {
+              label: "שיעור השלמה",
+              color: SERIES[2],
+              values: classes.map((c) =>
+                c.total_assigned > 0
+                  ? c.quizzes_completed / c.total_assigned
+                  : null
+              ),
+            },
+          ]}
+        />
+      </ChartCard>
+
+      <ChartCard
+        title="שאלות ל-OrtAI לפי חידון"
+        hint="איפה התלמיד/ה נעזר/ה במורה ה-AI"
+        empty={
+          withTutorQuestions.length === 0
+            ? "התלמיד/ה עדיין לא שאל/ה את OrtAI."
+            : undefined
+        }
+        table={{
+          head: ["חידון", "שאלות"],
+          rows: withTutorQuestions.map((q, i) => [
+            shortTitle(q.title, i),
+            q.tutor_question_count,
+          ]),
+        }}
+      >
+        <ColumnChart
+          ariaLabel="שאלות ל-OrtAI לפי חידון"
+          categories={withTutorQuestions.map((q, i) => shortTitle(q.title, i))}
+          max={Math.max(1, ...withTutorQuestions.map((q) => q.tutor_question_count))}
+          formatValue={(v) => String(Math.round(v))}
+          showCategoryLabels={false}
+          series={[
+            {
+              label: "שאלות",
+              color: SERIES[1],
+              values: withTutorQuestions.map((q) => q.tutor_question_count),
+            },
+          ]}
+        />
+      </ChartCard>
+    </div>
   );
 }
