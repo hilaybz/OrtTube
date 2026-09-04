@@ -126,6 +126,21 @@ export async function listMyClasses(client: SupabaseClient): Promise<ClassRow[]>
 }
 
 /**
+ * This class's name (owner-RLS scoped), or `null` if it doesn't exist or isn't
+ * owned by the caller. A narrow read for callers that need a name to render
+ * before the heavier analytics RPCs (which also carry it) have resolved.
+ */
+export async function getClassName(
+  client: SupabaseClient,
+  classId: string
+): Promise<string | null> {
+  const row = unwrap(
+    await client.from("classes").select("name").eq("id", classId).maybeSingle()
+  );
+  return (row as { name: string } | null)?.name ?? null;
+}
+
+/**
  * Roster sizes for several classes at once, keyed by class id; a class with no
  * members is absent from the map rather than zero.
  *

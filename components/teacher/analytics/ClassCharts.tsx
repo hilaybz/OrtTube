@@ -105,7 +105,7 @@ export function ClassCharts({ data }: { data: ClassAnalyticsOverview }) {
     >
       <ChartCard
         title="ציון ממוצע לפי חידון"
-        hint="ממוצע הציון האחרון של כל תלמיד/ה, מתוך 100"
+        hint="ממוצע הכיתה, מתוך 100"
         empty={
           !anyScore ? "עדיין אין תוצאות מוגמרות בחידונים של הכיתה." : undefined
         }
