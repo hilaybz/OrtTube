@@ -58,6 +58,22 @@ export const ORDINAL_RAMP = [
   "#0d366b",
 ] as const;
 
+/**
+ * A five-hue categorical palette for the same score bands, low → high, used
+ * ONLY by the class-analytics grade-distribution donut
+ * (`ClassCharts.tsx`) — a deliberate, explicitly-requested deviation from
+ * `ORDINAL_RAMP` to match a supplied design reference. Unlike the rest of this
+ * file's palette, this one has not been run through the contrast/CVD
+ * validator; do not reuse it elsewhere without doing that pass.
+ */
+export const SCORE_BAND_COLORS = [
+  "#df6b78",
+  "#a98fe0",
+  "#efc24e",
+  "#57c39a",
+  "#6c97f0",
+] as const;
+
 /** Chart chrome. Recessive by design: the data is the only loud thing. */
 export const CHROME = {
   /** Hairline gridline, one step off the glass surface. */
@@ -129,6 +145,19 @@ export function yForValue(value: number, max: number): number {
 /** Render a 0..1 fraction as a whole-percent string, or an em dash when null. */
 export function pct(fraction: number | null | undefined): string {
   return fraction == null ? "—" : `${Math.round(fraction * 100)}%`;
+}
+
+/**
+ * Isolate a numeral-only string (a range like "80–100", a "range: count" pair)
+ * as its own left-to-right run, via Unicode bidi isolates rather than markup.
+ * Needed anywhere such a string can land inside RTL text or an RTL table cell
+ * with no adjacent Hebrew character to anchor it — without an anchor, the
+ * bidi algorithm has nothing to key its own base direction off of and can
+ * reorder the digits themselves (`"80–100"` rendering as `"100-80"`), not just
+ * the run's position.
+ */
+export function ltr(text: string): string {
+  return `⁦${text}⁩`;
 }
 
 /**

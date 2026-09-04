@@ -55,6 +55,7 @@ export function ColumnChart({
   formatValue,
   formatTick,
   ariaLabel,
+  showCategoryLabels = true,
 }: {
   categories: string[];
   series: ColumnSeries[];
@@ -64,6 +65,16 @@ export function ColumnChart({
   /** Axis ticks; defaults to `formatValue`. */
   formatTick?: (value: number) => string;
   ariaLabel: string;
+  /**
+   * Set `false` to drop the printed label under each column, relying on the
+   * hover/focus tooltip (and the table twin) to name a category instead. For
+   * many categories at once, a name under every column is what forces them
+   * narrow and truncated in the first place — dropping it lets the columns
+   * use the freed space rather than fight over it. The hit band and its
+   * `aria-label` are unaffected, so keyboard/screen-reader access doesn't
+   * regress.
+   */
+  showCategoryLabels?: boolean;
 }) {
   const [active, setActive] = useState<number | null>(null);
   const n = categories.length;
@@ -202,18 +213,20 @@ export function ColumnChart({
                 </text>
               )}
 
-              <text
-                x={cx}
-                y={BASELINE + 16}
-                textAnchor="middle"
-                fontSize={11}
-                fill={isActive ? CHROME.ink : CHROME.muted}
-                pointerEvents="none"
-              >
-                {category.length > maxChars
-                  ? `${category.slice(0, maxChars - 1)}…`
-                  : category}
-              </text>
+              {showCategoryLabels && (
+                <text
+                  x={cx}
+                  y={BASELINE + 16}
+                  textAnchor="middle"
+                  fontSize={11}
+                  fill={isActive ? CHROME.ink : CHROME.muted}
+                  pointerEvents="none"
+                >
+                  {category.length > maxChars
+                    ? `${category.slice(0, maxChars - 1)}…`
+                    : category}
+                </text>
+              )}
             </g>
           );
         })}

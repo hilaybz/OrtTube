@@ -4,7 +4,7 @@ import { ChartCard } from "./ChartCard";
 import { ColumnChart } from "./ColumnChart";
 import { DonutChart } from "./DonutChart";
 import { LineChart } from "./LineChart";
-import { ORDINAL_RAMP, SERIES, grade, pct } from "./chartTheme";
+import { SCORE_BAND_COLORS, SERIES, grade, ltr, pct } from "./chartTheme";
 import type { ClassAnalyticsOverview } from "@/lib/analytics";
 
 /** Widest day span drawn day-by-day; past it the series is aggregated by week. */
@@ -12,9 +12,9 @@ const MAX_DAILY_POINTS = 32;
 
 const DAY_LABEL: Intl.DateTimeFormatOptions = { day: "numeric", month: "numeric" };
 
-/** "0–20%" .. "80–100%" for a score band. */
+/** "0–20%" .. "80–100%" for a score band, isolated as an LTR run (see `ltr`). */
 function bandLabel(min: number, max: number): string {
-  return `${Math.round(min * 100)}–${Math.round(max * 100)}`;
+  return ltr(`${Math.round(min * 100)}–${Math.round(max * 100)}`);
 }
 
 /**
@@ -123,6 +123,7 @@ export function ClassCharts({ data }: { data: ClassAnalyticsOverview }) {
           categories={titles}
           max={1}
           formatValue={(v) => grade(v)}
+          showCategoryLabels={false}
           series={[
             {
               label: "ציון ממוצע",
@@ -144,8 +145,8 @@ export function ClassCharts({ data }: { data: ClassAnalyticsOverview }) {
             : undefined
         }
         legend={distributionLabels.map((label, i) => ({
-          label: `${label}: ${distributionCounts[i]}`,
-          color: ORDINAL_RAMP[i],
+          label: ltr(`${label}: ${distributionCounts[i]}`),
+          color: SCORE_BAND_COLORS[i],
         }))}
         table={{
           head: ["טווח ציונים", "תוצאות"],
@@ -160,7 +161,7 @@ export function ClassCharts({ data }: { data: ClassAnalyticsOverview }) {
           slices={distributionLabels.map((label, i) => ({
             label,
             value: distributionCounts[i],
-            color: ORDINAL_RAMP[i],
+            color: SCORE_BAND_COLORS[i],
           }))}
           centerLabel={String(distributionTotal)}
           centerSub="תוצאות"
@@ -186,6 +187,7 @@ export function ClassCharts({ data }: { data: ClassAnalyticsOverview }) {
           categories={titles}
           max={1}
           formatValue={(v) => pct(v)}
+          showCategoryLabels={false}
           series={[
             {
               label: "שיעור השלמה",
