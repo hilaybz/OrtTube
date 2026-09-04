@@ -11,7 +11,7 @@
  * client pins the whole decision table.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getTranscript } from "@/lib/transcriptCache";
+import { getTranscript, resetTranscriptMemoryCache } from "@/lib/transcriptCache";
 import { fetchFreshTranscript, type FetchOutcome } from "@/lib/transcript";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -88,6 +88,7 @@ function fakeStack(init: { row?: VideoRow | null; cached?: unknown } = {}) {
 
 beforeEach(() => {
   youtube.mockReset();
+  resetTranscriptMemoryCache();
 });
 
 describe("outcomes are never guesses", () => {
