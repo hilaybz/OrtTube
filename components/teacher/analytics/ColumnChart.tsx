@@ -197,6 +197,32 @@ export function ColumnChart({
                 );
               })}
 
+              {/*
+                A slot with no value still gets a mark — a bare gap with no
+                category label under it (see `showCategoryLabels`) reads as a
+                broken chart rather than "no data for this one", especially
+                once there's nothing printed nearby to say which category it
+                even is.
+              */}
+              {series.map((s, si) => {
+                const value = s.values[i];
+                if (value != null) return null;
+                const x = cx - groupWidth / 2 + si * (colWidth + 2);
+                return (
+                  <rect
+                    key={`${s.label}-empty`}
+                    x={x}
+                    y={BASELINE - 2}
+                    width={colWidth}
+                    height={2}
+                    rx={1}
+                    fill={CHROME.muted}
+                    opacity={active == null || isActive ? 0.6 : 0.35}
+                    pointerEvents="none"
+                  />
+                );
+              })}
+
               {directLabels && series[0].values[i] != null && (
                 <text
                   x={cx}
