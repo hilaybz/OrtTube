@@ -159,7 +159,7 @@ describe("feedStatus", () => {
       tone: "success",
       headline: "ציון 33",
       strong: true,
-      meta: "הוגש ב-10.3",
+      meta: "הוגש ב-10/03/2026",
     });
   });
 
@@ -182,7 +182,7 @@ describe("feedStatus", () => {
       icon: "closeCircle",
       tone: "danger",
       headline: "לא הוגש",
-      meta: "נסגר ב-10.3",
+      meta: "נסגר ב-10/03/2026",
     });
   });
 
@@ -203,7 +203,7 @@ describe("feedStatus", () => {
     );
     expect(status.headline).toBe("בעוד 3 ימים");
     expect(status.tone).toBe("neutral");
-    expect(status.meta).toBe("מועד הגשה · 17.3 בשעה 18:00");
+    expect(status.meta).toBe("מועד הגשה · 17/03/2026 בשעה 18:00");
   });
 
   it("warns on tomorrow, and names the hour", () => {

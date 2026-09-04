@@ -22,13 +22,13 @@ import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import type { ClassRow } from "@/lib/classes";
 import type { QuizAllocation } from "@/lib/allocations";
-import { estimateQuizMinutes } from "@/lib/quizDuration";
+import { estimateQuizMinutes, formatVideoLength } from "@/lib/quizDuration";
 import { QuestionModal } from "./QuestionModal";
 import { AllocationsSection } from "./AllocationsSection";
 import { VideoPreviewPanel, type VideoPreviewPanelHandle } from "./VideoPreviewPanel";
 import { QuestionListItem } from "./QuestionListItem";
 import { updateQuizMeta, deleteQuestion, MutationError } from "./mutations";
-import { LANGUAGE_LABELS, formatTime } from "./format";
+import { LANGUAGE_LABELS } from "./format";
 import {
   analyticsAtRiskNotice,
   formatCutoffDate,
@@ -278,10 +278,20 @@ export function QuizEditor({
   // `null` until the player's first progress tick, so the "current time"
   // prefill button never claims a fabricated 0:00 before playback starts.
   const [currentTime, setCurrentTime] = useState<number | null>(null);
-  // The video's length, as the player reports it. `videos.duration_seconds` is
-  // null for most quizzes (the scrape that fills it is blocked), so the player
-  // is the only reliable source — and it only knows once it has booted.
-  const [duration, setDuration] = useState<number | null>(null);
+  // The video's length: what the database already knows, then whatever the
+  // player reports once it boots.
+  //
+  // This used to start at `null` and wait for the player, because the scrape
+  // that fills `videos.duration_seconds` was blocked by YouTube and the column
+  // was empty for most quizzes. That scrape now goes out through the proxy pool
+  // and works, so ignoring the stored value just means the header reads "ייקבע
+  // עם טעינת הנגן" until someone presses play on a length we already had.
+  //
+  // The player still wins when it answers — `onProgress` guards on `> 0`, so it
+  // can only ever replace this with a real measurement, never regress it.
+  const [duration, setDuration] = useState<number | null>(
+    initial.video.duration_seconds
+  );
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
   const videoPanelRef = useRef<VideoPreviewPanelHandle>(null);
   const cardRefs = useRef<Map<string, HTMLLIElement>>(new Map());
@@ -618,7 +628,7 @@ export function QuizEditor({
               {duration != null ? (
                 <>
                   אורך הסרטון{" "}
-                  <span className="tabular-nums">{formatTime(duration)}</span>
+                  <span className="tabular-nums">{formatVideoLength(duration)}</span>
                 </>
               ) : (
                 "אורך הסרטון ייקבע עם טעינת הנגן"

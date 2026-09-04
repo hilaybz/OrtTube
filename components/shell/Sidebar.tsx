@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/components/ui/cn";
@@ -83,6 +83,17 @@ export function Sidebar({
   // long left, and a pointer user keeps it open while focus sits elsewhere.
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  // Whether the focus about to arrive was caused by a pointer. A click on a nav
+  // row focuses it, and the row keeps that focus across the navigation because
+  // the rail never unmounts — so `focused` alone pinned the rail open for the
+  // rest of the session, long after the pointer had left. Only KEYBOARD focus
+  // should hold it open, which is what the rule was written for.
+  //
+  // `pointerdown` covers touch as well as mouse, so a tablet tap does not pin it
+  // either. `:focus-visible` would express this more directly, but jsdom returns
+  // false for it even on real keyboard focus, which would make the behaviour
+  // untestable and break the tab-through tests below it.
+  const viaPointer = useRef(false);
   // `expanded` only ever describes the `md`-and-up rail; the drawer below `md`
   // is labelled regardless, which is why every class it drives is `md:`-scoped.
   const expanded = hovered || focused;
@@ -101,7 +112,13 @@ export function Sidebar({
         data-expanded={expanded || undefined}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
-        onFocus={() => setFocused(true)}
+        onPointerDown={() => {
+          viaPointer.current = true;
+        }}
+        onFocus={() => {
+          if (!viaPointer.current) setFocused(true);
+          viaPointer.current = false;
+        }}
         onBlur={(e) => {
           // React's blur bubbles (it is `focusout`), so moving between two rows
           // inside the rail fires it too. Only a focus that landed outside the

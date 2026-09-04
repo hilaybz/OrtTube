@@ -65,7 +65,7 @@ describe("FinishedQuizCard", () => {
     // before closed "yesterday".
     render(<FinishedQuizCard quiz={quiz} now={new Date("2026-08-20T09:00:00.000Z")} />);
     expect(screen.getByText("נסגר אתמול")).toBeInTheDocument();
-    expect(screen.getByText("· 19.8")).toBeInTheDocument();
+    expect(screen.getByText("· 19/08/2026")).toBeInTheDocument();
     expect(screen.getByText("ט'1")).toBeInTheDocument();
   });
 

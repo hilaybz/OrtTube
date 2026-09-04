@@ -21,22 +21,36 @@
 export const APP_TIME_ZONE = "Asia/Jerusalem";
 export const APP_LOCALE = "he-IL";
 
-/** "D.M, HH:mm" — a scheduling-window bound. */
+/**
+ * Calendar dates render as `dd/mm/yyyy` everywhere in the app.
+ *
+ * The locale is `en-GB` rather than `APP_LOCALE` purely for its separator and
+ * ordering: `he-IL` numeric renders `5.8` with dots and no year, and a
+ * zero-padded slashed date is what was asked for. The digits are the same either
+ * way — Hebrew uses Western numerals — so nothing here is language-specific.
+ *
+ * Padded, not `numeric`: the dates sit in `tabular-nums` columns and rows of
+ * `5/8/2026` beside `15/12/2026` do not line up.
+ *
+ * `formatToday` deliberately keeps its long Hebrew form; it is a greeting, not a
+ * record.
+ */
+const DATE_LOCALE = "en-GB";
+const DATE_PARTS = {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+} as const;
+
+/** "dd/mm/yyyy, HH:mm" — a scheduling-window bound. */
 export function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(APP_LOCALE, {
-    day: "numeric",
-    month: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: APP_TIME_ZONE,
-  });
+  return `${formatDate(iso)}, ${formatTime(iso)}`;
 }
 
-/** "D.M" — a date with no time of day. */
-export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(APP_LOCALE, {
-    day: "numeric",
-    month: "numeric",
+/** "dd/mm/yyyy" — a date with no time of day. */
+export function formatDate(iso: string | Date): string {
+  return new Date(iso).toLocaleDateString(DATE_LOCALE, {
+    ...DATE_PARTS,
     timeZone: APP_TIME_ZONE,
   });
 }

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Icon } from "@/components/ui/Icon";
 import { getStudentAnalytics, type StudentAnalytics } from "@/lib/analytics";
+import { formatDate } from "@/lib/datetime";
 import type { Language } from "@/lib/lang";
 import { MetricRow, MetricTile } from "./MetricTile";
 import { StudentCharts } from "./StudentCharts";
@@ -23,12 +24,6 @@ const LANGUAGE_LABELS: Record<Language, string> = {
   he: "עברית",
   ar: "العربية",
   en: "English",
-};
-
-const JOINED_FORMAT: Intl.DateTimeFormatOptions = {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
 };
 
 /**
@@ -83,7 +78,7 @@ export async function StudentAnalyticsView({ studentId }: { studentId: string })
               <span className="inline-flex items-center gap-1">
                 <Icon name="calendar" size={14} />
                 הצטרף/ה ב-
-                {new Date(data.joined_at).toLocaleDateString("he-IL", JOINED_FORMAT)}
+                {formatDate(data.joined_at)}
               </span>
             )}
             {language && <Badge variant="gray">{language}</Badge>}

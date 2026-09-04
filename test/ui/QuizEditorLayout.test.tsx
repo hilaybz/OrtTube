@@ -205,7 +205,37 @@ describe("QuizEditor — page structure", () => {
     // "אורך הסרטון", not "משך" — the quiz's own duration is a separate,
     // teacher-controlled fact, set in the settings box above.
     const identity = screen.getByRole("heading", { level: 1 }).parentElement!;
-    expect(identity).toHaveTextContent("אורך הסרטון 10:00");
+    expect(identity).toHaveTextContent("אורך הסרטון 10 דקות");
+  });
+
+  it("shows a stored length immediately, without waiting for playback", async () => {
+    // `videos.duration_seconds` used to be empty for most quizzes because
+    // YouTube blocked the scrape that fills it, so the editor ignored the column
+    // and waited for the player. The scrape works through the proxy pool now, and
+    // a teacher who never presses play should not be told the length is pending
+    // when it is already known.
+    const withLength = quiz(2);
+    withLength.video.duration_seconds = 754; // 12:34
+
+    render(<QuizEditor initial={withLength} classes={[]} allocations={[]} />);
+
+    const identity = screen.getByRole("heading", { level: 1 }).parentElement!;
+    expect(identity).toHaveTextContent("אורך הסרטון 13 דקות");
+    expect(screen.queryByText(/אורך הסרטון ייקבע/)).not.toBeInTheDocument();
+  });
+
+  it("lets the player's measurement replace the stored one", async () => {
+    // The stored value can be stale or wrong; the player is measuring the actual
+    // stream. It must win, and `onProgress` guards on `> 0` so a booting player
+    // reporting nothing yet cannot blank a length we already had.
+    const withLength = quiz(2);
+    withLength.video.duration_seconds = 754;
+
+    render(<QuizEditor initial={withLength} classes={[]} allocations={[]} />);
+    await userEvent.click(screen.getByRole("button", { name: "report-ready" }));
+
+    const identity = screen.getByRole("heading", { level: 1 }).parentElement!;
+    expect(identity).toHaveTextContent("אורך הסרטון 10 דקות");
   });
 
   it("pages the question list instead of growing it without bound", async () => {

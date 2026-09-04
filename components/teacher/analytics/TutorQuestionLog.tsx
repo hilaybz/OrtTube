@@ -8,6 +8,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Select } from "@/components/ui/Select";
 import { Spinner } from "@/components/ui/Spinner";
 import { Pager } from "@/components/ui/Pager";
+import { formatDateTime } from "@/lib/datetime";
 import { usePagedRpc } from "@/components/ui/usePagedList";
 import type {
   TutorQuestionRow,
@@ -20,13 +21,6 @@ export interface TutorLogScope {
   quizId?: string;
   classId?: string;
 }
-
-const DATE_FORMAT: Intl.DateTimeFormatOptions = {
-  day: "numeric",
-  month: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-};
 
 /** "1:23" from a playhead position, or empty when the ask had no position. */
 function timestamp(seconds: number | null): string {
@@ -185,7 +179,7 @@ export function TutorQuestionLog({
                   )}
                   <span className="inline-flex items-center gap-1">
                     <Icon name="clock" size={14} />
-                    {new Date(row.created_at).toLocaleString("he-IL", DATE_FORMAT)}
+                    {formatDateTime(row.created_at)}
                   </span>
                   {timestamp(row.position_seconds) && (
                     <span className="inline-flex items-center gap-1">

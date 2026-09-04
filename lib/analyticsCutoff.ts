@@ -10,6 +10,7 @@
  * The copy never says "deleted", because nothing is: the rows survive, students
  * keep seeing their own results, and the figures simply stop counting them.
  */
+import { formatDate } from "./datetime";
 
 /** Hebrew count phrase for attempts currently feeding analytics. */
 function attemptsPhrase(count: number): string {
@@ -25,12 +26,18 @@ export function analyticsAtRiskNotice(count: number): string {
 export const ANALYTICS_RESET_CONSEQUENCE =
   "הנתונים לא נמחקים, אך הם יפסיקו להופיע בדוחות: תלמידים שכבר סיימו יופיעו כמי שלא התחילו, ואם מספר הניסיונות בכיתה מוגבל הם לא יוכלו לענות שוב.";
 
-/** A date as `d/m`, or `null` for a missing or unparseable timestamp. */
+/**
+ * The cutoff date, or `null` for a missing or unparseable timestamp.
+ *
+ * Delegates the formatting rather than doing its own: this used to call
+ * `toLocaleDateString` with no `timeZone`, which renders one day on Vercel
+ * (TZ=UTC) and another in an Israeli browser — a hydration mismatch, and the
+ * wrong date either way for a late-evening edit.
+ */
 export function formatCutoffDate(timestamp: string | null): string | null {
   if (!timestamp) return null;
-  const when = new Date(timestamp);
-  if (Number.isNaN(when.getTime())) return null;
-  return when.toLocaleDateString("he-IL", { day: "numeric", month: "numeric" });
+  if (Number.isNaN(new Date(timestamp).getTime())) return null;
+  return formatDate(timestamp);
 }
 
 /**

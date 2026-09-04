@@ -240,22 +240,22 @@ describe("presentation helpers", () => {
 
   it("formats a closing date in school-local time, not UTC", () => {
     // 22:30 UTC is already the next day in Jerusalem.
-    expect(formatDate("2026-08-25T22:30:00.000Z")).toBe("26.8");
+    expect(formatDate("2026-08-25T22:30:00.000Z")).toBe("26/08/2026");
   });
 
   it("phrases a closing time by school-local calendar days", () => {
     // NOW is 12:00 in Jerusalem on 20.8.
     expect(closedAtMeta("2026-08-20T05:00:00.000Z", NOW)).toEqual({
       phrase: "נסגר היום",
-      date: "20.8",
+      date: "20/08/2026",
     });
     expect(closedAtMeta("2026-08-19T20:00:00.000Z", NOW)).toEqual({
       phrase: "נסגר אתמול",
-      date: "19.8",
+      date: "19/08/2026",
     });
     expect(closedAtMeta("2026-08-17T10:00:00.000Z", NOW)).toEqual({
       phrase: "נסגר לפני 3 ימים",
-      date: "17.8",
+      date: "17/08/2026",
     });
   });
 
@@ -268,7 +268,7 @@ describe("presentation helpers", () => {
   it("drops the relative phrasing once it stops helping, keeping the date", () => {
     // A week out, "לפני 7 ימים" says less than the date itself does.
     expect(closedAtMeta("2026-08-13T10:00:00.000Z", NOW)).toEqual({
-      phrase: "נסגר ב־13.8",
+      phrase: "נסגר ב־13/08/2026",
       date: null,
     });
   });
