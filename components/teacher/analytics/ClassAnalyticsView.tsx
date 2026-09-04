@@ -60,9 +60,6 @@ export async function ClassAnalyticsView({ classId }: { classId: string }) {
   const openCount = overview.quizzes.filter(
     (q) => allocationState(q, now) === "live"
   ).length;
-  const scheduledCount = overview.quizzes.filter(
-    (q) => allocationState(q, now) === "scheduled"
-  ).length;
   const finishedCount = overview.quizzes.filter(
     (q) => allocationState(q, now) === "done"
   ).length;
@@ -91,16 +88,13 @@ export async function ClassAnalyticsView({ classId }: { classId: string }) {
         <MetricTile
           label="חידונים פעילים"
           value={openCount}
-          hint={
-            scheduledCount > 0
-              ? `מתוך ${overview.quiz_count} · ${scheduledCount} ייפתחו בקרוב`
-              : `מתוך ${overview.quiz_count} שהוקצו`
-          }
+          hint={`מתוך ${overview.quiz_count} שהוקצו`}
           icon="timer"
         />
         <MetricTile
           label="חידונים שהסתיימו"
           value={finishedCount}
+          hint={`מתוך ${overview.quiz_count} שהוקצו`}
           icon="checkCircle"
         />
         <MetricTile
