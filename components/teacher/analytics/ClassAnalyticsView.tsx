@@ -111,7 +111,7 @@ export async function ClassAnalyticsView({ classId }: { classId: string }) {
         />
       </MetricRow>
 
-      <ClassCharts data={overview} />
+      <ClassCharts data={overview} roster={roster} />
 
       {roster && <StudentActivityLeaderboard roster={roster} />}
 

@@ -3,70 +3,13 @@
 import { ChartCard } from "./ChartCard";
 import { ColumnChart } from "./ColumnChart";
 import { DonutChart } from "./DonutChart";
-import { LineChart } from "./LineChart";
 import { SCORE_BAND_COLORS, SERIES, grade, ltr, pct } from "./chartTheme";
 import type { ClassAnalyticsOverview } from "@/lib/analytics";
-
-/** Widest day span drawn day-by-day; past it the series is aggregated by week. */
-const MAX_DAILY_POINTS = 32;
-
-const DAY_LABEL: Intl.DateTimeFormatOptions = { day: "numeric", month: "numeric" };
+import type { ClassRosterProgress } from "@/lib/analyticsProgress";
 
 /** "0–20%" .. "80–100%" for a score band, isolated as an LTR run (see `ltr`). */
 function bandLabel(min: number, max: number): string {
   return ltr(`${Math.round(min * 100)}–${Math.round(max * 100)}`);
-}
-
-/**
- * Turn the sparse "days that had completions" list into a dense series the eye
- * can read as time. Empty days matter here — a flat stretch IS the finding — so
- * the gaps are filled with zeros rather than skipped, which would silently
- * compress a quiet fortnight into one step. Beyond a month the series is
- * aggregated into weeks so the axis stays legible instead of turning into a
- * picket fence.
- */
-function completionSeries(
-  completions: { day: string; count: number }[]
-): { labels: string[]; values: number[]; weekly: boolean } {
-  if (completions.length === 0) return { labels: [], values: [], weekly: false };
-
-  const byDay = new Map(completions.map((c) => [c.day, c.count]));
-  const days = completions.map((c) => new Date(`${c.day}T00:00:00Z`).getTime());
-  const first = Math.min(...days);
-  const last = Math.max(...days);
-  const DAY_MS = 86_400_000;
-  const span = Math.round((last - first) / DAY_MS) + 1;
-
-  const dense: { date: Date; count: number }[] = [];
-  for (let i = 0; i < span; i++) {
-    const date = new Date(first + i * DAY_MS);
-    dense.push({
-      date,
-      count: byDay.get(date.toISOString().slice(0, 10)) ?? 0,
-    });
-  }
-
-  if (dense.length <= MAX_DAILY_POINTS) {
-    return {
-      labels: dense.map((d) => d.date.toLocaleDateString("he-IL", DAY_LABEL)),
-      values: dense.map((d) => d.count),
-      weekly: false,
-    };
-  }
-
-  const weeks: { date: Date; count: number }[] = [];
-  for (let i = 0; i < dense.length; i += 7) {
-    const chunk = dense.slice(i, i + 7);
-    weeks.push({
-      date: chunk[0].date,
-      count: chunk.reduce((sum, d) => sum + d.count, 0),
-    });
-  }
-  return {
-    labels: weeks.map((w) => w.date.toLocaleDateString("he-IL", DAY_LABEL)),
-    values: weeks.map((w) => w.count),
-    weekly: true,
-  };
 }
 
 /** Shorten a quiz title to something a category label can carry. */
@@ -77,16 +20,39 @@ function shortTitle(title: string | null, index: number): string {
 }
 
 /**
+ * Total attempts (completed or not) logged against each quiz by CURRENT
+ * roster members, keyed by quiz id. Summed from the same per-member,
+ * per-quiz breakdown `RosterTable` already reads — no separate fetch.
+ */
+function attemptsByQuiz(roster: ClassRosterProgress | null): Map<string, number> {
+  const totals = new Map<string, number>();
+  if (!roster) return totals;
+  for (const member of roster.members) {
+    for (const q of member.quizzes) {
+      totals.set(q.quiz_id, (totals.get(q.quiz_id) ?? 0) + q.attempt_count);
+    }
+  }
+  return totals;
+}
+
+/**
  * The class's charts, as a fixed 2×2 grid: how the class scored per quiz, how
- * the grades are spread, how much of the class finished each quiz, and when
- * the work actually happened.
+ * the grades are spread, how much of the class finished each quiz, and how
+ * many attempts it actually took to get there.
  *
  * Every chart here reads the same `class_analytics_overview` payload the tables
  * below read, and every score in it comes from each student's latest completed
  * attempt — so a number in a chart and the same number in a table can never
  * disagree.
  */
-export function ClassCharts({ data }: { data: ClassAnalyticsOverview }) {
+export function ClassCharts({
+  data,
+  roster,
+}: {
+  data: ClassAnalyticsOverview;
+  /** For the attempts-vs-completions chart; that chart's empty when `null`. */
+  roster: ClassRosterProgress | null;
+}) {
   const quizzes = data.quizzes;
   const titles = quizzes.map((q, i) => shortTitle(q.title, i));
   const distributionLabels = data.score_distribution.map((b) =>
@@ -94,9 +60,10 @@ export function ClassCharts({ data }: { data: ClassAnalyticsOverview }) {
   );
   const distributionCounts = data.score_distribution.map((b) => b.count);
   const distributionTotal = distributionCounts.reduce((sum, c) => sum + c, 0);
-  const completion = completionSeries(data.completions);
-  const maxCompletions = Math.max(1, ...completion.values);
   const anyScore = quizzes.some((q) => q.average_score != null);
+  const attemptTotals = attemptsByQuiz(roster);
+  const attempts = quizzes.map((q) => attemptTotals.get(q.quiz_id) ?? 0);
+  const maxAttempts = Math.max(1, ...attempts, ...quizzes.map((q) => q.member_count));
 
   return (
     <div
@@ -201,31 +168,40 @@ export function ClassCharts({ data }: { data: ClassAnalyticsOverview }) {
       </ChartCard>
 
       <ChartCard
-        title={completion.weekly ? "השלמות לפי שבוע" : "השלמות לפי יום"}
-        hint="מתי התלמידים באמת סיימו חידונים"
+        title="השלמות מול ניסיונות לפי חידון"
+        hint="כמה ניסיונות הושקעו כדי להגיע להשלמות שבפועל — פער גדול מסגיר חידון קשה"
         empty={
-          completion.values.length === 0
-            ? "עדיין לא הושלמו חידונים בכיתה."
-            : undefined
+          roster == null
+            ? "לא ניתן לטעון את נתוני הניסיונות."
+            : quizzes.length === 0
+              ? "עדיין לא הוקצו חידונים."
+              : undefined
         }
+        legend={[
+          { label: "השלמות", color: SERIES[0] },
+          { label: "ניסיונות", color: SERIES[1] },
+        ]}
         table={{
-          head: [completion.weekly ? "שבוע" : "יום", "השלמות"],
-          rows: completion.labels.map((label, i) => [
-            label,
-            completion.values[i],
-          ]),
+          head: ["חידון", "השלמות", "ניסיונות"],
+          rows: quizzes.map((q, i) => [titles[i], q.members_completed, attempts[i]]),
         }}
       >
-        <LineChart
-          ariaLabel={completion.weekly ? "השלמות לפי שבוע" : "השלמות לפי יום"}
-          categories={completion.labels}
-          max={maxCompletions}
+        <ColumnChart
+          ariaLabel="השלמות מול ניסיונות לפי חידון"
+          categories={titles}
+          max={maxAttempts}
           formatValue={(v) => String(Math.round(v))}
+          showCategoryLabels={false}
           series={[
             {
               label: "השלמות",
               color: SERIES[0],
-              values: completion.values,
+              values: quizzes.map((q) => q.members_completed),
+            },
+            {
+              label: "ניסיונות",
+              color: SERIES[1],
+              values: attempts,
             },
           ]}
         />
