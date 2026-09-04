@@ -112,7 +112,12 @@ export function ClassCharts({
             : undefined
         }
         legend={distributionLabels.map((label, i) => ({
-          label: ltr(`${label}: ${distributionCounts[i]}`),
+          label: ltr(
+            `${label}: ${distributionCounts[i]}` +
+              (distributionTotal > 0
+                ? ` (${pct(distributionCounts[i] / distributionTotal)})`
+                : "")
+          ),
           color: SCORE_BAND_COLORS[i],
         }))}
         table={{
@@ -169,7 +174,7 @@ export function ClassCharts({
 
       <ChartCard
         title="השלמות מול ניסיונות לפי חידון"
-        hint="כמה ניסיונות הושקעו כדי להגיע להשלמות שבפועל — פער גדול מסגיר חידון קשה"
+        hint="פער גדול בין ניסיונות להשלמות מסגיר חידון קשה"
         empty={
           roster == null
             ? "לא ניתן לטעון את נתוני הניסיונות."
