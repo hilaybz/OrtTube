@@ -7,7 +7,6 @@ import { Icon } from "@/components/ui/Icon";
 import { Spinner } from "@/components/ui/Spinner";
 import { AnalyticsSearch } from "@/components/teacher/analytics/AnalyticsSearch";
 import { ClassAnalyticsView } from "@/components/teacher/analytics/ClassAnalyticsView";
-import { ClassQuizAnalyticsView } from "@/components/teacher/analytics/ClassQuizAnalyticsView";
 import { StudentAnalyticsView } from "@/components/teacher/analytics/StudentAnalyticsView";
 import { QuizAnalyticsView } from "@/components/teacher/analytics/QuizAnalyticsView";
 import { quizAnalyticsHref } from "@/components/teacher/analyticsLinks";
@@ -137,11 +136,7 @@ export default async function AnalyticsHubPage({
         {scope === "student" ? (
           <StudentAnalyticsView studentId={id} />
         ) : scope === "quiz" ? (
-          filterClassId ? (
-            <ClassQuizAnalyticsView classId={filterClassId} quizId={id} />
-          ) : (
-            <QuizAnalyticsView quizId={id} />
-          )
+          <QuizAnalyticsView quizId={id} classId={filterClassId} />
         ) : (
           <ClassAnalyticsView classId={id} />
         )}

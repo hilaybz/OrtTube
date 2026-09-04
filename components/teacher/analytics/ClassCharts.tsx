@@ -34,6 +34,19 @@ function shortTitle(title: string | null, index: number): string {
 }
 
 /**
+ * Has anyone actually engaged with this quiz? A completion, a score, or a bare
+ * attempt all count; an assignment nobody has opened does not.
+ */
+function hasActivity(quiz: ClassOverviewQuiz, attempts: number): boolean {
+  return (
+    attempts > 0 ||
+    quiz.members_completed > 0 ||
+    quiz.students_completed > 0 ||
+    quiz.average_score != null
+  );
+}
+
+/**
  * Total attempts (completed or not) logged against each quiz by CURRENT
  * roster members, keyed by quiz id. Summed from the same per-member,
  * per-quiz breakdown `RosterTable` already reads — no separate fetch.
@@ -54,6 +67,10 @@ function attemptsByQuiz(roster: ClassRosterProgress | null): Map<string, number>
  * the grades are spread, how much of the class finished each quiz, and how
  * many attempts it actually took to get there.
  *
+ * Only quizzes the class has actually started are plotted; the table below
+ * still lists every assignment, because a table is the roster of what was set
+ * while these charts are about what came back.
+ *
  * Every chart here reads the same `class_analytics_overview` payload the tables
  * below read, and every score in it comes from each student's latest completed
  * attempt — so a number in a chart and the same number in a table can never
@@ -68,7 +85,14 @@ export function ClassCharts({
   roster: ClassRosterProgress | null;
 }) {
   const now = new Date();
-  const quizzes = [...data.quizzes].sort(byAssignedAt);
+  const attemptTotals = attemptsByQuiz(roster);
+  // A quiz nobody has opened yet has nothing to plot in any of these charts, and
+  // a run of empty columns is what makes the ones that do carry a number hard to
+  // read. Filtered once for the whole grid rather than per chart, so a quiz keeps
+  // the same position in every one of them and the four stay comparable.
+  const quizzes = [...data.quizzes]
+    .filter((q) => hasActivity(q, attemptTotals.get(q.quiz_id) ?? 0))
+    .sort(byAssignedAt);
   const titles = quizzes.map((q, i) => shortTitle(q.title, i));
   const states = quizzes.map((q) => allocationState(q, now));
   const distributionLabels = data.score_distribution.map((b) =>
@@ -77,8 +101,14 @@ export function ClassCharts({
   const distributionCounts = data.score_distribution.map((b) => b.count);
   const distributionTotal = distributionCounts.reduce((sum, c) => sum + c, 0);
   const anyScore = quizzes.some((q) => q.average_score != null);
-  const attemptTotals = attemptsByQuiz(roster);
   const attempts = quizzes.map((q) => attemptTotals.get(q.quiz_id) ?? 0);
+
+  /** Nothing to plot — and which of the two reasons it is. */
+  function emptyReason(): string | undefined {
+    if (data.quizzes.length === 0) return "עדיין לא הוקצו חידונים.";
+    if (quizzes.length === 0) return "עדיין לא התחילו חידונים בכיתה.";
+    return undefined;
+  }
   const maxAttempts = Math.max(1, ...attempts, ...quizzes.map((q) => q.member_count));
 
   /** Solid once a quiz is done (the number is final); faded while it's still
@@ -171,7 +201,7 @@ export function ClassCharts({
       <ChartCard
         title="שיעור השלמה לפי חידון"
         hint="חלק הכיתה שסיים כל חידון — לפי סדר ההקצאה"
-        empty={quizzes.length === 0 ? "עדיין לא הוקצו חידונים." : undefined}
+        empty={emptyReason()}
         legend={stateLegend(SERIES[1])}
         table={{
           head: ["חידון", "מצב", "השלמות", "שיעור"],
@@ -206,11 +236,7 @@ export function ClassCharts({
         title="השלמות מול ניסיונות לפי חידון"
         hint="פער גדול בין ניסיונות להשלמות מסגיר חידון קשה"
         empty={
-          roster == null
-            ? "לא ניתן לטעון את נתוני הניסיונות."
-            : quizzes.length === 0
-              ? "עדיין לא הוקצו חידונים."
-              : undefined
+          roster == null ? "לא ניתן לטעון את נתוני הניסיונות." : emptyReason()
         }
         legend={[
           { label: "השלמות", color: SERIES[0] },
