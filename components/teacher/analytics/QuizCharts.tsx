@@ -87,19 +87,15 @@ export function QuizCharts({ data }: { data: QuizAnalyticsOverview }) {
             : undefined
         }
         legend={distributionLabels.map((label, i) => ({
-          label: ltr(
-            `${label}: ${distributionCounts[i]}` +
-              (distributionTotal > 0
-                ? ` (${pct(distributionCounts[i] / distributionTotal)})`
-                : "")
-          ),
+          label,
           color: SCORE_BAND_COLORS[i],
         }))}
         table={{
-          head: ["טווח ציונים", "תוצאות"],
+          head: ["טווח ציונים", "תוצאות", "אחוז"],
           rows: distributionLabels.map((label, i) => [
             label,
             distributionCounts[i],
+            pct(distributionTotal > 0 ? distributionCounts[i] / distributionTotal : null),
           ]),
         }}
       >
@@ -112,7 +108,9 @@ export function QuizCharts({ data }: { data: QuizAnalyticsOverview }) {
           }))}
           centerLabel={String(distributionTotal)}
           centerSub="תוצאות"
-          formatValue={(v) => String(Math.round(v))}
+          formatValue={(v) =>
+            `${Math.round(v)} (${pct(v / distributionTotal)})`
+          }
         />
       </ChartCard>
 

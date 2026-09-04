@@ -49,6 +49,21 @@
 /** Categorical series slots, in fixed assignment order. Never cycle past slot 3. */
 export const SERIES = ["#0b8f5d", "#2a78d6", "#4a3aa7"] as const;
 
+/**
+ * The same series hue at reduced opacity — for a bar whose value is still
+ * provisional (a quiz that's still open can gain more completions), next to
+ * others of the same colour that are settled. Same hue rather than a second
+ * colour on purpose: this is a state on top of the series' identity, not a
+ * second category, so it shouldn't spend the surface's limited hue budget.
+ */
+export function withAlpha(hex: string, alpha: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 /** One-hue ordinal ramp (light → dark) for the five ordered score bands. */
 export const ORDINAL_RAMP = [
   "#6da7ec",

@@ -3,9 +3,23 @@
 import { ChartCard } from "./ChartCard";
 import { ColumnChart } from "./ColumnChart";
 import { DonutChart } from "./DonutChart";
-import { SCORE_BAND_COLORS, SERIES, grade, ltr, pct } from "./chartTheme";
-import type { ClassAnalyticsOverview } from "@/lib/analytics";
+import {
+  SCORE_BAND_COLORS,
+  SERIES,
+  grade,
+  ltr,
+  pct,
+  withAlpha,
+} from "./chartTheme";
+import { allocationState } from "@/lib/allocationState";
+import { STATE_LABEL } from "@/components/teacher/scheduleFormat";
+import type { ClassAnalyticsOverview, ClassOverviewQuiz } from "@/lib/analytics";
 import type { ClassRosterProgress } from "@/lib/analyticsProgress";
+
+/** Oldest-assigned first, so a reader can read the bars as the term unfolded. */
+function byAssignedAt(a: ClassOverviewQuiz, b: ClassOverviewQuiz): number {
+  return new Date(a.assigned_at).getTime() - new Date(b.assigned_at).getTime();
+}
 
 /** "0–20%" .. "80–100%" for a score band, isolated as an LTR run (see `ltr`). */
 function bandLabel(min: number, max: number): string {
@@ -53,8 +67,10 @@ export function ClassCharts({
   /** For the attempts-vs-completions chart; that chart's empty when `null`. */
   roster: ClassRosterProgress | null;
 }) {
-  const quizzes = data.quizzes;
+  const now = new Date();
+  const quizzes = [...data.quizzes].sort(byAssignedAt);
   const titles = quizzes.map((q, i) => shortTitle(q.title, i));
+  const states = quizzes.map((q) => allocationState(q, now));
   const distributionLabels = data.score_distribution.map((b) =>
     bandLabel(Number(b.bucket_min), Number(b.bucket_max))
   );
@@ -65,6 +81,16 @@ export function ClassCharts({
   const attempts = quizzes.map((q) => attemptTotals.get(q.quiz_id) ?? 0);
   const maxAttempts = Math.max(1, ...attempts, ...quizzes.map((q) => q.member_count));
 
+  /** Solid once a quiz is done (the number is final); faded while it's still
+   *  live (more completions could still land and move it). */
+  function byState(base: string): string[] {
+    return states.map((s) => (s === "live" ? withAlpha(base, 0.45) : base));
+  }
+  const stateLegend = (base: string) => [
+    { label: STATE_LABEL.done, color: base },
+    { label: STATE_LABEL.live, color: withAlpha(base, 0.45) },
+  ];
+
   return (
     <div
       aria-label="תרשימי הכיתה"
@@ -72,14 +98,16 @@ export function ClassCharts({
     >
       <ChartCard
         title="ציון ממוצע לפי חידון"
-        hint="ממוצע הכיתה, מתוך 100"
+        hint="ממוצע הכיתה, מתוך 100 — לפי סדר ההקצאה"
         empty={
           !anyScore ? "עדיין אין תוצאות מוגמרות בחידונים של הכיתה." : undefined
         }
+        legend={stateLegend(SERIES[0])}
         table={{
-          head: ["חידון", "ציון ממוצע", "השלמות"],
+          head: ["חידון", "מצב", "ציון ממוצע", "השלמות"],
           rows: quizzes.map((q, i) => [
             titles[i],
+            STATE_LABEL[states[i]],
             grade(q.average_score),
             `${q.members_completed}/${q.member_count}`,
           ]),
@@ -95,6 +123,7 @@ export function ClassCharts({
             {
               label: "ציון ממוצע",
               color: SERIES[0],
+              colors: byState(SERIES[0]),
               values: quizzes.map((q) =>
                 q.average_score == null ? null : Number(q.average_score)
               ),
@@ -112,19 +141,15 @@ export function ClassCharts({
             : undefined
         }
         legend={distributionLabels.map((label, i) => ({
-          label: ltr(
-            `${label}: ${distributionCounts[i]}` +
-              (distributionTotal > 0
-                ? ` (${pct(distributionCounts[i] / distributionTotal)})`
-                : "")
-          ),
+          label,
           color: SCORE_BAND_COLORS[i],
         }))}
         table={{
-          head: ["טווח ציונים", "תוצאות"],
+          head: ["טווח ציונים", "תוצאות", "אחוז"],
           rows: distributionLabels.map((label, i) => [
             label,
             distributionCounts[i],
+            pct(distributionTotal > 0 ? distributionCounts[i] / distributionTotal : null),
           ]),
         }}
       >
@@ -137,18 +162,22 @@ export function ClassCharts({
           }))}
           centerLabel={String(distributionTotal)}
           centerSub="תוצאות"
-          formatValue={(v) => String(Math.round(v))}
+          formatValue={(v) =>
+            `${Math.round(v)} (${pct(v / distributionTotal)})`
+          }
         />
       </ChartCard>
 
       <ChartCard
         title="שיעור השלמה לפי חידון"
-        hint="חלק הכיתה שסיים כל חידון"
+        hint="חלק הכיתה שסיים כל חידון — לפי סדר ההקצאה"
         empty={quizzes.length === 0 ? "עדיין לא הוקצו חידונים." : undefined}
+        legend={stateLegend(SERIES[1])}
         table={{
-          head: ["חידון", "השלמות", "שיעור"],
+          head: ["חידון", "מצב", "השלמות", "שיעור"],
           rows: quizzes.map((q, i) => [
             titles[i],
+            STATE_LABEL[states[i]],
             `${q.members_completed}/${q.member_count}`,
             pct(q.member_count > 0 ? q.members_completed / q.member_count : null),
           ]),
@@ -164,6 +193,7 @@ export function ClassCharts({
             {
               label: "שיעור השלמה",
               color: SERIES[1],
+              colors: byState(SERIES[1]),
               values: quizzes.map((q) =>
                 q.member_count > 0 ? q.members_completed / q.member_count : null
               ),
