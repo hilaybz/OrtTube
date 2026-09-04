@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Badge } from "@/components/ui/Badge";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { IconButton } from "@/components/ui/IconButton";
 import { cn } from "@/components/ui/cn";
@@ -75,22 +76,21 @@ export function ChartCard({
       </div>
 
       {showLegend && (
-        <ul className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <ul className="flex flex-wrap items-center gap-2">
           {legend.map((entry) => (
-            <li
-              key={entry.label}
-              className="flex items-center gap-1.5 text-xs text-[var(--body)]"
-            >
-              <span
-                aria-hidden="true"
-                className="flex-none rounded-full"
-                style={
-                  entry.shape === "line"
-                    ? { background: entry.color, width: 14, height: 2 }
-                    : { background: entry.color, width: 10, height: 10 }
-                }
-              />
-              {entry.label}
+            <li key={entry.label}>
+              <Badge variant="gray" pill className="gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className="flex-none rounded-full"
+                  style={
+                    entry.shape === "line"
+                      ? { background: entry.color, width: 12, height: 2 }
+                      : { background: entry.color, width: 8, height: 8 }
+                  }
+                />
+                {entry.label}
+              </Badge>
             </li>
           ))}
         </ul>
