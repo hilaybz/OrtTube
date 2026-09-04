@@ -49,6 +49,21 @@
 /** Categorical series slots, in fixed assignment order. Never cycle past slot 3. */
 export const SERIES = ["#0b8f5d", "#2a78d6", "#4a3aa7"] as const;
 
+/**
+ * The same series hue at reduced opacity — for a bar whose value is still
+ * provisional (a quiz that's still open can gain more completions), next to
+ * others of the same colour that are settled. Same hue rather than a second
+ * colour on purpose: this is a state on top of the series' identity, not a
+ * second category, so it shouldn't spend the surface's limited hue budget.
+ */
+export function withAlpha(hex: string, alpha: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 /** One-hue ordinal ramp (light → dark) for the five ordered score bands. */
 export const ORDINAL_RAMP = [
   "#6da7ec",
@@ -56,6 +71,22 @@ export const ORDINAL_RAMP = [
   "#256abf",
   "#184f95",
   "#0d366b",
+] as const;
+
+/**
+ * A five-hue categorical palette for the same score bands, low → high, used
+ * ONLY by the class-analytics grade-distribution donut
+ * (`ClassCharts.tsx`) — a deliberate, explicitly-requested deviation from
+ * `ORDINAL_RAMP` to match a supplied design reference. Unlike the rest of this
+ * file's palette, this one has not been run through the contrast/CVD
+ * validator; do not reuse it elsewhere without doing that pass.
+ */
+export const SCORE_BAND_COLORS = [
+  "#df6b78",
+  "#a98fe0",
+  "#efc24e",
+  "#57c39a",
+  "#6c97f0",
 ] as const;
 
 /** Chart chrome. Recessive by design: the data is the only loud thing. */
@@ -129,6 +160,19 @@ export function yForValue(value: number, max: number): number {
 /** Render a 0..1 fraction as a whole-percent string, or an em dash when null. */
 export function pct(fraction: number | null | undefined): string {
   return fraction == null ? "—" : `${Math.round(fraction * 100)}%`;
+}
+
+/**
+ * Isolate a numeral-only string (a range like "80–100", a "range: count" pair)
+ * as its own left-to-right run, via Unicode bidi isolates rather than markup.
+ * Needed anywhere such a string can land inside RTL text or an RTL table cell
+ * with no adjacent Hebrew character to anchor it — without an anchor, the
+ * bidi algorithm has nothing to key its own base direction off of and can
+ * reorder the digits themselves (`"80–100"` rendering as `"100-80"`), not just
+ * the run's position.
+ */
+export function ltr(text: string): string {
+  return `⁦${text}⁩`;
 }
 
 /**

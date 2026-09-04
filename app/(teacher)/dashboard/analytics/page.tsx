@@ -1,4 +1,6 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { Suspense } from "react";
+import { createClient } from "@/lib/supabase/server";
 import { BackLink } from "@/components/ui/BackLink";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Icon } from "@/components/ui/Icon";
@@ -7,6 +9,7 @@ import { AnalyticsSearch } from "@/components/teacher/analytics/AnalyticsSearch"
 import { ClassAnalyticsView } from "@/components/teacher/analytics/ClassAnalyticsView";
 import { StudentAnalyticsView } from "@/components/teacher/analytics/StudentAnalyticsView";
 import { QuizAnalyticsView } from "@/components/teacher/analytics/QuizAnalyticsView";
+import { getClassName } from "@/lib/classes";
 import type { AnalyticsScope } from "@/lib/analytics";
 
 /**
@@ -73,6 +76,22 @@ export default async function AnalyticsHubPage({
     );
   }
 
+  // The class's own name, when it's the selected entity — read separately
+  // from (and ahead of) the heavier `ClassAnalyticsView` fetch below, so the
+  // header can name the class instantly instead of waiting on the Suspense
+  // boundary. Falls back to the generic title if the lookup fails.
+  let title = SCOPE_TITLE[scope];
+  if (scope === "class") {
+    const client = (await createClient()) as unknown as SupabaseClient;
+    let className: string | null = null;
+    try {
+      className = await getClassName(client, id);
+    } catch {
+      className = null;
+    }
+    if (className) title = `אנליטיקה של ${className}`;
+  }
+
   return (
     <div className="mx-auto max-w-6xl py-2">
       <header className="mb-6 flex flex-col gap-2">
@@ -87,7 +106,7 @@ export default async function AnalyticsHubPage({
             size={26}
             className="flex-none text-[var(--fg-brand)]"
           />
-          {SCOPE_TITLE[scope]}
+          {title}
         </h1>
       </header>
 

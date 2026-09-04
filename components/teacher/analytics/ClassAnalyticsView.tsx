@@ -14,6 +14,7 @@ import { RosterTable } from "@/components/teacher/RosterTable";
 import { MetricRow, MetricTile } from "./MetricTile";
 import { ClassCharts } from "./ClassCharts";
 import { ClassQuizTable } from "./ClassQuizTable";
+import { StudentActivityLeaderboard } from "./StudentActivityLeaderboard";
 import { grade } from "./chartTheme";
 
 /**
@@ -93,6 +94,7 @@ export async function ClassAnalyticsView({ classId }: { classId: string }) {
         <MetricTile
           label="חידונים שהסתיימו"
           value={finishedCount}
+          hint={`מתוך ${overview.quiz_count} שהוקצו`}
           icon="checkCircle"
         />
         <MetricTile
@@ -103,7 +105,9 @@ export async function ClassAnalyticsView({ classId }: { classId: string }) {
         />
       </MetricRow>
 
-      <ClassCharts data={overview} />
+      <ClassCharts data={overview} roster={roster} />
+
+      {roster && <StudentActivityLeaderboard roster={roster} />}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xl font-semibold text-[var(--heading)]">לפי חידון</h2>
