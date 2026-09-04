@@ -83,6 +83,31 @@ describe("Sidebar", () => {
     expect(rail()).toHaveAttribute("data-expanded", "true");
   });
 
+  it("collapses after a nav row is CLICKED and the pointer leaves", async () => {
+    // The reported bug. Clicking a row focuses it, and the rail never unmounts
+    // across navigation — so the link kept focus and `focused` pinned the rail
+    // open for the rest of the session, long after the pointer had gone.
+    render(<Sidebar items={items} brand="OrtTube" />);
+    await userEvent.hover(rail());
+    await userEvent.click(screen.getByRole("link", { name: /כיתות/ }));
+    expect(rail()).toHaveAttribute("data-expanded", "true"); // still hovered
+
+    await userEvent.unhover(rail());
+    expect(rail()).not.toHaveAttribute("data-expanded");
+  });
+
+  it("still opens for a keyboard user after a click has happened", async () => {
+    // The pointer flag must not latch: once a click has been seen, tabbing in
+    // later still has to open the rail, or the fix trades one bug for another.
+    render(<Sidebar items={items} brand="OrtTube" />);
+    await userEvent.click(screen.getByRole("link", { name: /כיתות/ }));
+    await userEvent.unhover(rail());
+    expect(rail()).not.toHaveAttribute("data-expanded");
+
+    await userEvent.tab();
+    expect(rail()).toHaveAttribute("data-expanded", "true");
+  });
+
   it("collapses once focus leaves the rail entirely", async () => {
     render(
       <div>

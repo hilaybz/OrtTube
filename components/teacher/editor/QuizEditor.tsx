@@ -22,13 +22,13 @@ import { apiFetch, ApiError } from "@/lib/http";
 import type { AuthorQuestion, AuthorQuiz, QuizVisibility } from "@/lib/quizAuthor";
 import type { ClassRow } from "@/lib/classes";
 import type { QuizAllocation } from "@/lib/allocations";
-import { estimateQuizMinutes } from "@/lib/quizDuration";
+import { estimateQuizMinutes, formatVideoLength } from "@/lib/quizDuration";
 import { QuestionModal } from "./QuestionModal";
 import { AllocationsSection } from "./AllocationsSection";
 import { VideoPreviewPanel, type VideoPreviewPanelHandle } from "./VideoPreviewPanel";
 import { QuestionListItem } from "./QuestionListItem";
 import { updateQuizMeta, deleteQuestion, MutationError } from "./mutations";
-import { LANGUAGE_LABELS, formatTime } from "./format";
+import { LANGUAGE_LABELS } from "./format";
 import {
   analyticsAtRiskNotice,
   formatCutoffDate,
@@ -618,7 +618,7 @@ export function QuizEditor({
               {duration != null ? (
                 <>
                   אורך הסרטון{" "}
-                  <span className="tabular-nums">{formatTime(duration)}</span>
+                  <span className="tabular-nums">{formatVideoLength(duration)}</span>
                 </>
               ) : (
                 "אורך הסרטון ייקבע עם טעינת הנגן"

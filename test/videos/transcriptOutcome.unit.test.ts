@@ -11,7 +11,7 @@
  * client pins the whole decision table.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getTranscript } from "@/lib/transcriptCache";
+import { getTranscript, resetTranscriptMemoryCache } from "@/lib/transcriptCache";
 import { fetchFreshTranscript, type FetchOutcome } from "@/lib/transcript";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -87,6 +87,10 @@ function fakeStack(init: { row?: VideoRow | null; cached?: unknown } = {}) {
 }
 
 beforeEach(() => {
+  // The process-local result cache outlives a single test, and every case here
+  // reuses one video id — so without this a `ready` cached by an earlier test
+  // answers a later one instantly and it never reaches the code it is checking.
+  resetTranscriptMemoryCache();
   youtube.mockReset();
 });
 

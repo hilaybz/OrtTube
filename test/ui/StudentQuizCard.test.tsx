@@ -57,7 +57,7 @@ describe("QuizCard (student feed)", () => {
     expect(screen.getByText("צפייה בתוצאות")).toBeInTheDocument();
     // The grade leads the status block; the date is the quiet half of it.
     expect(screen.getByText("ציון 80")).toBeInTheDocument();
-    expect(screen.getByText("הוגש ב-10.3")).toBeInTheDocument();
+    expect(screen.getByText("הוגש ב-10/03/2026")).toBeInTheDocument();
   });
 
   it("still opens the player when a retake is left", () => {
@@ -91,6 +91,6 @@ describe("QuizCard (student feed)", () => {
     );
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.getByText("לא הוגש")).toBeInTheDocument();
-    expect(screen.getByText("נסגר ב-10.3")).toBeInTheDocument();
+    expect(screen.getByText("נסגר ב-10/03/2026")).toBeInTheDocument();
   });
 });

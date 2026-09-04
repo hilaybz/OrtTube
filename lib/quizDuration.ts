@@ -64,6 +64,47 @@ export function formatQuizDuration(quiz: {
 }
 
 /**
+ * A video's own length, in words — `"13 דקות"`, `"שעה ו-3 דקות"`.
+ *
+ * Distinct from everything above, which is about how long a quiz TAKES. This is
+ * how long the video RUNS, and it is shown as a sentence rather than as `10:00`
+ * because a bare `mm:ss` beside the words "אורך הסרטון" reads as ambiguous —
+ * ten minutes or ten hours — and `1:02:34` is worse.
+ *
+ * Rounded UP to the next whole minute: a 12:01 video is "13 דקות", not "12".
+ * Seconds are noise at this scale, and rounding down would understate a length
+ * a teacher is judging a lesson against.
+ *
+ * `formatTime` in `components/teacher/editor/format.ts` is deliberately NOT
+ * changed to do this. Its other callers seed a text input that `parseTime` reads
+ * back, and the question-checkpoint chips show a POSITION in the video, where
+ * `mm:ss` is the correct and expected form.
+ */
+export function formatVideoLength(totalSeconds: number): string {
+  const minutes = Math.max(1, Math.ceil(totalSeconds / 60));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+
+  if (hours === 0) return minutePart(rest);
+
+  // "שעתיים" is the dual and Hebrew all but requires it — "2 שעות" reads wrong.
+  // Minutes get no dual: "2 דקות" is idiomatic where "שתי דקות" sounds literary,
+  // and it matches `formatQuizDuration` above, which already spells minutes with
+  // a numeral.
+  const hourPart = hours === 1 ? "שעה" : hours === 2 ? "שעתיים" : `${hours} שעות`;
+  if (rest === 0) return hourPart;
+  // The conjunction takes a hyphen before a numeral ("ו-3 דקות") and attaches
+  // straight to a word ("ודקה"). "שעה ו-דקה" is the giveaway of a formatter
+  // that only ever saw the numeric case.
+  const tail = minutePart(rest);
+  return `${hourPart} ${/^\d/.test(tail) ? "ו-" : "ו"}${tail}`;
+}
+
+function minutePart(n: number): string {
+  return n === 1 ? "דקה" : `${n} דקות`;
+}
+
+/**
  * The same length in the words a card chip has room for — `"~12 דק׳"`. `null`
  * when nothing is known, so a caller can skip the chip rather than render an
  * empty one.

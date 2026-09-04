@@ -6,11 +6,11 @@ import { ColumnChart } from "./ColumnChart";
 import { LineChart } from "./LineChart";
 import { ORDINAL_RAMP, SERIES, grade, pct } from "./chartTheme";
 import type { ClassAnalyticsOverview } from "@/lib/analytics";
+import { formatDateShort } from "@/lib/datetime";
 
 /** Widest day span drawn day-by-day; past it the series is aggregated by week. */
 const MAX_DAILY_POINTS = 32;
 
-const DAY_LABEL: Intl.DateTimeFormatOptions = { day: "numeric", month: "numeric" };
 
 /** "0–20%" .. "80–100%" for a score band. */
 function bandLabel(min: number, max: number): string {
@@ -48,7 +48,7 @@ function completionSeries(
 
   if (dense.length <= MAX_DAILY_POINTS) {
     return {
-      labels: dense.map((d) => d.date.toLocaleDateString("he-IL", DAY_LABEL)),
+      labels: dense.map((d) => formatDateShort(d.date)),
       values: dense.map((d) => d.count),
       weekly: false,
     };
@@ -63,7 +63,7 @@ function completionSeries(
     });
   }
   return {
-    labels: weeks.map((w) => w.date.toLocaleDateString("he-IL", DAY_LABEL)),
+    labels: weeks.map((w) => formatDateShort(w.date)),
     values: weeks.map((w) => w.count),
     weekly: true,
   };

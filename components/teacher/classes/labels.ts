@@ -16,14 +16,11 @@ export const TUTOR_MODE_LABELS: Record<TutorMode, string> = {
 };
 
 /**
- * Format an ISO timestamp as DD/MM/YYYY using UTC parts so the string is
- * identical on the server and the client (no hydration mismatch, no TZ/locale
- * drift). Used for roster "joined" / invite dates.
+ * Roster "joined" / invite dates.
+ *
+ * Re-exported rather than defined: this module used to carry its OWN
+ * `formatDate` built from UTC parts, so `import { formatDate } from "./labels"`
+ * and `from "@/lib/datetime"` gave different answers for the same timestamp —
+ * a day apart for anything between 21:00 and midnight UTC. One helper now.
  */
-export function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  return `${dd}/${mm}/${d.getUTCFullYear()}`;
-}
+export { formatDate } from "@/lib/datetime";

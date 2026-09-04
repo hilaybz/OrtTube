@@ -61,7 +61,9 @@ describe("allocationStatus — open", () => {
   });
 
   it("gives an absolute date once the deadline is more than a week out", () => {
-    expect(allocationStatus(live(at(2026, 6, 6, 9)), NOW).label).toBe("נסגר ב־6.7");
+    expect(allocationStatus(live(at(2026, 6, 6, 9)), NOW).label).toBe(
+      "נסגר ב־06/07/2026"
+    );
   });
 
   it("says so plainly when there is no deadline at all", () => {
@@ -103,9 +105,9 @@ describe("allocationStatus — ended", () => {
     );
   });
 
-  it("carries the year on a date outside the current one", () => {
+  it("dates a distant ending in full, year included", () => {
     expect(allocationStatus(live(at(2025, 7, 26, 10)), NOW).label).toBe(
-      "הסתיים ב־26.8.2025"
+      "הסתיים ב־26/08/2025"
     );
   });
 });
@@ -123,9 +125,15 @@ describe("allocationStatus — withdrawn from students", () => {
 });
 
 describe("formatShortDate", () => {
-  it("omits the year within the current one and keeps it outside", () => {
-    expect(formatShortDate(new Date(2026, 7, 26), NOW)).toBe("26.8");
-    expect(formatShortDate(new Date(2025, 7, 26), NOW)).toBe("26.8.2025");
+  it("always carries the year, in or out of the current one", () => {
+    // It used to drop the year within the current year, which made two rows a
+    // few months apart read in different formats. One shape everywhere now.
+    expect(formatShortDate(new Date(2026, 7, 26))).toBe("26/08/2026");
+    expect(formatShortDate(new Date(2025, 7, 26))).toBe("26/08/2025");
+  });
+
+  it("pads the day and month, so dates line up in a column", () => {
+    expect(formatShortDate(new Date(2026, 0, 5))).toBe("05/01/2026");
   });
 });
 

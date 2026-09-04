@@ -1,5 +1,5 @@
 import { allocationState, type AllocationState } from "@/lib/allocationState";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDate, formatDateTime } from "@/lib/datetime";
 import type { IconName } from "@/components/ui/Icon";
 
 /**
@@ -79,12 +79,16 @@ function counted(n: number, one: string, two: string, many: string): string {
   return `${n} ${many}`;
 }
 
-/** "26.8", or "26.8.2025" when the date falls outside the current year. */
-export function formatShortDate(date: Date, now: Date = new Date()): string {
-  const day = `${date.getDate()}.${date.getMonth() + 1}`;
-  return date.getFullYear() === now.getFullYear()
-    ? day
-    : `${day}.${date.getFullYear()}`;
+/**
+ * "26/08/2026" — the app's one date format.
+ *
+ * This used to build `26.8` by hand from `getDate()`/`getMonth()`, adding the
+ * year only outside the current one. Both halves are gone: the format now always
+ * carries the year, so the branch had nothing left to decide, and the local-time
+ * parts rendered a different day on Vercel (TZ=UTC) than in an Israeli browser.
+ */
+export function formatShortDate(date: Date): string {
+  return formatDate(date);
 }
 
 /** "14:30", local time. */
@@ -118,7 +122,7 @@ export function formatUntilThen(date: Date, now: Date = new Date()): string {
   if (days <= 0) return `היום בשעה ${formatTime(date)}`;
   if (days === 1) return "מחר";
   if (days < 7) return `בעוד ${days} ימים`;
-  return `ב־${formatShortDate(date, now)}`;
+  return `ב־${formatShortDate(date)}`;
 }
 
 /** The past-facing twin: "הסתיים " + this reads "הסתיים אתמול". */
@@ -127,7 +131,7 @@ export function formatSinceThen(date: Date, now: Date = new Date()): string {
   if (days >= 0) return `היום בשעה ${formatTime(date)}`;
   if (days === -1) return "אתמול";
   if (days > -7) return `לפני ${-days} ימים`;
-  return `ב־${formatShortDate(date, now)}`;
+  return `ב־${formatShortDate(date)}`;
 }
 
 /** What an allocation row shows instead of a state noun plus a raw date range. */

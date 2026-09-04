@@ -205,7 +205,7 @@ describe("QuizEditor — page structure", () => {
     // "אורך הסרטון", not "משך" — the quiz's own duration is a separate,
     // teacher-controlled fact, set in the settings box above.
     const identity = screen.getByRole("heading", { level: 1 }).parentElement!;
-    expect(identity).toHaveTextContent("אורך הסרטון 10:00");
+    expect(identity).toHaveTextContent("אורך הסרטון 10 דקות");
   });
 
   it("pages the question list instead of growing it without bound", async () => {

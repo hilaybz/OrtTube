@@ -54,9 +54,9 @@ describe("school-zone formatting", () => {
   it("reads a UTC instant as the school's own wall clock and date", () => {
     // 18:00 UTC is 20:00 in Jerusalem, still the same calendar day there.
     expect(formatTime("2026-03-10T18:00:00.000Z")).toBe("20:00");
-    expect(formatDate("2026-03-10T18:00:00.000Z")).toBe("10.3");
+    expect(formatDate("2026-03-10T18:00:00.000Z")).toBe("10/03/2026");
     // 22:30 UTC has already become the next day in Jerusalem.
-    expect(formatDate("2026-03-10T22:30:00.000Z")).toBe("11.3");
+    expect(formatDate("2026-03-10T22:30:00.000Z")).toBe("11/03/2026");
   });
 });
 
@@ -93,8 +93,8 @@ describe("deadlineView", () => {
   it("counts further deadlines in days and dates the hour, calmly", () => {
     const view = deadlineView("2026-03-17T16:00:00.000Z", NOW);
     expect(view.lead).toBe("בעוד 3 ימים");
-    expect(view.exact).toBe("17.3 בשעה 18:00");
-    expect(view.when).toBe("17.3 בשעה 18:00");
+    expect(view.exact).toBe("17/03/2026 בשעה 18:00");
+    expect(view.when).toBe("17/03/2026 בשעה 18:00");
     expect(view.urgency).toBe("calm");
   });
 
@@ -109,6 +109,6 @@ describe("deadlineView", () => {
     const view = deadlineView("2026-03-13T16:00:00.000Z", NOW);
     expect(view.lead).toBe("המועד עבר");
     expect(view.urgency).toBe("passed");
-    expect(view.exact).toBe("13.3 בשעה 18:00");
+    expect(view.exact).toBe("13/03/2026 בשעה 18:00");
   });
 });
