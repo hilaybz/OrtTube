@@ -75,7 +75,7 @@ describe("FinishedQuizCard", () => {
       screen.getByRole("link", { name: "תוצאות מלחמת העולם בט'1" })
     ).toHaveAttribute(
       "href",
-      "/dashboard/analytics?scope=class&id=c1&quiz=q1&from=overview"
+      "/dashboard/analytics?scope=quiz&id=q1&class=c1&from=overview"
     );
   });
 });

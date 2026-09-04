@@ -6,7 +6,7 @@ import { classQuizAnalyticsHref } from "@/components/teacher/analyticsLinks";
  *
  * This breakdown used to be a route of its own, nested under the class — the
  * one analytics screen living outside the hub's `?scope=…&id=…` contract. It is
- * now the class scope's quiz drill-down, so this segment exists only to keep old
+ * now the quiz view narrowed to a class, so this segment exists only to keep old
  * links working, including any a teacher bookmarked. It redirects permanently
  * rather than rendering, so nothing has to be maintained twice — the same shape
  * as the legacy `analytics/[classId]` segment.

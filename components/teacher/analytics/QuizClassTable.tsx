@@ -18,8 +18,9 @@ import { CELL, HEAD_CELL, ROW_BORDER, ROW_HEAD, ROW_LINK } from "./tableStyles";
  * belong to a colleague's class. Those rows are shown — the author's aggregate
  * numbers already include them, and a class the author cannot open is exactly the
  * one that would otherwise make the total look wrong — but they carry the
- * colleague's name and NO drill-down link, because the per-class analytics RPC
- * would (correctly) deny the author a class they do not own.
+ * colleague's name and NO link into the narrowed view, because the per-class
+ * analytics RPC would (correctly) deny the author a class they do not own. The
+ * class filter above the table is confined to the same set.
  */
 export function QuizClassTable({
   quizId,

@@ -128,12 +128,12 @@ export async function listMyClasses(client: SupabaseClient): Promise<ClassRow[]>
 /**
  * The caller's OWN classes that this quiz is assigned to, name-ordered.
  *
- * Feeds the class switcher on the per-(class, quiz) analytics view, so the set
- * has to be exactly the set that view can open. `class_quizzes_owner_select`
- * confines the allocation rows to classes the caller teaches — the same
+ * Feeds the class filter on the quiz's analytics view, so the set has to be
+ * exactly the set that filter can open. `class_quizzes_owner_select` confines
+ * the allocation rows to classes the caller teaches — the same
  * `is_teacher_of_class` predicate `class_quiz_analytics` gates on — so a
- * colleague's class running the same shared quiz never appears, and the
- * switcher cannot offer a destination that would then deny the reader.
+ * colleague's class running the same shared quiz never appears, and the filter
+ * cannot offer a selection that would then deny the reader.
  *
  * Two plain reads rather than an embedded join: the allocation rows carry no
  * class name, and the names come back RLS-scoped anyway, so the second read

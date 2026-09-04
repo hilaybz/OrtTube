@@ -7,7 +7,7 @@ import { Alert } from "@/components/ui/Alert";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { MetricRow, MetricTile } from "./MetricTile";
 import { ClassQuizCharts } from "./ClassQuizCharts";
-import { ClassQuizClassSwitcher } from "./ClassQuizClassSwitcher";
+import { QuizClassFilter } from "./QuizClassFilter";
 import { QuestionBreakdown } from "./QuestionBreakdown";
 import { grade } from "./chartTheme";
 
@@ -16,17 +16,22 @@ import { grade } from "./chartTheme";
  * product, and the view the class table, the student table and the overview all
  * drill into.
  *
- * It hangs off the CLASS scope (`?scope=class&id=<class>&quiz=<quiz>`) rather
- * than the quiz's, because that is where its permission lives: the numbers come
- * from `class_quiz_analytics`, which gates on teaching the class, while the
- * quiz's own view is author-only. A teacher running a colleague's shared quiz
- * can read this and not that, so addressing it as a facet of the quiz would deny
- * the very readers who reach it most.
+ * The quiz view narrowed to a class (`?scope=quiz&id=<quiz>&class=<class>`), so
+ * a teacher comparing how the same quiz landed in each of their classes swaps
+ * one dropdown instead of navigating back out to a class each time. It is a
+ * different dataset rather than a subset of the rollup: correctness per question
+ * has no class dimension in `quiz_analytics_overview`, so narrowing means
+ * fetching `class_quiz_analytics` and rendering it in place.
+ *
+ * That RPC gates on teaching the class, while the surrounding quiz view is
+ * author-only — a divergence with no reachable case today, since the shared
+ * library clones rather than assigns, but the reason the filter offers a
+ * teacher's own classes only.
  *
  * Everything here is scored from each student's LATEST completed attempt, never
  * best-of and never every retake, so it always agrees with the grade a student
- * is shown on their own results page — and with the class view one level up,
- * which uses the same basis.
+ * is shown on their own results page — and with the rollup above it, which uses
+ * the same basis.
  */
 export async function ClassQuizAnalyticsView({
   classId,
@@ -37,7 +42,7 @@ export async function ClassQuizAnalyticsView({
 }) {
   const client = (await createClient()) as unknown as SupabaseClient;
 
-  // The switcher's options don't depend on the numbers, and a class the reader
+  // The filter's options don't depend on the numbers, and a class the reader
   // can't open is already excluded from them, so a failed lookup costs the
   // affordance and nothing else.
   const [analytics, classes] = await Promise.all([
@@ -55,6 +60,9 @@ export async function ClassQuizAnalyticsView({
     );
   }
 
+  // The filter already carries the class's name, so the header can say which
+  // class these numbers belong to without a lookup of its own.
+  const className = classes.find((c) => c.id === classId)?.name ?? null;
   const cutoffNote = analyticsCutoffNote(
     analytics.content_updated_at,
     analytics.excluded_attempt_count
@@ -68,14 +76,10 @@ export async function ClassQuizAnalyticsView({
             {analytics.title ?? "חידון ללא שם"}
           </h2>
           <p className="mt-1 text-sm text-[var(--body-subtle)]">
-            ביצועי הכיתה בחידון זה.
+            {className ? `ביצועי ${className} בחידון זה.` : "ביצועי הכיתה בחידון זה."}
           </p>
         </div>
-        <ClassQuizClassSwitcher
-          classId={classId}
-          quizId={quizId}
-          classes={classes}
-        />
+        <QuizClassFilter quizId={quizId} classId={classId} classes={classes} />
       </GlassCard>
 
       {cutoffNote && <Alert variant="warning">{cutoffNote}</Alert>}
