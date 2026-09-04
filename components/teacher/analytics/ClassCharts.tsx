@@ -1,8 +1,8 @@
 "use client";
 
-import { ChartCarousel, ChartSlide } from "./ChartCarousel";
 import { ChartCard } from "./ChartCard";
 import { ColumnChart } from "./ColumnChart";
+import { DonutChart } from "./DonutChart";
 import { LineChart } from "./LineChart";
 import { ORDINAL_RAMP, SERIES, grade, pct } from "./chartTheme";
 import type { ClassAnalyticsOverview } from "@/lib/analytics";
@@ -77,9 +77,9 @@ function shortTitle(title: string | null, index: number): string {
 }
 
 /**
- * The class's charts, in a carousel: how the class scored per quiz, how the
- * grades are spread, how much of the class finished each quiz, and when the work
- * actually happened.
+ * The class's charts, as a fixed 2×2 grid: how the class scored per quiz, how
+ * the grades are spread, how much of the class finished each quiz, and when
+ * the work actually happened.
  *
  * Every chart here reads the same `class_analytics_overview` payload the tables
  * below read, and every score in it comes from each student's latest completed
@@ -93,145 +93,141 @@ export function ClassCharts({ data }: { data: ClassAnalyticsOverview }) {
     bandLabel(Number(b.bucket_min), Number(b.bucket_max))
   );
   const distributionCounts = data.score_distribution.map((b) => b.count);
-  const maxBand = Math.max(1, ...distributionCounts);
+  const distributionTotal = distributionCounts.reduce((sum, c) => sum + c, 0);
   const completion = completionSeries(data.completions);
   const maxCompletions = Math.max(1, ...completion.values);
   const anyScore = quizzes.some((q) => q.average_score != null);
 
   return (
-    <ChartCarousel label="תרשימי הכיתה">
-      <ChartSlide>
-        <ChartCard
-          title="ציון ממוצע לפי חידון"
-          hint="ממוצע הציון האחרון של כל תלמיד/ה, מתוך 100"
-          empty={
-            !anyScore ? "עדיין אין תוצאות מוגמרות בחידונים של הכיתה." : undefined
-          }
-          table={{
-            head: ["חידון", "ציון ממוצע", "השלמות"],
-            rows: quizzes.map((q, i) => [
-              titles[i],
-              grade(q.average_score),
-              `${q.members_completed}/${q.member_count}`,
-            ]),
-          }}
-        >
-          <ColumnChart
-            ariaLabel="ציון ממוצע לפי חידון"
-            categories={titles}
-            max={1}
-            formatValue={(v) => grade(v)}
-            series={[
-              {
-                label: "ציון ממוצע",
-                color: SERIES[0],
-                values: quizzes.map((q) =>
-                  q.average_score == null ? null : Number(q.average_score)
-                ),
-              },
-            ]}
-          />
-        </ChartCard>
-      </ChartSlide>
+    <div
+      aria-label="תרשימי הכיתה"
+      className="grid grid-cols-1 gap-4 lg:grid-cols-2"
+    >
+      <ChartCard
+        title="ציון ממוצע לפי חידון"
+        hint="ממוצע הציון האחרון של כל תלמיד/ה, מתוך 100"
+        empty={
+          !anyScore ? "עדיין אין תוצאות מוגמרות בחידונים של הכיתה." : undefined
+        }
+        table={{
+          head: ["חידון", "ציון ממוצע", "השלמות"],
+          rows: quizzes.map((q, i) => [
+            titles[i],
+            grade(q.average_score),
+            `${q.members_completed}/${q.member_count}`,
+          ]),
+        }}
+      >
+        <ColumnChart
+          ariaLabel="ציון ממוצע לפי חידון"
+          categories={titles}
+          max={1}
+          formatValue={(v) => grade(v)}
+          series={[
+            {
+              label: "ציון ממוצע",
+              color: SERIES[0],
+              values: quizzes.map((q) =>
+                q.average_score == null ? null : Number(q.average_score)
+              ),
+            },
+          ]}
+        />
+      </ChartCard>
 
-      <ChartSlide>
-        <ChartCard
-          title="התפלגות הציונים בכיתה"
-          hint="כמה תוצאות נפלו בכל טווח ציונים"
-          empty={
-            distributionCounts.every((c) => c === 0)
-              ? "עדיין אין תוצאות מוגמרות בכיתה."
-              : undefined
-          }
-          table={{
-            head: ["טווח ציונים", "תוצאות"],
-            rows: distributionLabels.map((label, i) => [
-              label,
-              distributionCounts[i],
-            ]),
-          }}
-        >
-          <ColumnChart
-            ariaLabel="התפלגות הציונים בכיתה"
-            categories={distributionLabels}
-            max={maxBand}
-            formatValue={(v) => String(Math.round(v))}
-            series={[
-              {
-                label: "תוצאות",
-                color: ORDINAL_RAMP[2],
-                colors: ORDINAL_RAMP,
-                values: distributionCounts,
-              },
-            ]}
-          />
-        </ChartCard>
-      </ChartSlide>
+      <ChartCard
+        title="התפלגות הציונים בכיתה"
+        hint="כמה תוצאות נפלו בכל טווח ציונים"
+        empty={
+          distributionTotal === 0
+            ? "עדיין אין תוצאות מוגמרות בכיתה."
+            : undefined
+        }
+        legend={distributionLabels.map((label, i) => ({
+          label: `${label}: ${distributionCounts[i]}`,
+          color: ORDINAL_RAMP[i],
+        }))}
+        table={{
+          head: ["טווח ציונים", "תוצאות"],
+          rows: distributionLabels.map((label, i) => [
+            label,
+            distributionCounts[i],
+          ]),
+        }}
+      >
+        <DonutChart
+          ariaLabel="התפלגות הציונים בכיתה"
+          slices={distributionLabels.map((label, i) => ({
+            label,
+            value: distributionCounts[i],
+            color: ORDINAL_RAMP[i],
+          }))}
+          centerLabel={String(distributionTotal)}
+          centerSub="תוצאות"
+          formatValue={(v) => String(Math.round(v))}
+        />
+      </ChartCard>
 
-      <ChartSlide>
-        <ChartCard
-          title="שיעור השלמה לפי חידון"
-          hint="חלק הכיתה שסיים כל חידון"
-          empty={quizzes.length === 0 ? "עדיין לא הוקצו חידונים." : undefined}
-          table={{
-            head: ["חידון", "השלמות", "שיעור"],
-            rows: quizzes.map((q, i) => [
-              titles[i],
-              `${q.members_completed}/${q.member_count}`,
-              pct(q.member_count > 0 ? q.members_completed / q.member_count : null),
-            ]),
-          }}
-        >
-          <ColumnChart
-            ariaLabel="שיעור השלמה לפי חידון"
-            categories={titles}
-            max={1}
-            formatValue={(v) => pct(v)}
-            series={[
-              {
-                label: "שיעור השלמה",
-                color: SERIES[1],
-                values: quizzes.map((q) =>
-                  q.member_count > 0 ? q.members_completed / q.member_count : null
-                ),
-              },
-            ]}
-          />
-        </ChartCard>
-      </ChartSlide>
+      <ChartCard
+        title="שיעור השלמה לפי חידון"
+        hint="חלק הכיתה שסיים כל חידון"
+        empty={quizzes.length === 0 ? "עדיין לא הוקצו חידונים." : undefined}
+        table={{
+          head: ["חידון", "השלמות", "שיעור"],
+          rows: quizzes.map((q, i) => [
+            titles[i],
+            `${q.members_completed}/${q.member_count}`,
+            pct(q.member_count > 0 ? q.members_completed / q.member_count : null),
+          ]),
+        }}
+      >
+        <ColumnChart
+          ariaLabel="שיעור השלמה לפי חידון"
+          categories={titles}
+          max={1}
+          formatValue={(v) => pct(v)}
+          series={[
+            {
+              label: "שיעור השלמה",
+              color: SERIES[1],
+              values: quizzes.map((q) =>
+                q.member_count > 0 ? q.members_completed / q.member_count : null
+              ),
+            },
+          ]}
+        />
+      </ChartCard>
 
-      <ChartSlide>
-        <ChartCard
-          title={completion.weekly ? "השלמות לפי שבוע" : "השלמות לפי יום"}
-          hint="מתי התלמידים באמת סיימו חידונים"
-          empty={
-            completion.values.length === 0
-              ? "עדיין לא הושלמו חידונים בכיתה."
-              : undefined
-          }
-          table={{
-            head: [completion.weekly ? "שבוע" : "יום", "השלמות"],
-            rows: completion.labels.map((label, i) => [
-              label,
-              completion.values[i],
-            ]),
-          }}
-        >
-          <LineChart
-            ariaLabel={completion.weekly ? "השלמות לפי שבוע" : "השלמות לפי יום"}
-            categories={completion.labels}
-            max={maxCompletions}
-            formatValue={(v) => String(Math.round(v))}
-            series={[
-              {
-                label: "השלמות",
-                color: SERIES[0],
-                values: completion.values,
-              },
-            ]}
-          />
-        </ChartCard>
-      </ChartSlide>
-    </ChartCarousel>
+      <ChartCard
+        title={completion.weekly ? "השלמות לפי שבוע" : "השלמות לפי יום"}
+        hint="מתי התלמידים באמת סיימו חידונים"
+        empty={
+          completion.values.length === 0
+            ? "עדיין לא הושלמו חידונים בכיתה."
+            : undefined
+        }
+        table={{
+          head: [completion.weekly ? "שבוע" : "יום", "השלמות"],
+          rows: completion.labels.map((label, i) => [
+            label,
+            completion.values[i],
+          ]),
+        }}
+      >
+        <LineChart
+          ariaLabel={completion.weekly ? "השלמות לפי שבוע" : "השלמות לפי יום"}
+          categories={completion.labels}
+          max={maxCompletions}
+          formatValue={(v) => String(Math.round(v))}
+          series={[
+            {
+              label: "השלמות",
+              color: SERIES[0],
+              values: completion.values,
+            },
+          ]}
+        />
+      </ChartCard>
+    </div>
   );
 }

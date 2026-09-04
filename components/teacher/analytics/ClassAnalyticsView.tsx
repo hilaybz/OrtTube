@@ -14,6 +14,7 @@ import { RosterTable } from "@/components/teacher/RosterTable";
 import { MetricRow, MetricTile } from "./MetricTile";
 import { ClassCharts } from "./ClassCharts";
 import { ClassQuizTable } from "./ClassQuizTable";
+import { StudentActivityLeaderboard } from "./StudentActivityLeaderboard";
 import { grade } from "./chartTheme";
 
 /**
@@ -59,6 +60,9 @@ export async function ClassAnalyticsView({ classId }: { classId: string }) {
   const openCount = overview.quizzes.filter(
     (q) => allocationState(q, now) === "live"
   ).length;
+  const scheduledCount = overview.quizzes.filter(
+    (q) => allocationState(q, now) === "scheduled"
+  ).length;
   const finishedCount = overview.quizzes.filter(
     (q) => allocationState(q, now) === "done"
   ).length;
@@ -87,7 +91,11 @@ export async function ClassAnalyticsView({ classId }: { classId: string }) {
         <MetricTile
           label="חידונים פעילים"
           value={openCount}
-          hint={`מתוך ${overview.quiz_count} שהוקצו`}
+          hint={
+            scheduledCount > 0
+              ? `מתוך ${overview.quiz_count} · ${scheduledCount} ייפתחו בקרוב`
+              : `מתוך ${overview.quiz_count} שהוקצו`
+          }
           icon="timer"
         />
         <MetricTile
@@ -104,6 +112,8 @@ export async function ClassAnalyticsView({ classId }: { classId: string }) {
       </MetricRow>
 
       <ClassCharts data={overview} />
+
+      {roster && <StudentActivityLeaderboard roster={roster} />}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xl font-semibold text-[var(--heading)]">לפי חידון</h2>
