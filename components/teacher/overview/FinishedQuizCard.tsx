@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { withBackTarget } from "@/components/ui/backTarget";
+import { classQuizAnalyticsHref } from "@/components/teacher/analyticsLinks";
 import { QuizThumb, ThumbChip } from "@/components/ui/QuizThumb";
 import { closedAtMeta, quizHeading, type RecentlyFinishedQuiz } from "./aggregate";
 
@@ -32,7 +33,7 @@ export function FinishedQuizCard({
           so the link says it came from the overview instead. */}
       <Link
         href={withBackTarget(
-          `/dashboard/classes/${quiz.classId}/analytics/${quiz.quizId}`,
+          classQuizAnalyticsHref(quiz.classId, quiz.quizId),
           "overview"
         )}
         aria-label={`תוצאות ${heading} ב${quiz.className}`}

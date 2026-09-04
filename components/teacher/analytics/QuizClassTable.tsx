@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Pager } from "@/components/ui/Pager";
 import { usePagedList } from "@/components/ui/usePagedList";
 import { allocationStatus } from "@/components/teacher/scheduleFormat";
+import { classQuizAnalyticsHref } from "@/components/teacher/analyticsLinks";
 import type { QuizAnalyticsClass } from "@/lib/analytics";
 import { grade } from "./chartTheme";
 import { CELL, HEAD_CELL, ROW_BORDER, ROW_HEAD, ROW_LINK } from "./tableStyles";
@@ -66,7 +67,7 @@ export function QuizClassTable({
           <tbody>
             {paged.slice.map((c, i) => {
               const status = allocationStatus(c);
-              const href = `/dashboard/classes/${c.class_id}/analytics/${quizId}`;
+              const href = classQuizAnalyticsHref(c.class_id, quizId);
               return (
                 <tr
                   key={c.class_id}

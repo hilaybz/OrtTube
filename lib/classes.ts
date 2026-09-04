@@ -126,6 +126,37 @@ export async function listMyClasses(client: SupabaseClient): Promise<ClassRow[]>
 }
 
 /**
+ * The caller's OWN classes that this quiz is assigned to, name-ordered.
+ *
+ * Feeds the class switcher on the per-(class, quiz) analytics view, so the set
+ * has to be exactly the set that view can open. `class_quizzes_owner_select`
+ * confines the allocation rows to classes the caller teaches — the same
+ * `is_teacher_of_class` predicate `class_quiz_analytics` gates on — so a
+ * colleague's class running the same shared quiz never appears, and the
+ * switcher cannot offer a destination that would then deny the reader.
+ *
+ * Two plain reads rather than an embedded join: the allocation rows carry no
+ * class name, and the names come back RLS-scoped anyway, so the second read
+ * adds a round trip and no trust assumption.
+ */
+export async function listMyClassesRunningQuiz(
+  client: SupabaseClient,
+  quizId: string
+): Promise<Pick<ClassRow, "id" | "name">[]> {
+  const allocations = unwrap(
+    await client.from("class_quizzes").select("class_id").eq("quiz_id", quizId)
+  ) as { class_id: string }[] | null;
+
+  const classIds = (allocations ?? []).map((a) => a.class_id);
+  if (classIds.length === 0) return [];
+
+  const rows = unwrap(
+    await client.from("classes").select("id, name").in("id", classIds).order("name")
+  );
+  return (rows as unknown as Pick<ClassRow, "id" | "name">[]) ?? [];
+}
+
+/**
  * This class's name (owner-RLS scoped), or `null` if it doesn't exist or isn't
  * owned by the caller. A narrow read for callers that need a name to render
  * before the heavier analytics RPCs (which also carry it) have resolved.

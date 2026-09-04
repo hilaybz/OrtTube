@@ -7,29 +7,38 @@ import { Icon } from "@/components/ui/Icon";
 import { Spinner } from "@/components/ui/Spinner";
 import { AnalyticsSearch } from "@/components/teacher/analytics/AnalyticsSearch";
 import { ClassAnalyticsView } from "@/components/teacher/analytics/ClassAnalyticsView";
+import { ClassQuizAnalyticsView } from "@/components/teacher/analytics/ClassQuizAnalyticsView";
 import { StudentAnalyticsView } from "@/components/teacher/analytics/StudentAnalyticsView";
 import { QuizAnalyticsView } from "@/components/teacher/analytics/QuizAnalyticsView";
+import { classAnalyticsHref } from "@/components/teacher/analyticsLinks";
 import { getClassName } from "@/lib/classes";
 import type { AnalyticsScope } from "@/lib/analytics";
 
 /**
  * The analytics hub.
  *
- * ONE route renders all three entity views, selected by the URL:
+ * ONE route renders every analytics view, selected by the URL:
  * `/dashboard/analytics?scope=student|class|quiz&id=<uuid>`. That contract is
- * what the rest of the app links into — `components/teacher/classes/
- * analyticsLinks.ts` builds every such href — so it is deliberately narrow and
- * deliberately stable: a scope plus an id, nothing positional, nothing nested.
- * A view is therefore linkable, refresh-safe, and shareable, while the search
- * QUERY stays client state, because turning every keystroke into a server
- * navigation would be the wrong trade for something nobody bookmarks.
+ * what the rest of the app links into — `components/teacher/analyticsLinks.ts`
+ * builds every such href — so it is deliberately narrow and deliberately
+ * stable: a scope plus an id, nothing positional, nothing nested. A view is
+ * therefore linkable, refresh-safe, and shareable, while the search QUERY stays
+ * client state, because turning every keystroke into a server navigation would
+ * be the wrong trade for something nobody bookmarks.
  *
- * `scope` is validated and `id` must look like a uuid, so a hand-edited URL
- * lands on the search screen rather than a failed read.
+ * The class scope takes one optional drill-down, `&quiz=<uuid>`, for a single
+ * quiz's numbers inside that class. It hangs off the class rather than off the
+ * quiz because its RPC is gated on teaching the class, not on authoring the
+ * quiz: a teacher running a colleague's shared quiz can read it, and could not
+ * read the quiz's own cross-class view.
  *
- * Back normally goes up one level, to the search screen for the same scope. A
- * link from outside analytics (the overview's class cards) names its own origin
- * instead, so it does not strand the reader on a search box.
+ * `scope` is validated and both ids must look like a uuid, so a hand-edited URL
+ * lands on the search screen (or the undrilled class) rather than a failed read.
+ *
+ * Back normally goes up one level: to the class for a drill-down, and otherwise
+ * to the search screen for the same scope. A link from outside analytics (the
+ * overview's class cards) names its own origin instead, so it does not strand
+ * the reader on a search box.
  */
 
 const SCOPES: AnalyticsScope[] = ["student", "class", "quiz"];
@@ -61,6 +70,9 @@ export default async function AnalyticsHubPage({
   const params = await searchParams;
   const scope = normalizeScope(params.scope);
   const id = normalizeId(params.id);
+  // Only the class scope drills down; a `quiz` param anywhere else is ignored
+  // rather than redirected, so a stray one degrades to the plain view.
+  const drilledQuizId = scope === "class" ? normalizeId(params.quiz) : null;
 
   if (!id) {
     return (
@@ -76,10 +88,11 @@ export default async function AnalyticsHubPage({
     );
   }
 
-  // The class's own name, when it's the selected entity — read separately
-  // from (and ahead of) the heavier `ClassAnalyticsView` fetch below, so the
-  // header can name the class instantly instead of waiting on the Suspense
-  // boundary. Falls back to the generic title if the lookup fails.
+  // The class's own name, when it's the selected entity — read separately from
+  // (and ahead of) the heavier view fetch below, so the header can name the
+  // class instantly instead of waiting on the Suspense boundary. It names the
+  // header in a quiz drill-down too, where the quiz's own title belongs to the
+  // view. Falls back to the generic title if the lookup fails.
   let title = SCOPE_TITLE[scope];
   if (scope === "class") {
     const client = (await createClient()) as unknown as SupabaseClient;
@@ -95,11 +108,19 @@ export default async function AnalyticsHubPage({
   return (
     <div className="mx-auto max-w-6xl py-2">
       <header className="mb-6 flex flex-col gap-2">
-        <BackLink
-          href={`/dashboard/analytics?scope=${scope}`}
-          label="חיפוש באנליטיקה"
-          from={params.from}
-        />
+        {drilledQuizId ? (
+          <BackLink
+            href={classAnalyticsHref(id)}
+            label="אנליטיקה של הכיתה"
+            from={params.from}
+          />
+        ) : (
+          <BackLink
+            href={`/dashboard/analytics?scope=${scope}`}
+            label="חיפוש באנליטיקה"
+            from={params.from}
+          />
+        )}
         <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
           <Icon
             name="chartLine"
@@ -110,11 +131,16 @@ export default async function AnalyticsHubPage({
         </h1>
       </header>
 
-      <Suspense key={`${scope}:${id}`} fallback={<ViewSkeleton />}>
+      <Suspense
+        key={`${scope}:${id}:${drilledQuizId ?? ""}`}
+        fallback={<ViewSkeleton />}
+      >
         {scope === "student" ? (
           <StudentAnalyticsView studentId={id} />
         ) : scope === "quiz" ? (
           <QuizAnalyticsView quizId={id} />
+        ) : drilledQuizId ? (
+          <ClassQuizAnalyticsView classId={id} quizId={drilledQuizId} />
         ) : (
           <ClassAnalyticsView classId={id} />
         )}

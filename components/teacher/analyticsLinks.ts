@@ -21,7 +21,11 @@ export function classAnalyticsHref(classId: string): string {
 /**
  * One assigned quiz's analytics, as seen from inside this class — the
  * per-class-per-quiz breakdown, not the quiz's cross-class view.
+ *
+ * A drill-down on the CLASS, not a filter on the quiz: those numbers are gated
+ * on teaching the class, so a teacher running a colleague's shared quiz reaches
+ * them here and could not reach the quiz's own author-only view.
  */
 export function classQuizAnalyticsHref(classId: string, quizId: string): string {
-  return `/dashboard/classes/${classId}/analytics/${quizId}`;
+  return `${classAnalyticsHref(classId)}&quiz=${encodeURIComponent(quizId)}`;
 }

@@ -73,7 +73,10 @@ describe("FinishedQuizCard", () => {
     render(<FinishedQuizCard quiz={quiz} now={new Date("2026-08-20T09:00:00.000Z")} />);
     expect(
       screen.getByRole("link", { name: "תוצאות מלחמת העולם בט'1" })
-    ).toHaveAttribute("href", "/dashboard/classes/c1/analytics/q1?from=overview");
+    ).toHaveAttribute(
+      "href",
+      "/dashboard/analytics?scope=class&id=c1&quiz=q1&from=overview"
+    );
   });
 });
 

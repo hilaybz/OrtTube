@@ -9,6 +9,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Pager } from "@/components/ui/Pager";
 import { usePagedList } from "@/components/ui/usePagedList";
 import { allocationStatus } from "@/components/teacher/scheduleFormat";
+import { classQuizAnalyticsHref } from "@/components/teacher/analyticsLinks";
 import type { StudentAnalyticsQuiz } from "@/lib/analytics";
 import { grade } from "./chartTheme";
 import { CELL, HEAD_CELL, ROW_BORDER, ROW_HEAD, ROW_LINK } from "./tableStyles";
@@ -104,7 +105,7 @@ export function StudentQuizTable({ quizzes }: { quizzes: StudentAnalyticsQuiz[] 
               <tbody>
                 {paged.slice.map((q, i) => {
                   const status = allocationStatus(q);
-                  const href = `/dashboard/classes/${q.class_id}/analytics/${q.quiz_id}`;
+                  const href = classQuizAnalyticsHref(q.class_id, q.quiz_id);
                   return (
                     <tr
                       key={`${q.class_id}-${q.quiz_id}`}

@@ -161,7 +161,7 @@ describe("AssignedQuizzesSection rows", () => {
     expect(open.getByRole("button", { name: "ביטול הקצאה" })).toBeInTheDocument();
     expect(open.getByRole("link", { name: "אנליטיקה של החידון בכיתה" })).toHaveAttribute(
       "href",
-      "/dashboard/classes/c1/analytics/open"
+      "/dashboard/analytics?scope=class&id=c1&quiz=open"
     );
   });
 
