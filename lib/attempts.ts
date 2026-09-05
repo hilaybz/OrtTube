@@ -218,10 +218,24 @@ export async function completeAttempt(
 
 // ── Reveal-gated review ─────────────────────────────────────────────────────────
 
-/** Per-question review detail — present only when the review is revealed. */
+/** One option's revealed label — always the answer-free display text. */
+export interface AttemptReviewOption {
+  id: string;
+  order_index: number;
+  text: string;
+}
+
+/**
+ * Per-question review detail — present only when the review is revealed.
+ * `prompt`/`options` are read off the attempt's frozen `attempt_questions`
+ * snapshot, independent of whether the class<->quiz assignment is still live —
+ * a closed window or later unassignment must not blank out a finished review.
+ */
 export interface AttemptReviewQuestion {
   question_id: string;
   was_correct: boolean | null;
+  prompt: string;
+  options: AttemptReviewOption[];
   correct_option_ids: string[];
   explanation: string | null;
   selected_option_ids: string[];

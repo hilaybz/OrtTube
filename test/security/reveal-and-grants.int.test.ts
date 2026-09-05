@@ -122,6 +122,38 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     expect(reviewed.selected_option_ids).toEqual(onlyQuestion.correctIds);
   });
 
+  // ── A closed/unpublished assignment must not blank out a finished review ──
+  it("still returns the real prompt/options after the assignment is unpublished", async () => {
+    // Regression: get_attempt_review used to be joined, client-side, against a
+    // SECOND read (get_quiz_for_student) that requires the assignment to still
+    // be live. Once a teacher unpublished (or the window closed) after the
+    // student finished, that second read raised not_assigned, was swallowed,
+    // and every question rendered as "removed" — nothing was actually deleted.
+    const quiz = await teacher.authorQuiz({ questions: [oneQuestion("the-explanation")] });
+    const [onlyQuestion] = quiz.questions;
+    await teacher.assignQuiz(quiz, { to: classroom, tutor: "hints", maxAttempts: 1 });
+    await classroom.enroll(student);
+
+    const attempt = await student.startAttempt(quiz, { in: classroom });
+    await attempt.answerCorrectly(onlyQuestion);
+    await attempt.complete();
+
+    // Sanity: reveals while the assignment is still live.
+    const before = await attempt.review();
+    expect(before.revealed).toBe(true);
+
+    // The assignment is no longer live — same as a closed scheduling window.
+    await teacher.setQuizPublished(quiz, { in: classroom, published: false });
+
+    const after = await attempt.review();
+    expect(after.revealed).toBe(true);
+    expect(after.questions).toHaveLength(1);
+    const reviewed = after.questions![0];
+    expect(reviewed.prompt).toBe("שאלה");
+    expect(reviewed.options.map((o) => o.text).sort()).toEqual(["לא", "נכון"]);
+    expect(reviewed.correct_option_ids).toEqual(onlyQuestion.correctIds);
+  });
+
   it("unlimited attempts NEVER reveal per-question detail — score only", async () => {
     const quiz = await teacher.authorQuiz({ questions: [oneQuestion()] });
     const [onlyQuestion] = quiz.questions;

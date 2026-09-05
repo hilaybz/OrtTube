@@ -6,9 +6,7 @@ import {
   listMyAttemptsForQuiz,
   findLatestCompletedAttempt,
   getAttemptReview,
-  getQuizForStudent,
   type StudentAttemptState,
-  type StudentQuestion,
 } from "@/lib/attempts";
 import { cn } from "@/components/ui/cn";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -187,32 +185,23 @@ export default async function ResultsPage({
     );
   }
 
-  // Revealed: join the answer-free read for prompt/option labels. Questions in
-  // the frozen snapshot that were soft-deleted since fall back to a label.
-  // Labels come from the answer-free read. If the quiz was unassigned/soft-deleted
-  // since completion — or its window has closed, which now also gates this read —
-  // this can throw; degrade to fallback labels rather than 500.
-  let qmap = new Map<string, StudentQuestion>();
-  try {
-    const quiz = await getQuizForStudent(client, classId, quizId);
-    qmap = new Map(quiz.questions.map((q) => [q.id, q]));
-  } catch {
-    // fall through with an empty map
-  }
-  const items: ReviewItem[] = (review.questions ?? []).map((rq) => {
-    const q = qmap.get(rq.question_id);
-    return {
-      prompt: q?.prompt ?? "שאלה שהוסרה מהחידון",
-      explanation: rq.explanation,
-      was_correct: rq.was_correct,
-      options: (q?.options ?? []).map((o) => ({
-        id: o.id,
-        text: o.text,
-        correct: rq.correct_option_ids.includes(o.id),
-        selected: rq.selected_option_ids.includes(o.id),
-      })),
-    };
-  });
+  // Revealed: prompt/option labels come straight off the review itself now —
+  // get_attempt_review reads them off the attempt's frozen snapshot, so they
+  // survive a closed window or later unassignment. (A previous version joined
+  // a second, separately-fetched answer-free read here; that read requires the
+  // assignment to still be live and raised not_assigned once a window closed,
+  // which — silently caught — mislabeled every question as "removed".)
+  const items: ReviewItem[] = (review.questions ?? []).map((rq) => ({
+    prompt: rq.prompt,
+    explanation: rq.explanation,
+    was_correct: rq.was_correct,
+    options: rq.options.map((o) => ({
+      id: o.id,
+      text: o.text,
+      correct: rq.correct_option_ids.includes(o.id),
+      selected: rq.selected_option_ids.includes(o.id),
+    })),
+  }));
 
   return wrap(
     <ScoreHeader correct={correct} total={total} />,
