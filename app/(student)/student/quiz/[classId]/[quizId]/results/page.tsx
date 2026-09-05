@@ -191,11 +191,17 @@ export default async function ResultsPage({
   // a second, separately-fetched answer-free read here; that read requires the
   // assignment to still be live and raised not_assigned once a window closed,
   // which — silently caught — mislabeled every question as "removed".)
+  //
+  // Both fields are read defensively. The RPC types as `Json`, so TypeScript
+  // cannot tell whether the deployed database actually has the migration that
+  // added them — and if the app deploys first (migrations are pushed by hand),
+  // a bare `rq.options.map` throws inside a Server Component and 500s the whole
+  // page. Degrading to a prompt-less, option-less row is a far better failure.
   const items: ReviewItem[] = (review.questions ?? []).map((rq) => ({
-    prompt: rq.prompt,
+    prompt: rq.prompt ?? "",
     explanation: rq.explanation,
     was_correct: rq.was_correct,
-    options: rq.options.map((o) => ({
+    options: (rq.options ?? []).map((o) => ({
       id: o.id,
       text: o.text,
       correct: rq.correct_option_ids.includes(o.id),
