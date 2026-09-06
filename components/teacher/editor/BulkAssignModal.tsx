@@ -36,7 +36,7 @@ export function BulkAssignModal({
   onAssigned: () => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [tutorMode, setTutorMode] = useState<TutorMode>("hints");
+  const [tutorMode, setTutorMode] = useState<TutorMode>("full");
   const [unlimited, setUnlimited] = useState(false);
   const [maxAttempts, setMaxAttempts] = useState("1");
   const [publishNow, setPublishNow] = useState(true);
@@ -48,7 +48,7 @@ export function BulkAssignModal({
 
   function reset() {
     setSelected(new Set());
-    setTutorMode("hints");
+    setTutorMode("full");
     setUnlimited(false);
     setMaxAttempts("1");
     setPublishNow(true);

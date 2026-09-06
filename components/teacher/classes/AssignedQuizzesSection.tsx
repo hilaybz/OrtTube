@@ -204,7 +204,7 @@ export function AssignedQuizzesSection({
 
   const [open, setOpen] = useState(false);
   const [quizId, setQuizId] = useState("");
-  const [tutorMode, setTutorMode] = useState<TutorMode>("hints");
+  const [tutorMode, setTutorMode] = useState<TutorMode>("full");
   const [unlimited, setUnlimited] = useState(false);
   const [maxAttempts, setMaxAttempts] = useState("1");
   const [publishNow, setPublishNow] = useState(true);
@@ -229,7 +229,7 @@ export function AssignedQuizzesSection({
 
   function openAssign() {
     setQuizId(available[0]?.quiz_id ?? "");
-    setTutorMode("hints");
+    setTutorMode("full");
     setUnlimited(false);
     setMaxAttempts("1");
     setPublishNow(true);
