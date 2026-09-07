@@ -1,9 +1,8 @@
 # Data model
 
-OrtTube stores everything in Postgres (Supabase). Identity, content, delivery, and
-results are normalized into the tables below. All writes go through
-`SECURITY DEFINER` RPCs and Row-Level Security; application code never mutates
-these tables directly except where a table is explicitly RLS-writable.
+Everything lives in Postgres (Supabase). All writes go through `SECURITY DEFINER`
+RPCs; Row-Level Security, grants, triggers and composite foreign keys enforce the
+invariants below regardless of caller.
 
 ## Entity-relationship diagram
 
@@ -32,6 +31,7 @@ erDiagram
     quizzes ||--o{ class_quizzes : "assigned via"
     quizzes ||--o{ attempts : "taken as"
     quizzes ||--o{ tutor_questions : "about"
+    quizzes ||--o{ translation_jobs : "fill claims"
     quizzes ||--o| quizzes : "cloned from"
 
     questions ||--o{ question_options : "choices"
@@ -41,16 +41,6 @@ erDiagram
 
     question_options ||--o{ option_translations : "localized text"
     question_options ||--o{ answer_selections : "selected as"
-
-    class_quizzes {
-        uuid class_id PK, FK
-        uuid quiz_id PK, FK
-        text tutor_mode "off | hints | full"
-        int max_attempts "null = unlimited"
-        bool published "default false"
-        timestamptz available_from "nullable"
-        timestamptz available_until "nullable"
-    }
 
     attempts ||--o{ attempt_questions : "snapshot"
     attempts ||--o{ answers : "records"
@@ -65,6 +55,7 @@ erDiagram
         text role "teacher | student (immutable)"
         uuid school_id FK "immutable"
         citext email "unique"
+        text display_name
         text preferred_language "he | ar | en | null"
         timestamptz deactivated_at "teachers deactivated, not deleted"
     }
@@ -78,6 +69,7 @@ erDiagram
     class_members {
         uuid class_id PK, FK
         uuid student_id PK, FK
+        timestamptz joined_at
     }
     class_invites {
         uuid id PK
@@ -88,10 +80,11 @@ erDiagram
         uuid id PK
         text youtube_video_id "unique dedup key"
         text title
-        text channel_name "uploading channel, via oEmbed"
+        text channel_name
         int duration_seconds
         text transcript_status "pending | ready | unavailable"
-        timestamptz transcript_fetch_started_at "unused; see lib/transcriptCache.ts"
+        timestamptz fetched_at
+        timestamptz transcript_fetch_started_at "unused"
     }
     quizzes {
         uuid id PK
@@ -99,13 +92,13 @@ erDiagram
         uuid video_id FK
         uuid school_id FK
         text title "optional; falls back to the video's"
-        text base_language "author's language"
+        text base_language "he | ar | en"
         text visibility "private | shared"
-        bool time_restricted "default false"
-        int duration_minutes "non-null only while time_restricted"
+        bool time_restricted
+        int duration_minutes "non-null iff time_restricted"
         uuid cloned_from_id FK "lineage"
+        timestamptz content_updated_at "analytics cutoff"
         timestamptz deleted_at "soft delete"
-        timestamptz created_at
     }
     questions {
         uuid id PK
@@ -134,12 +127,28 @@ erDiagram
         text language PK
         text text
     }
+    translation_jobs {
+        uuid quiz_id PK, FK
+        text language PK
+        timestamptz started_at "claim marker"
+        timestamptz completed_at
+    }
+    class_quizzes {
+        uuid class_id PK, FK
+        uuid quiz_id PK, FK
+        text tutor_mode "off | hints | full"
+        int max_attempts "null = unlimited"
+        bool published
+        timestamptz available_from
+        timestamptz available_until
+    }
     attempts {
         uuid id PK
         uuid student_id FK "null = anonymized"
         uuid class_id FK
         uuid quiz_id FK
         int attempt_no
+        timestamptz started_at
         timestamptz completed_at
         int num_correct
         int num_questions
@@ -167,153 +176,58 @@ erDiagram
         uuid video_id FK
         uuid attempt_id FK "if asked mid-attempt"
         uuid question_id FK "on-screen question, if any"
+        int position_seconds
         text prompt
         text ai_response
     }
 ```
 
+Every table also has `created_at`. Three ungranted views, `analytics_attempts`,
+`analytics_answers` and `analytics_tutor_questions`, filter the underlying tables
+to attempts started after the quiz's `content_updated_at`; all teacher analytics
+read through them.
+
 ## Tables by area
 
-### Identity
-
-- **`schools`** — the tenant boundary. Every profile, class, and quiz belongs to
-  exactly one school; cross-school access is denied everywhere.
-- **`profiles`** — one row per user, keyed to `auth.users`. `role`
-  (`teacher`/`student`) and `school_id` are **immutable** after creation
-  (enforced by trigger + column-level REVOKE). `preferred_language` is optional
-  and drives language resolution. Teachers are **deactivated** (`deactivated_at`),
-  never hard-deleted while they own content.
-
-### Classes, membership, invites
-
-- **`classes`** — owned by a teacher, scoped to the teacher's school, with a
-  content `language`. Composite foreign keys guarantee the owner is a `teacher`
-  and lives in the same `school` as the class.
-- **`class_members`** — the roster. Composite FK guarantees each member is a
-  `student`.
-- **`class_invites`** — a pending invite by email for a student who hasn't signed
-  up yet. When that email registers, an `AFTER INSERT` trigger converts matching
-  invites into memberships.
-
-### Videos (canonical, shared, ownerless)
-
-- **`videos`** — one row per YouTube video, deduped by `youtube_video_id` and
-  shared across all quizzes/schools. No owner column. `transcript_status` +
-  `fetched_at` carry the transcript verdict and its age: `ready` is trusted for
-  ~30 days, a confirmed `unavailable` for ~2 days. Orphan videos (no referencing
-  quiz) are garbage-collected after a grace window.
-
-  `transcript_fetch_started_at` is **no longer read or written**. It was a
-  single-flight claim marker, and losing the claim meant giving up — so a teacher
-  pressing "generate" seconds after the editor warmed the cache was told the video
-  had no captions while the captions were downloading. Callers now share one
-  in-flight fetch per instance (`lib/transcriptCache.ts`), which cannot be stolen
-  and cannot lie; two instances fetching the same video twice is an accepted cost.
-  The column is left in place for a later migration to drop.
-
-### Quizzes, questions, options, translations
-
-- **`quizzes`** — authored on a video, in the author's `base_language`, `private`
-  by default or `shared` to the same-school catalog. `cloned_from_id` records
-  clone lineage. Soft-deleted via `deleted_at`. `time_restricted` +
-  `duration_minutes` state an optional teacher-given time cap, shown to both
-  roles as a bare number; unrestricted (the default), the UI instead shows an
-  *estimate* derived from the video's length (`~N דקות`, `lib/quizDuration.ts`)
-  rather than storing one. A CHECK constraint keeps the pair consistent:
-  `duration_minutes` is non-null if and only if `time_restricted` is true.
-- **`questions`** — anchored to a playhead `position_seconds`; `single` or `multi`
-  choice. Soft-deleted.
-- **`question_options`** — the choices. **`is_correct` is the language-independent
-  answer key** — correctness lives here, not in any translated text, so it can
-  never desync across languages. Soft-deleted to preserve answer history.
-- **`question_translations` / `option_translations`** — per-language prompt /
-  explanation / option text. The base language is written at authoring; other
-  languages are filled lazily by AI translation. Translating never touches
-  `is_correct`, `position_seconds`, or option identity.
-
-### Assignment, attempts, answers
-
-- **`class_quizzes`** — assigns a quiz to a class with per-assignment delivery
-  settings: `tutor_mode` (`off`/`hints`/`full`), `max_attempts`
-  (`null` = unlimited), `published` (default `false` at the column;
-  `assign_quiz_to_class` defaults its own parameter to `true` so the ordinary
-  assign flow stays instantly visible), and an optional scheduling window
-  `available_from` / `available_until` (either or both nullable — no window
-  means "visible for as long as `published` stays true"). An allocation that
-  is unpublished, not yet inside its window, or past it is invisible to
-  students in every read that ACTS on an assignment (`get_quiz_for_student`,
-  `start_or_resume_attempt`, `list_my_attempts_for_quiz`, the tutor route) —
-  same `not_assigned` a missing assignment would raise, via the shared SQL
-  predicate `_allocation_is_live(cq)` every one of those reads calls. The
-  owning teacher always sees every state via `list_class_quizzes` /
-  `list_quiz_allocations` — nothing is hidden from the owner. The student
-  FEED (`list_student_feed`) is the one deliberate exception: it also
-  surfaces a closed allocation the student completed or never attempted
-  (`missed`), rather than letting it silently disappear once its window
-  closes. `list_class_quizzes` also reports `author_id`/`author_name`/`is_own`
-  per row — a `shared` quiz can be assigned into a class by any same-school
-  teacher, not just its author (see `assign_quiz_to_class` below), so the
-  class page uses `is_own` to route a row to the quiz editor (own quizzes) or
-  a read-only preview (assigned quizzes the viewer didn't author).
-
-  **Hard cutoff at `available_until`.** A student mid-attempt when the window
-  closes is treated as having submitted right then: `submit_answer` and
-  `complete_attempt` force-finalize the attempt (backdating `completed_at` to
-  the window's close, never wall-clock `now()`), and unanswered questions
-  count wrong by omission — no `answers` row needed. A daily cron sweep
-  (`close_expired_attempt_windows`, `app/api/jobs/close-attempt-windows` —
-  daily rather than hourly because Vercel's Hobby plan rejects a faster
-  schedule outright) finalizes attempts nobody came back to interact with;
-  the two interactive paths already handle anyone still present, so the
-  sweep is an analytics backstop, not the primary mechanism. The reveal gate
-  (`get_attempt_review`)
-  treats a closed window as "no retake remains," the same as an exhausted
-  `max_attempts` — otherwise a windowed quiz with attempts left could never
-  reveal per-question detail. **`attempts` deliberately has no "how it was
-  completed" column** — none of
-  `quiz_stats`/`class_stats`/`question_stats`/`class_quiz_analytics`
-  read anything beyond `completed_at`/`num_correct`/`num_questions`, so a
-  force-completed attempt is already indistinguishable from a normal one
-  everywhere that matters. `class_quiz_analytics(class_id, quiz_id)` is the
-  one quiz-within-one-class view — `class_stats` covers every quiz in a
-  class, `question_stats` covers every class that ran a quiz, and neither
-  alone answers "how did *this* class do on *this* quiz." It scores strictly
-  from each student's **latest** completed attempt (never best, never every
-  retake), matching the grade the student is shown on their own results page.
-- **`attempts`** — one row per student run of an assigned quiz. `student_id` goes
-  `NULL` when a student is anonymized (right-to-be-forgotten), and such rows still
-  count toward class statistics.
-- **`attempt_questions`** — the frozen question set captured when an attempt
-  starts, so later edits to the quiz don't change what that attempt was scored
-  against.
-- **`answers` / `answer_selections`** — one `answers` row per answered question
-  with `was_correct` graded at answer time, plus the exact options chosen.
-
-### AI tutor
-
-- **`tutor_questions`** — a log of every tutor interaction (prompt + AI response)
-  with its class/quiz/video context and, when applicable, the active attempt and
-  on-screen question. Powers tutor analytics; anonymized with the student.
+- **Identity.** `schools` is the tenant boundary. `profiles` maps to
+  `auth.users`; `role` and `school_id` never change. Teachers are deactivated,
+  not deleted.
+- **Classes.** `classes` belong to a teacher and carry a content language.
+  `class_members` is the roster. `class_invites` holds emails invited before
+  signup; a trigger converts them to memberships when the student registers.
+- **Videos.** One row per YouTube id, shared across quizzes and schools, no
+  owner. Transcript status and freshness live here; the transcript itself is in
+  Storage. Orphans are garbage-collected.
+- **Quizzes.** Authored on a video in a base language, private or shared to the
+  school, soft-deleted. `questions` are anchored to a playhead position;
+  `question_options` hold the answer key; the translation tables hold per-language
+  text. `translation_jobs` is a per-(quiz, language) claim so concurrent fills
+  run once.
+- **Assignment.** `class_quizzes` carries the delivery settings for one quiz in
+  one class: tutor mode, attempt cap, publish state, availability window.
+- **Attempts.** One `attempts` row per student run. `attempt_questions` freezes
+  the question set at start. `answers` are graded at answer time;
+  `answer_selections` record the chosen options.
+- **Tutor.** `tutor_questions` logs every exchange with its context.
 
 ## Key invariants
 
-- **Answer key is structural and language-independent.** Correctness is
-  `question_options.is_correct`; translations carry only display text. A quiz can
-  be shown in `he`/`ar`/`en` with a single source of truth for what's right.
-- **Language resolution precedence:** `profiles.preferred_language` →
-  `classes.language` → `quizzes.base_language`. The base language is `NOT NULL`,
-  so resolution always terminates in a valid language.
-- **Reveal gate.** Per-question correctness, correct options, and explanations are
-  returned to a student **only when no retake remains** (the attempt is completed
-  and the attempt cap is exhausted). While attempts are left, only the aggregate
-  score is returned; unlimited attempts never reveal per-question detail. Students
-  have no direct read grant on `answers` / `answer_selections`.
-- **Tenant isolation.** School membership is checked on every cross-entity action;
-  composite FKs make it impossible to own a class in another school or enroll a
-  teacher as a student.
-- **Immutability.** A profile's `role` and `school_id` cannot change after
-  creation; a deactivated teacher cannot clear their own `deactivated_at`.
-- **Soft delete then purge.** Quizzes and their content are soft-deleted
-  (`deleted_at`) so in-flight results stay consistent, then hard-deleted at quiz
-  granularity by a retention job whose cascade removes questions, options,
-  translations, assignments, attempts, answers, and tutor logs.
+- **Answer key is structural.** Correctness is `question_options.is_correct`;
+  translations carry only text. A trigger requires exactly one correct option for
+  `single` and at least one for `multi`.
+- **Language resolution:** `profiles.preferred_language` → `classes.language` →
+  `quizzes.base_language`.
+- **Reveal gate.** Per-question detail is returned to a student only when no
+  retake remains (cap exhausted or window closed). Students have no direct read
+  on `question_options`, `answers` or `answer_selections`.
+- **Allocation liveness.** An unpublished or out-of-window assignment is invisible
+  to students in every read that acts on it. A window closing mid-attempt
+  finalizes the attempt at the closing time.
+- **Analytics cutoff.** Content edits stamp `quizzes.content_updated_at`; reports
+  count only attempts started after it. Rows are never deleted. Unchanged
+  resends and non-base-language translations do not bump the stamp.
+- **Tenant isolation.** Composite foreign keys make cross-school ownership and
+  wrong-role membership unrepresentable.
+- **Soft delete, then purge.** Quiz content is soft-deleted; a retention job
+  hard-deletes whole quizzes later. Deleting a student nulls their id on
+  attempts and tutor logs, which still count.
