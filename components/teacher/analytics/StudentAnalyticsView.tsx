@@ -109,7 +109,7 @@ export async function StudentAnalyticsView({ studentId }: { studentId: string })
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xl font-semibold text-[var(--heading)]">לפי חידון</h2>
-        <StudentQuizTable quizzes={data.quizzes} />
+        <StudentQuizTable studentId={studentId} quizzes={data.quizzes} />
       </section>
 
       <TutorQuestionLog

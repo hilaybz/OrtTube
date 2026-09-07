@@ -9,7 +9,13 @@ import { AnalyticsSearch } from "@/components/teacher/analytics/AnalyticsSearch"
 import { ClassAnalyticsView } from "@/components/teacher/analytics/ClassAnalyticsView";
 import { StudentAnalyticsView } from "@/components/teacher/analytics/StudentAnalyticsView";
 import { QuizAnalyticsView } from "@/components/teacher/analytics/QuizAnalyticsView";
-import { quizAnalyticsHref } from "@/components/teacher/analyticsLinks";
+import {
+  CLASS_ORIGIN,
+  STUDENT_ORIGIN,
+  classAnalyticsHref,
+  quizAnalyticsHref,
+  studentAnalyticsHref,
+} from "@/components/teacher/analyticsLinks";
 import { getClassName } from "@/lib/classes";
 import type { AnalyticsScope } from "@/lib/analytics";
 
@@ -74,22 +80,53 @@ export default async function AnalyticsHubPage({
     );
   }
 
-  let title = SCOPE_TITLE[scope];
-  if (scope === "class") {
+  // A reader who drilled into this quiz from a class or a student says so with
+  // `from=`, and back belongs at that entity rather than at the quiz rollup. The
+  // class dropdown deliberately sets neither: once the reader has switched class
+  // under their own steam, back belongs at the quiz. See `QuizClassFilter`.
+  //
+  // The class id is already in the URL; a student's rides along in `&student=`,
+  // and is validated like any other id so a hand-edited one lands nowhere.
+  const rawFrom = Array.isArray(params.from) ? params.from[0] : params.from;
+  const onQuiz = scope === "quiz";
+  const backToClassId =
+    onQuiz && filterClassId && rawFrom === CLASS_ORIGIN ? filterClassId : null;
+  const backToStudentId =
+    onQuiz && rawFrom === STUDENT_ORIGIN ? normalizeId(params.student) : null;
+
+  // One lookup serves both: the class-scope title, and the back link's label
+  // when returning to a class. Named rather than generic, because the whole
+  // point of this affordance is telling the reader where they will land.
+  let className: string | null = null;
+  if (scope === "class" || backToClassId) {
     const client = (await createClient()) as unknown as SupabaseClient;
-    let className: string | null = null;
     try {
-      className = await getClassName(client, id);
+      className = await getClassName(client, backToClassId ?? id);
     } catch {
       className = null;
     }
-    if (className) title = `אנליטיקה של ${className}`;
   }
+
+  let title = SCOPE_TITLE[scope];
+  if (scope === "class" && className) title = `אנליטיקה של ${className}`;
 
   return (
     <div className="mx-auto max-w-6xl py-2">
       <header className="mb-6 flex flex-col gap-2">
-        {filterClassId ? (
+        {backToClassId ? (
+          <BackLink
+            href={classAnalyticsHref(backToClassId)}
+            label={className ? `אנליטיקה של ${className}` : "אנליטיקה של הכיתה"}
+          />
+        ) : backToStudentId ? (
+          // Generic wording: the page has no cheap name lookup for a student the
+          // way `getClassName` serves a class, and the student scope's own title
+          // is generic for the same reason.
+          <BackLink
+            href={studentAnalyticsHref(backToStudentId)}
+            label="אנליטיקה של התלמיד/ה"
+          />
+        ) : filterClassId ? (
           <BackLink
             href={quizAnalyticsHref(id)}
             label="אנליטיקה של החידון"
