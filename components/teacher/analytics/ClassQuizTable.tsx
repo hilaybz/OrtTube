@@ -9,7 +9,10 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Pager } from "@/components/ui/Pager";
 import { usePagedList } from "@/components/ui/usePagedList";
 import { allocationStatus } from "@/components/teacher/scheduleFormat";
-import { classQuizAnalyticsHref } from "@/components/teacher/analyticsLinks";
+import {
+  CLASS_ORIGIN,
+  classQuizAnalyticsHref,
+} from "@/components/teacher/analyticsLinks";
 import type { ClassOverviewQuiz } from "@/lib/analytics";
 import { grade } from "./chartTheme";
 import { CELL, HEAD_CELL, ROW_BORDER, ROW_HEAD, ROW_LINK } from "./tableStyles";
@@ -95,7 +98,11 @@ export function ClassQuizTable({
               <tbody>
                 {paged.slice.map((q, i) => {
                   const status = allocationStatus(q);
-                  const href = classQuizAnalyticsHref(classId, q.quiz_id);
+                  // fromClass: the reader drilled in from this class, so back
+                  // belongs at the class rather than at the quiz rollup.
+                  const href = classQuizAnalyticsHref(classId, q.quiz_id, {
+                    from: CLASS_ORIGIN,
+                  });
                   return (
                     <tr
                       key={q.quiz_id}

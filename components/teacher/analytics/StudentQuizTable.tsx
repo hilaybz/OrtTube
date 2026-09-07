@@ -9,7 +9,10 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Pager } from "@/components/ui/Pager";
 import { usePagedList } from "@/components/ui/usePagedList";
 import { allocationStatus } from "@/components/teacher/scheduleFormat";
-import { classQuizAnalyticsHref } from "@/components/teacher/analyticsLinks";
+import {
+  STUDENT_ORIGIN,
+  classQuizAnalyticsHref,
+} from "@/components/teacher/analyticsLinks";
 import type { StudentAnalyticsQuiz } from "@/lib/analytics";
 import { grade } from "./chartTheme";
 import { CELL, HEAD_CELL, ROW_BORDER, ROW_HEAD, ROW_LINK } from "./tableStyles";
@@ -20,7 +23,14 @@ import { CELL, HEAD_CELL, ROW_BORDER, ROW_HEAD, ROW_LINK } from "./tableStyles";
  * with them is looking at the same number. A row leads to that quiz's breakdown
  * inside that class, which is where "why did they get this" is answerable.
  */
-export function StudentQuizTable({ quizzes }: { quizzes: StudentAnalyticsQuiz[] }) {
+export function StudentQuizTable({
+  studentId,
+  quizzes,
+}: {
+  /** Carried into each row's href so back returns to this student. */
+  studentId: string;
+  quizzes: StudentAnalyticsQuiz[];
+}) {
   const [query, setQuery] = useState("");
 
   const visible = useMemo(() => {
@@ -102,7 +112,13 @@ export function StudentQuizTable({ quizzes }: { quizzes: StudentAnalyticsQuiz[] 
               <tbody>
                 {paged.slice.map((q, i) => {
                   const status = allocationStatus(q);
-                  const href = classQuizAnalyticsHref(q.class_id, q.quiz_id);
+                  // The reader drilled in from this student, so back belongs
+                  // there rather than at the quiz rollup. Unlike a class, the
+                  // student id is not otherwise in the URL, so it travels along.
+                  const href = classQuizAnalyticsHref(q.class_id, q.quiz_id, {
+                    from: STUDENT_ORIGIN,
+                    studentId,
+                  });
                   return (
                     <tr
                       key={`${q.class_id}-${q.quiz_id}`}
