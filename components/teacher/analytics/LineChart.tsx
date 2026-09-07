@@ -15,26 +15,12 @@ import {
   yForValue,
 } from "./chartTheme";
 
-/** One line series. `values` is index-aligned with `categories`; `null` = a gap. */
 export interface LineSeries {
   label: string;
   color: string;
   values: (number | null)[];
 }
 
-/**
- * One or two lines over a right-to-left axis (see `chartTheme`) — a trend, or a
- * trend against the thing it should be compared to.
- *
- * A crosshair finds the position rather than the line: the reader aims at a quiz
- * or a date, and one tooltip lists every series there, so the pointer never has
- * to land on a 2px stroke. Each position is also a `tabIndex` stop with the same
- * readout as an `aria-label`.
- *
- * Markers carry a ring in the surface colour, which is what keeps two series
- * legible where they cross. Gaps (`null`) break the path instead of being drawn
- * through as if the value were known.
- */
 export function LineChart({
   categories,
   series,
@@ -93,7 +79,6 @@ export function LineChart({
           );
         })}
 
-        {/* Crosshair for the focused position. */}
         {active != null && (
           <line
             x1={xForIndex(active, n)}

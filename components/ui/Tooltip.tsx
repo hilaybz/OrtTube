@@ -3,12 +3,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { cn } from "./cn";
 
-/** Distance between the trigger and the bubble. */
 const GAP = 8;
-/** Smallest gap the bubble keeps from any viewport edge. */
 const EDGE = 8;
 
-/** Where the bubble ended up — the caller's `placement` is only a preference. */
 type Side = "top" | "bottom";
 
 /**
@@ -38,9 +35,6 @@ interface Position {
 }
 
 /**
- * Dark tooltip (per tooltips-popovers.md). Shows on hover and on *keyboard*
- * focus, and never outlives the interaction that opened it.
- *
  * The bubble is portaled to `<body>` with fixed viewport coordinates read off
  * the trigger's own rect, exactly like `MultiSelectDropdown`'s panel. An
  * absolutely-positioned bubble inside the page is clipped by the nearest
@@ -48,14 +42,6 @@ interface Position {
  * surface, which sets `overflow: hidden` for its blur and edge highlights — so
  * an icon action near a card's edge lost its label entirely. Escaping to
  * `<body>` also lets the bubble stay inside the viewport at the end of a row.
- *
- * Placement is self-correcting: `placement` says which side to try first, and
- * the bubble flips to the other side when that one doesn't fit and clamps
- * horizontally against both edges. Callers never need to guess — a
- * `placement="bottom"` that only existed to dodge clipping can be dropped.
- *
- * The label is never truncated: a long one wraps inside a bounded width rather
- * than being cut off.
  */
 export function Tooltip({
   content,
@@ -64,14 +50,11 @@ export function Tooltip({
   className,
 }: {
   content: string;
-  /** Preferred side. The bubble flips when that side doesn't fit. */
   placement?: Side;
   children: React.ReactNode;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  // Position and side are resolved from measured rects, so they stay null until
-  // the bubble has been measured once (see the layout effect below).
   const [position, setPosition] = useState<Position | null>(null);
   const [side, setSide] = useState<Side>(placement);
   const anchorRef = useRef<HTMLSpanElement>(null);

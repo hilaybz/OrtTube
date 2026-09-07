@@ -1,10 +1,7 @@
 /**
- * The editor's confirm gate for the analytics cutoff.
- *
  * The wording lives in `@/lib/analyticsCutoff` (shared with the analytics
  * screens); this module holds only the browser interaction, so the copy can't
  * drift between the warning and the report it warns about.
- *
  * The gate fires only when `analytics_attempt_count > 0`. A quiz nobody has
  * attempted has nothing to lose, and that is when teachers do most of their
  * fiddling — so it stays as frictionless as it is today.

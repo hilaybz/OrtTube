@@ -15,11 +15,9 @@ import {
   yForValue,
 } from "./chartTheme";
 
-/** One column series. `values` is index-aligned with `categories`. */
 export interface ColumnSeries {
   label: string;
   color: string;
-  /** `null` = no data for that category (the column is simply absent). */
   values: (number | null)[];
   /**
    * Per-category colours, for a single series over ORDERED categories (the score
@@ -30,24 +28,6 @@ export interface ColumnSeries {
   colors?: readonly string[];
 }
 
-/**
- * Columns over a right-to-left category axis (see `chartTheme`), for one or two
- * series.
- *
- * Reading aids, in the order the data-viz method prefers them: direct labels on
- * the caps when there is room, then the value axis, then the hover/focus
- * tooltip, then the card's table twin. Direct labels appear only for a single
- * series with few enough categories that they cannot collide — flooding every
- * cap with a number is how a chart stops being read.
- *
- * Each category owns one transparent hit band spanning the full plot height, so
- * the hover target is the whole column slot rather than the painted pixels of a
- * 3px-tall bar, and it is a `tabIndex` stop carrying the same readout as an
- * `aria-label` for keyboard and screen-reader users.
- *
- * Adjacent columns are separated by real space (the card surface showing
- * through), never by a stroke around the mark.
- */
 export function ColumnChart({
   categories,
   series,
@@ -59,10 +39,8 @@ export function ColumnChart({
 }: {
   categories: string[];
   series: ColumnSeries[];
-  /** Top of the value axis. Defaults to 1 for 0..1 fractions. */
   max?: number;
   formatValue: (value: number) => string;
-  /** Axis ticks; defaults to `formatValue`. */
   formatTick?: (value: number) => string;
   ariaLabel: string;
   /**
@@ -97,7 +75,6 @@ export function ColumnChart({
         aria-label={ariaLabel}
         className="block h-auto w-full overflow-visible"
       >
-        {/* Hairline value grid + its labels, at the inline start (right). */}
         {ticksFor(max).map((value) => {
           const y = yForValue(value, max);
           return (
@@ -137,7 +114,6 @@ export function ColumnChart({
 
           return (
             <g key={`${category}-${i}`}>
-              {/* Hit band: the whole slot, so a short column is still easy to reach. */}
               <rect
                 x={cx - band / 2}
                 y={PLOT_Y0}
@@ -178,7 +154,6 @@ export function ColumnChart({
                 );
               })}
 
-              {/* Square off the rounded bottom so columns sit ON the baseline. */}
               {series.map((s, si) => {
                 const value = s.values[i];
                 if (value == null) return null;
@@ -273,21 +248,11 @@ export function ColumnChart({
   );
 }
 
-/**
- * The shared hover/focus readout. Value leads, series name follows: the reader
- * already knows which series they are on and wants the number. Keyed by a short
- * stroke of the series colour rather than a filled box — at this density a box
- * is data-weight ink doing a label's job.
- *
- * Positioned as a percentage of the chart's viewBox so it tracks the mark
- * through any responsive scaling, and pinned inside the card's edges.
- */
 export function ChartTooltip({
   x,
   title,
   rows,
 }: {
-  /** viewBox x of the mark the tooltip belongs to. */
   x: number;
   title: string;
   rows: { label: string; color: string; value: string }[];

@@ -29,8 +29,6 @@ describe("PasswordField", () => {
   });
 
   it("uses a non-submitting button so it cannot submit the surrounding form", () => {
-    // A bare <button> inside a form defaults to type="submit" — revealing the
-    // password would then submit half-filled credentials.
     render(<PasswordField label="סיסמה" name="password" />);
     expect(screen.getByRole("button", { name: "הצג סיסמה" })).toHaveAttribute(
       "type",

@@ -5,29 +5,10 @@ import { getTranscript } from "@/lib/transcriptCache";
 import { createRateLimiter } from "@/lib/rateLimit";
 
 /**
- * POST /api/quizzes/[id]/transcript  — warm the transcript cache.
- *
- * Fetching is lazy: nothing pulls a transcript until a teacher presses generate
- * or a student asks the tutor, and by then they are waiting on it. A cold fetch
- * can take tens of seconds — proxy fallthrough, the download itself — so this
- * moves that work to page-open, where nobody is blocked on it. The teacher editor
- * and the student player each fire it once on mount and ignore the result.
- *
- * A fetch already running when someone presses generate is JOINED, not raced:
- * `getTranscript` shares one in-flight fetch per video per instance. Warming can
- * therefore only ever make the wait shorter.
- *
  * Deliberately does NOT force. Forcing ignores the negative cache, which is right
  * for a human pressing a button and wrong here — page opens are frequent and
  * involuntary, and forcing would let a teacher reloading the editor re-check a
  * known caption-less video every time, against metered bandwidth.
- *
- * Body: `{ classId?: string }` — required for students, who are authorized by
- * class membership rather than ownership.
- *
- * Returns 202 with an empty body: this is fire-and-forget, both callers ignore
- * the response, and a status field nobody reads is a field nobody notices is
- * wrong. The outcome is recorded on the video row and in the logs.
  *
  * The 202 is also sent BEFORE the fetch runs, via `after`. Awaiting the fetch
  * first held the request open for as long as the work took — seconds, on a page
@@ -36,10 +17,6 @@ import { createRateLimiter } from "@/lib/rateLimit";
  * keeps the invocation alive for the callback, so the work still completes,
  * without a browser connection standing idle until it does. It does not make the
  * fetch cheaper, only unobserved.
- *
- * Errors: `{ error: { code, message } }` with codes:
- *   unauthorized(401), not_found(404), forbidden(403), rate_limited(429),
- *   internal_error(500).
  */
 export const runtime = "nodejs";
 // A cold fetch can try several exits across two endpoints; the default would cut
@@ -80,7 +57,6 @@ export async function POST(
     const body = (await req.json()) as { classId?: unknown };
     if (typeof body?.classId === "string") classId = body.classId;
   } catch {
-    // No body is fine — that's the teacher case.
   }
 
   // Owner-RLS lets a teacher read their own quiz; a student's select returns
@@ -117,9 +93,6 @@ export async function POST(
       const msg = error.message ?? "";
       if (msg.includes("not_member")) return err("forbidden", "Not a class member", 403);
       if (msg.includes("not_assigned")) return err("not_found", "Quiz not assigned", 404);
-      // Anything else is a fault, not a decision. Reporting a connection blip or
-      // a malformed id as "you are not permitted" is the same mistake this route
-      // exists to stop making about transcripts.
       console.error(`[transcript-warm] get_tutor_mode failed quiz=${quizId}: ${msg}`);
       return err("internal_error", "Could not check quiz access", 500);
     }
@@ -164,8 +137,6 @@ async function warm(youtubeVideoId: string): Promise<void> {
   try {
     await getTranscript(createServiceClient(), youtubeVideoId);
   } catch (e) {
-    // Warming is best-effort by definition. A failure here must never surface to
-    // a teacher opening the editor or a student opening a quiz.
     console.warn(
       `[transcript-warm] video=${youtubeVideoId} ${e instanceof Error ? e.message : String(e)}`
     );

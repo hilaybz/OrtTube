@@ -1,17 +1,8 @@
 import { AttemptError } from "@/lib/attempts";
 import { err, requireAuth } from "../http";
 
-/**
- * Shared HTTP plumbing for the `/api/attempts/*` route handlers.
- *
- * Uniform error envelope `{ error: { code, message } }` and a single
- * mapping from the stable RPC/service error codes to HTTP status, so every route
- * reports the same code the DB raised. No answer key ever crosses this layer.
- */
-
 export { err, requireAuth };
 
-/** Map a stable AttemptError code to an HTTP status. */
 export function statusForCode(code: string): number {
   switch (code) {
     case "unauthorized":
@@ -38,7 +29,6 @@ export function statusForCode(code: string): number {
   }
 }
 
-/** Translate a thrown AttemptError into the uniform JSON response. */
 export function handleError(e: unknown) {
   if (e instanceof AttemptError) {
     return err(e.code, e.message, statusForCode(e.code));

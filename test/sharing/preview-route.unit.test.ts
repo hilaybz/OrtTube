@@ -1,14 +1,3 @@
-/**
- * Quiz route unit test — `GET /api/quizzes/[id]/preview` (backlog 1.3 /
- * issue #13).
- *
- * `getQuizForPreview` and Supabase are mocked, so this runs with no DB and no
- * network. What it pins is the handler's contract: 401 before anything is
- * attempted, and the `SharingError` -> HTTP status mapping (`statusForCode`
- * in `../../share/http`) this route deliberately reuses rather than the
- * `[id]/*` authoring routes' `QuizError`-based plumbing — see
- * `delete-route.unit.test.ts` for the equivalent test on that other family.
- */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -18,9 +7,6 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const getQuizForPreviewMock = vi.fn();
-// Keep the real SharingError: `handleError` narrows on `instanceof`, so a
-// stand-in class would silently fall through to a 500 and hide a broken
-// status mapping.
 vi.mock("@/lib/sharing", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/sharing")>()),
   getQuizForPreview: (...args: unknown[]) => getQuizForPreviewMock(...args),

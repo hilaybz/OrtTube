@@ -3,19 +3,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { Icon } from "@/components/ui/Icon";
 
-/**
- * Progress state of a checkpoint, for a read-only timeline (the student
- * player). Optional: an authoring timeline has no such notion and leaves it
- * unset, which renders the plain marker.
- */
 export type TimelineMarkerState = "done" | "current" | "upcoming";
 
 export interface TimelineMarker {
   id: string;
   seconds: number;
-  /** Accessible label + popover row text (e.g. "שאלה 2"); caller supplies it. */
   label: string;
-  /** Only meaningful with `readOnly` — drives the done/current/locked look. */
   state?: TimelineMarkerState;
 }
 
@@ -30,23 +23,13 @@ export interface TimelineMarker {
 type MoveResult = boolean | void | Promise<boolean | void>;
 
 export interface CheckpointTimelineProps {
-  /** `null` = duration not known yet (player hasn't reported one) → skeleton, clicks inert. */
   durationSeconds: number | null;
   currentSeconds: number;
   markers: TimelineMarker[];
   activeMarkerId?: string | null;
-  /**
-   * Progress display: no dragging, no cluster popover, and no click-to-seek on
-   * the track itself. This is what the student player needs — the bar reports
-   * where the questions sit and how far along the student is, and the only
-   * navigation on it is the per-marker jump `seekableIds` opts in to (below).
-   */
   readOnly?: boolean;
-  /** Accessible name of the read-only checkpoint list. */
   label?: string;
-  /** Click on empty track. Unused (and unnecessary) when `readOnly`. */
   onSeek?: (seconds: number) => void;
-  /** Click on a marker, or an item picked from a cluster popover. Falls back to `onSeek` when omitted. */
   onMarkerClick?: (id: string, seconds: number) => void;
   /**
    * `readOnly` only: the markers the student may jump to. A marker in this set
@@ -57,17 +40,12 @@ export interface CheckpointTimelineProps {
    * derive the set from `canSeekTo` in `./gate`, the one place that rule lives.
    */
   seekableIds?: Set<string>;
-  /** Drag committed on drop for a single (non-clustered) marker. Omitted entirely (or an id absent from `draggableIds`) disables dragging for that marker. */
   onMarkerMove?: (id: string, seconds: number) => MoveResult;
-  /** Drag committed on drop for an entire cluster — every clustered question moves to the same new instant together. Omitted (or any member missing from `draggableIds`) disables dragging for that cluster; it stays click-to-open-popover only. */
   onClusterMove?: (ids: string[], seconds: number) => MoveResult;
-  /** Markers eligible to drag. A cluster is draggable only when every one of its members is in this set. */
   draggableIds?: Set<string>;
   className?: string;
 }
 
-/** Whole-second offset as mm:ss (or h:mm:ss past an hour). Kept local — this
- * component is meant to stay dependency-free of any single feature area. */
 function formatSeconds(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds));
   const hours = Math.floor(s / 3600);
@@ -130,25 +108,6 @@ function idsEqual(a: string[], b: string[]): boolean {
   return b.every((id) => setA.has(id));
 }
 
-/**
- * A proportional, clickable, draggable video-time timeline — markers at
- * each checkpoint's position, click-to-seek anywhere on the track, drag a
- * marker (or a whole cluster) to reposition it. Generic on purpose (plain
- * seconds/callbacks, no quiz/question shape) so other video-time UI (e.g. a
- * future AI-generation time-range picker) can reuse it without an API break.
- *
- * Markers sharing (or nearly sharing) a position collapse into one "stack"
- * marker with a count badge rather than rendering N overlapping, unclickable
- * dots — clicking it opens a small popover to pick which one, dragging it
- * moves every clustered question to the same new instant together.
- *
- * `readOnly` turns the same geometry into the student player's progress
- * display: the bar tracks playback and each checkpoint shows whether it is
- * answered, current or still locked. Dragging, the cluster popover and
- * click-anywhere-on-the-track are all gone there; the one navigation left is
- * a jump to a checkpoint the block-skip gate already allows, opted into per
- * marker through `seekableIds`.
- */
 export function CheckpointTimeline({
   durationSeconds,
   currentSeconds,
@@ -203,7 +162,6 @@ export function CheckpointTimeline({
     return () => ro.disconnect();
   }, []);
 
-  // Close an open cluster popover on an outside click or Escape.
   useEffect(() => {
     if (openCluster == null) return;
     function onDocPointerDown(e: PointerEvent) {
@@ -221,8 +179,6 @@ export function CheckpointTimeline({
     };
   }, [openCluster]);
 
-  // Safety net matching VideoStage's own "never hang forever" convention —
-  // covers a caller whose `markers` prop never converges as expected.
   useEffect(() => {
     if (!pendingMove) return;
     const t = setTimeout(() => setPendingMove(null), PENDING_MOVE_TIMEOUT_MS);
@@ -290,9 +246,6 @@ export function CheckpointTimeline({
     setDrag({ ...drag, moved: true, seconds: secondsFromClientX(e.clientX) });
   }
 
-  /** Drop: pin the optimistic position (see `pendingMove` above) rather than
-   * clearing immediately, so the marker doesn't jump back to its old spot
-   * for the moment before the save's refresh actually lands. */
   function commitDrag(ids: string[], seconds: number) {
     const seq = ++commitSeq.current;
     setPendingMove({ seq, ids, seconds });
@@ -336,8 +289,6 @@ export function CheckpointTimeline({
         aria-busy={!ready}
         className={cn("relative h-11", !readOnly && ready && "cursor-pointer")}
       >
-        {/* The bar: watched portion filled, like a video scrubber. Decoration —
-            the playhead's meaning is carried by the video player itself. */}
         <div
           aria-hidden="true"
           className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 overflow-hidden rounded-full border border-[var(--glass-border)] bg-[var(--neutral-quaternary)]"
@@ -567,33 +518,18 @@ export function CheckpointTimeline({
   );
 }
 
-/** What a read-only marker's appearance means, spelled out for assistive tech. */
 const MARKER_STATE_LABEL: Record<TimelineMarkerState, string> = {
   done: "נענתה",
   current: "השאלה הנוכחית",
   upcoming: "טרם נפתחה",
 };
 
-/** The telling state of a stack of checkpoints: the current one wins, then done. */
 function groupState(items: TimelineMarker[]): TimelineMarkerState | undefined {
   if (items.some((i) => i.state === "current")) return "current";
   if (items.every((i) => i.state === "done")) return "done";
   return items.some((i) => i.state != null) ? "upcoming" : undefined;
 }
 
-/**
- * One checkpoint (or a stack of near-simultaneous ones) on a `readOnly`
- * timeline. Its appearance carries the state visually — answered, current,
- * still locked — and an sr-only line per clustered question carries the same
- * in words, since neither the shape nor the position is available to a screen
- * reader.
- *
- * `seekable` decides what it *is*: a button that jumps the video back to this
- * instant when the gate allows it, or the plain status node it has always been
- * when it doesn't. Only the element and the hover affordance change; the
- * status appearance is identical either way, so the timeline still reads as
- * one row of checkpoints rather than a mix of controls and decorations.
- */
 function ReadOnlyNode({
   items,
   seconds,
@@ -652,19 +588,11 @@ function ReadOnlyNode({
           }`}
         </span>
       ))}
-      {/* Part of the accessible name rather than a title/tooltip: a button
-          whose whole label is "שאלה 2 · 1:20 · נענתה" says what it is but not
-          what pressing it does. */}
       {seekable && <span className="sr-only">· מעבר לנקודה זו בסרטון</span>}
     </As>
   );
 }
 
-/**
- * The mm:ss flag above a marker: the live readout while a marker is dragged on
- * an authoring timeline, and the hover/focus readout of a checkpoint's position
- * on the student's. Same shape in both, since it answers the same question.
- */
 function TimeBubble({
   seconds,
   posPct,

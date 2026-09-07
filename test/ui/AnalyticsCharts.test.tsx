@@ -1,18 +1,3 @@
-/**
- * The analytics chart panels, rendered.
- *
- * Charts are the part of this section most likely to break on real data rather
- * than on types: a class with no completions, a student with one finished quiz, a
- * quiz assigned nowhere. Every one of those is an empty axis, an empty
- * `Math.max`, or a `null` score, and each would throw or draw nonsense rather
- * than fail to compile. So these tests render each panel twice — with data and
- * with nothing — and check that the empty case says so in words instead of
- * showing an axis with no marks.
- *
- * They also pin the two accessibility affordances the charts lean on, since a
- * chart that encodes a value only as a bar length gates it behind eyesight: the
- * table twin behind the toggle, and a legend whenever two series share a plot.
- */
 import { beforeAll, describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -311,7 +296,6 @@ function quizOverview(
   };
 }
 
-/** The chart card whose heading matches, so assertions stay scoped to that card. */
 function cardFor(title: string): HTMLElement {
   return screen
     .getByRole("heading", { name: title, level: 3 })
@@ -351,7 +335,6 @@ describe("ClassCharts", () => {
     await user.click(within(card).getByRole("button", { name: "הצגה כטבלה" }));
     const table = within(card).getByRole("table");
     expect(within(table).getByText("Photosynthesis")).toBeInTheDocument();
-    // members_completed (2) vs. summed attempt_count across the two members (2 + 3).
     expect(within(table).getByText("2")).toBeInTheDocument();
     expect(within(table).getByText("5")).toBeInTheDocument();
   });

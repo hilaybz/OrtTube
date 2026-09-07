@@ -11,8 +11,6 @@ import {
 import { LANGUAGE_NAMES } from "./translate";
 
 /**
- * AI strategic quiz generation.
- *
  * Claude reads the WHOLE transcript (in its original language) and chooses
  * `count` strategic positions at natural topic boundaries, producing questions
  * DIRECTLY in the quiz's `base_language` (not through a pivot). Each generated
@@ -20,11 +18,6 @@ import { LANGUAGE_NAMES } from "./translate";
  * never interrupts mid-sentence. The answer key is emitted on the option rows
  * (`is_correct`), never as a positional index — correctness is language
  * independent.
- *
- * The pure helpers (`snapToSegmentBoundary`, `normalizeGeneratedQuestion`) are
- * exported for unit testing without a network round-trip. The option enums the
- * callers validate against live in `./generationOptions`, which stays free of the
- * SDK.
  */
 
 const MODEL = "claude-haiku-4-5-20251001";
@@ -35,9 +28,6 @@ const MODEL = "claude-haiku-4-5-20251001";
  * must agree: stating the correctness rule separately let a generic "a multi
  * needs at least one" contradict `multi-only`'s demand for two or more, and
  * re-introduced "multi" as a concept immediately after `single-only` forbade it.
- *
- * `allow-multi` returns the original two lines verbatim, so a default generate
- * sends a byte-identical prompt to one that predates this option.
  */
 function questionTypeRules(
   questionType: QuestionType,
@@ -57,11 +47,6 @@ ${optionCount} A "single" question must have exactly one correct; a "multi" at l
   }
 }
 
-/**
- * The instruction appended for a given difficulty, or "" for `medium`.
- * Phrased in terms of the cognitive demand and the distractors, since those are
- * what actually make a multiple-choice item easy or hard — not prompt wording.
- */
 function difficultyInstruction(difficulty: GenerationDifficulty): string {
   switch (difficulty) {
     case "easy":
@@ -88,7 +73,6 @@ export interface GeneratedQuestion {
   options: GeneratedOption[];
 }
 
-/** Raw (untrusted) shape the model is asked to emit. */
 interface RawQuestion {
   position_seconds?: number;
   kind?: string;
@@ -97,13 +81,6 @@ interface RawQuestion {
   options?: Array<{ text?: string; is_correct?: boolean }>;
 }
 
-// ── Pure helpers ──────────────────────────────────────────────────────────────
-
-/**
- * Snaps `positionSeconds` to the START (in seconds) of the transcript segment
- * closest to it, so the pop-up fires on a sentence boundary rather than mid-word.
- * Returns the input unchanged when there are no segments.
- */
 export function snapToSegmentBoundary(
   positionSeconds: number,
   segments: TranscriptSegment[]
@@ -176,7 +153,6 @@ export function normalizeGeneratedQuestion(
   const distractors = cleaned.filter((o) => !o.is_correct);
   if (correct.length === 0) return null; // no answer key → skip, never fabricate.
 
-  // Assemble the final ≤cap option set, keeping the required correct option(s).
   let picked: { text: string; is_correct: boolean }[];
   if (kind === "single") {
     const correctOne = correct[0];
@@ -215,8 +191,6 @@ export function normalizeGeneratedQuestion(
   };
 }
 
-// ── Timestamped transcript builder (whole-video context for the model) ────────
-
 function fmtTimestamp(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
@@ -248,15 +222,7 @@ export function buildTimestampedTranscript(
   return out.trim();
 }
 
-// ── Model call ────────────────────────────────────────────────────────────────
-
 /**
- * Generates `count` strategically-placed questions in `baseLanguage` from the
- * whole transcript. Positions are snapped to segment boundaries and answer keys
- * are coerced to the correctness invariant. Returns fewer than `count` only if
- * the model under-delivers or some questions are unsalvageable. Node/server only
- * (needs `ANTHROPIC_API_KEY`).
- *
  * When APPENDING to a quiz that already has questions, pass:
  *   • `opts.baseOrderIndex` — the next free `order_index`, so the new questions
  *     continue past the existing ones instead of colliding at 0..n-1;

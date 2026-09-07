@@ -19,20 +19,6 @@ import {
 } from "./analytics/tableStyles";
 import { studentAnalyticsHref } from "./analyticsLinks";
 
-/**
- * Per-student progress for one class: one row per current member, each linking
- * to that student's cross-class analytics view.
- *
- * The per-quiz results are behind a QUIZ PICKER rather than a column each. A
- * column per assigned quiz made the table's width a function of how much a
- * teacher had assigned — by mid-term it scrolled sideways forever, and the
- * columns a reader wanted were the ones off screen. One picked quiz, one column,
- * constant width, and the teacher says which quiz they are looking at.
- *
- * Searched and paged in the browser: the row set is one class's roster, already
- * fetched whole, so paging it server-side would add a round trip per page
- * without bounding anything that isn't already bounded by class size.
- */
 export function RosterTable({ roster }: { roster: ClassRosterProgress }) {
   const { members } = roster;
 

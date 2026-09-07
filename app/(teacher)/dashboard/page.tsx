@@ -31,18 +31,6 @@ import {
   type ClassAssignments,
 } from "@/components/teacher/overview/aggregate";
 
-/**
- * The teacher's homepage: a greeting, cross-class KPI tiles, the quizzes that
- * just closed, the quizzes in play, and the classes themselves.
- *
- * Roster sizes come from one batched membership read. There is no rollup RPC
- * for the allocation windows, so those still fan out per class —
- * `list_class_quizzes` feeds every lifecycle count (the KPI tiles, each class
- * card's split) and the "recently finished" row. Each read is isolated so one
- * owner/transient error degrades that class to "no data" instead of sinking the
- * page; failing to list classes at all degrades to an Alert. Everything runs
- * through the caller's session, so RLS applies.
- */
 export default async function DashboardPage() {
   const client = (await createClient()) as unknown as SupabaseClient;
   const now = new Date();
@@ -114,10 +102,6 @@ export default async function DashboardPage() {
               href="/dashboard/classes"
             />
             <StatTile label="תלמידים" value={totals.studentCount} icon="users" />
-            {/* The two quiz tiles drill into "החידונים שלי" pre-filtered to the
-                lifecycle they count. `?status=` is the contract the library page
-                reads; "תלמידים" has no such screen, so it stays a plain figure
-                rather than a link that goes nowhere useful. */}
             <StatTile
               label="חידונים פעילים"
               value={totals.openQuizzes}
@@ -168,8 +152,6 @@ export default async function DashboardPage() {
             <ScrollRow label="החידונים הפעילים שלי">
               {allocatedQuizzes.map(({ quiz, tags }) => (
                 <ScrollRowItem key={quiz.quiz_id}>
-                  {/* Same editor the library opens, so the card states that it
-                      was followed from here and the editor's back link says so. */}
                   <QuizCard
                     quiz={quiz}
                     tags={tags}
@@ -197,7 +179,6 @@ export default async function DashboardPage() {
   );
 }
 
-/** Page frame: the welcome panel every state shares, plus its content. */
 function OverviewFrame({
   name,
   subtitle,
@@ -232,11 +213,6 @@ function subtitleFor(openQuizzes: number): string {
   return `${openQuizzes} חידונים פעילים כרגע בכיתות שלך.`;
 }
 
-/**
- * The teacher's own display name, for the greeting. Comes off the same memoized
- * profile the enclosing layout already read, so the name costs no extra round
- * trip. A failure just drops the name from the greeting.
- */
 async function loadGreetingName(client: SupabaseClient): Promise<string | null> {
   try {
     const profile = await getMyProfile(client);
@@ -256,7 +232,6 @@ async function loadClasses(
   }
 }
 
-/** Roster sizes for every class in one read; a failure leaves every class at 0. */
 async function loadMemberCounts(
   client: SupabaseClient,
   classes: readonly ClassRow[]
@@ -271,8 +246,6 @@ async function loadMemberCounts(
   }
 }
 
-/** Per-class allocation rows — the source for both lifecycle counts and the
- *  recently-finished row. A class that fails to read contributes nothing. */
 function loadAssignments(
   client: SupabaseClient,
   classes: readonly ClassRow[]

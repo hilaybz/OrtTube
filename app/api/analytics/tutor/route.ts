@@ -2,15 +2,6 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getTutorStats } from "@/lib/analytics";
 import { err, handleError, requireAuth } from "../http";
 
-/**
- * GET /api/analytics/tutor?quizId=... | classId=...  (teacher tutor analytics)
- *
- * Tutor-interaction stats for EXACTLY ONE scope — a quiz or a class — flagging
- * likely answer-extraction attempts (`tutor_stats`). Teacher-authed; the RPC is
- * owner-checked for the given scope and raises `invalid_args` (→ 400) unless
- * exactly one of quizId/classId is supplied. This route enforces the same
- * one-of rule up front.
- */
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if (auth.response) return auth.response;

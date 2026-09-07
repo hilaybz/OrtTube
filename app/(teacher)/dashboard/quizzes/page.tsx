@@ -12,8 +12,6 @@ import { Icon } from "@/components/ui/Icon";
 import { QuizLibrary } from "@/components/teacher/library/QuizLibrary";
 
 /**
- * The teacher's quiz library. The `status` param is the deep link the home
- * page's KPI tiles produce ("חידונים פעילים" / "חידונים שהסתיימו"): read here,
  * on the server, and handed to the client library as its initial filter value —
  * the shape this Next version prescribes for a server-rendered page whose
  * filtering is client-side (`useSearchParams` would force the whole library
@@ -53,9 +51,6 @@ export default async function QuizzesPage({
 
   return (
     <div className="mx-auto max-w-6xl py-2">
-      {/* The page's one affirmative action lives in the header, next to the
-          title, instead of floating above the grid — it belongs to the page,
-          not to whichever tab happens to be open. */}
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="mb-1 text-3xl font-bold tracking-tight">החידונים שלי</h1>

@@ -5,12 +5,10 @@ import { ColumnChart } from "./ColumnChart";
 import { ORDINAL_RAMP, SERIES, pct } from "./chartTheme";
 import type { ClassQuizAnalytics } from "@/lib/analytics";
 
-/** "0–20" .. "80–100" for a score band. */
 function bandLabel(min: number, max: number): string {
   return `${Math.round(min * 100)}–${Math.round(max * 100)}`;
 }
 
-/** "1:23" from a question's playhead anchor. */
 function timestamp(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
@@ -18,19 +16,6 @@ function timestamp(seconds: number): string {
 }
 
 /**
- * Charts for one quiz inside one class: how that class's grades are spread, and
- * which of the quiz's questions this class gets wrong.
- *
- * The same grid `QuizCharts` lays the unfiltered quiz out in, holding the two of
- * its four charts that survive fixing a class — the other two compare classes to
- * each other, which is the comparison a filter has already made. Keeping the
- * container identical is what makes narrowing read as a filter rather than as a
- * different screen.
- *
- * Both read the same `class_quiz_analytics` payload as the per-option breakdown
- * below them, scored from each student's latest completed attempt — so this
- * screen agrees with the class view and with the grade each student was shown.
- *
  * Charts live in a client component because their formatters are functions, and
  * a function cannot cross the server/client boundary as a prop.
  */

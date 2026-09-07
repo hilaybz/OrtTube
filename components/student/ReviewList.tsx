@@ -14,7 +14,6 @@ export interface ReviewItem {
   options: ReviewOption[];
 }
 
-/** Per-question review, shown only once the reveal gate is satisfied. */
 export function ReviewList({ items }: { items: ReviewItem[] }) {
   return (
     <ol className="flex flex-col gap-4">

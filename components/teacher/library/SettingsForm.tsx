@@ -29,12 +29,6 @@ const LANG_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
 
 type Status = "idle" | "saving" | "saved" | "error";
 
-/**
- * Self-service settings shared by the teacher and student pages: a read-only
- * identity summary (email + role, both immutable) plus the one editable
- * preference — the language a person reads quizzes in. Saving PATCHes
- * `/api/profile`, which persists via the RLS self-update policy.
- */
 export function SettingsForm({ profile }: { profile: ProfileView }) {
   const [selected, setSelected] = useState(profile.preferred_language ?? "");
   const [persisted, setPersisted] = useState(profile.preferred_language ?? "");

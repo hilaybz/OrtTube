@@ -9,10 +9,6 @@ export interface TabItem<T extends string> {
   icon?: IconName;
 }
 
-/**
- * Underline tabs (per tabs.md). Controlled: `value` + `onChange`. Panels are
- * owned by the caller. Roving arrow-key navigation across the tablist.
- */
 export function Tabs<T extends string>({
   tabs,
   value,

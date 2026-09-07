@@ -20,23 +20,6 @@ import { persistGeneratedQuestions, QuizError } from "@/lib/quiz";
 import { getQuizForAuthor } from "@/lib/quizAuthor";
 import type { Language } from "@/lib/lang";
 
-/**
- * POST /api/quizzes/[id]/generate  — AI strategic generation.
- *
- * Owner-only. Generates `count` questions in the quiz's base_language at
- * segment-aligned positions from the READY transcript, then persists them via
- * `upsert_question(source='generated')`. Manual authoring stays available when
- * the transcript is unavailable — this endpoint just refuses to auto-generate.
- *
- * Body (all optional): `{ count?: 1-20, difficulty?: "easy"|"medium"|"hard",
- * optionsPerQuestion?: 3|4|5, questionType?: "single-only"|"allow-multi"|
- * "multi-only" }`. A bare `{}` keeps working; omitted fields take today's
- * defaults.
- *
- * Errors: `{ error: { code, message } }` with codes:
- *   unauthorized(401), invalid_request(400), not_found(404), forbidden(403),
- *   transcript_unavailable(409), generation_failed(422).
- */
 // Reads a whole transcript, then asks Claude for up to 20 questions — the
 // slowest route in the app, and well past a short platform default, which would
 // kill it mid-generation and surface as a generic failure to the teacher. 60s is
@@ -75,7 +58,6 @@ export async function POST(
     // TypeError — surfacing as a bare 500 instead of the error envelope.
     body = ((await req.json()) ?? {}) as typeof body;
   } catch {
-    // absent or malformed body → defaults
   }
 
   const count = typeof body.count === "number" ? body.count : 3;
@@ -121,7 +103,6 @@ export async function POST(
     questionType = body.questionType;
   }
 
-  // Owner check via the authenticated client (owner-RLS lets a teacher read own).
   const { data: quiz } = await supabase
     .from("quizzes")
     .select("id, author_id, video_id, base_language, deleted_at")
@@ -159,10 +140,6 @@ export async function POST(
     force: true,
   });
 
-  // Each outcome gets its own answer. These were one 409 saying "this video has
-  // no captions", which was a guess — and wrong whenever the real cause was that
-  // we could not reach YouTube. A teacher can act on the difference: wait, retry,
-  // or stop waiting and author manually.
   if (transcript.state === "unavailable") {
     return err(
       "transcript_unavailable",
@@ -203,7 +180,6 @@ export async function POST(
         .filter((p): p is string => typeof p === "string" && p.trim().length > 0);
     }
   } catch {
-    // ignore — append without an offset / dedup hints
   }
 
   const generated = await generateQuizQuestions(segments, count, q.base_language, {

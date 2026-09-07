@@ -1,24 +1,3 @@
-/**
- * Transcript fetch CLASSIFICATION tests — no network, no DB.
- *
- * These cover the bug that made a deployed teacher unable to add a video: a
- * fetch YouTube had blocked was recorded as a CONFIRMED "this video has no
- * captions", which is sticky and applied to every user.
- *
- * The distinction is subtle and invisible from the outside — a bot-checked or
- * login-walled response still returns 200 and still parses into a player
- * response; it simply carries no caption tracks, exactly like a genuinely
- * caption-less video. The only usable discriminator is `playabilityStatus`, so
- * that is what these tests pin.
- *
- * `global.fetch` is stubbed with real captured shapes rather than mocking
- * `fetchPlayerResponse`, so the parsing and the verdict are exercised together.
- *
- * The InnerTube download is mocked at the package boundary. That keeps the two
- * halves separable: `fetch` then carries only the requests THIS module makes, so a
- * test can assert which ones those are, and each case can drive the download to a
- * chosen result instead of relying on it failing against a stub.
- */
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { fetchFreshTranscript } from "@/lib/transcript";
 
@@ -27,19 +6,10 @@ vi.mock("youtube-transcript", () => ({
   YoutubeTranscript: { fetchTranscript },
 }));
 
-/**
- * A player response as the InnerTube endpoint returns it.
- *
- * These fixtures used to be watch-page HTML with the same object embedded in a
- * `<script>` tag. The classification they drive is unchanged — only the
- * transport is, since the ~1,197 KB scrape was replaced by the ~156 KB player
- * call that carries the identical fields.
- */
 function playerResponse(player: unknown): string {
   return JSON.stringify(player);
 }
 
-/** Stub the next `fetch` with a raw body. */
 function youtubeServes(body: string, status = 200): void {
   vi.stubGlobal(
     "fetch",
@@ -52,7 +22,6 @@ const A_CAPTION_TRACK = {
   languageCode: "en",
 };
 
-/** The download finds nothing — the default for the classification cases. */
 function downloadYieldsNothing(): void {
   fetchTranscript.mockRejectedValue(new Error("no transcripts available"));
 }
@@ -74,7 +43,6 @@ describe("fetchFreshTranscript classification", () => {
 
     const outcome = await fetchFreshTranscript("vid");
 
-    // This is the one case where "the video has no captions" is a real finding.
     expect(outcome.status).toBe("unavailable");
   });
 
@@ -103,16 +71,12 @@ describe("fetchFreshTranscript classification", () => {
   });
 
   it("treats a rate-limited response as transient, never as a verdict", async () => {
-    // Exactly what Supabase Edge Functions received when we probed from there.
     youtubeServes("Too Many Requests", 429);
 
     const outcome = await fetchFreshTranscript("vid");
 
     expect(outcome.status).toBe("error");
     if (outcome.status === "error") {
-      // The status survives into the reason. A refused request argues for paid
-      // egress; the unparseable case below does not, and a bare "not_loaded"
-      // could not tell them apart.
       expect(outcome.reason).toBe("player_not_loaded:http_429");
     }
   });
@@ -156,7 +120,6 @@ describe("fetchFreshTranscript classification", () => {
 
     const outcome = await fetchFreshTranscript("vid");
 
-    // Tracks demonstrably exist, so this must never be "no captions".
     expect(outcome.status).toBe("error");
     if (outcome.status === "error") {
       expect(outcome.reason).toBe("tracks_undownloadable");
@@ -188,9 +151,6 @@ describe("fetchFreshTranscript request surface", () => {
       (args) => String(args[0])
     );
     expect(requested).not.toContain(A_CAPTION_TRACK.baseUrl);
-    // The player call is the module's ONLY direct request; the download goes
-    // through the package. Notably it is no longer the 1,197 KB watch page —
-    // nothing here should ever fetch /watch again.
     expect(requested).toEqual([
       "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
     ]);
@@ -198,13 +158,6 @@ describe("fetchFreshTranscript request surface", () => {
   });
 });
 
-/**
- * A caption-less video is the single most common reason a fetch ends with
- * nothing, and it used to be the most expensive: the player call answered it in
- * one request, then the download ran anyway, re-asked the same endpoint, and fell
- * through to the ~1.2MB watch page on every exit. Twelve requests for a
- * conclusion already in hand after one, against metered bandwidth.
- */
 describe("fetchFreshTranscript cost", () => {
   it("does not attempt a download when the player listed no tracks", async () => {
     youtubeServes(
@@ -218,9 +171,6 @@ describe("fetchFreshTranscript cost", () => {
   });
 
   it("still attempts a download when the player was BLOCKED and listed none", async () => {
-    // Zero tracks means "no captions" only from an intact response. Here it means
-    // "we were not told" — and the package's own call may leave from a different
-    // exit IP and succeed, so it is worth the request.
     youtubeServes(playerResponse({ playabilityStatus: { status: "LOGIN_REQUIRED" } }));
     fetchTranscript.mockResolvedValue([
       { text: "שלום", offset: 0, duration: 1000, lang: "iw" },
@@ -263,18 +213,10 @@ describe("fetchFreshTranscript cost", () => {
 
     expect(refusal).toBeInstanceOf(Error);
     expect((refusal as Error).name).toBe("WatchPageRefused");
-    // Refusing silently would be worse than fetching: the trace is the only
-    // record that this path was even attempted.
     expect(outcome.trace).toContain("GET www.youtube.com/watch → refused (watch-page fallback)");
   });
 });
 
-/**
- * The trace is the only record of what a fetch actually did. These failures
- * happen on production egress IPs and cannot be reproduced locally, so if the
- * trace loses a request or an error class, that information is gone for good —
- * which is what these pin.
- */
 describe("fetchFreshTranscript trace", () => {
   it("records the player call's status and the track list it found", async () => {
     youtubeServes(
@@ -295,9 +237,6 @@ describe("fetchFreshTranscript trace", () => {
   });
 
   it("keeps the download's error CLASS, not just its message", async () => {
-    // The package reports a captcha wall, disabled captions and an unavailable
-    // video as distinct error classes. That distinction is the sharpest diagnosis
-    // available anywhere in this flow, and it used to be swallowed whole.
     youtubeServes(playerResponse({ playabilityStatus: { status: "LOGIN_REQUIRED" } }));
     class YoutubeTranscriptTooManyRequestError extends Error {}
     fetchTranscript.mockRejectedValue(
@@ -306,16 +245,12 @@ describe("fetchFreshTranscript trace", () => {
 
     const outcome = await fetchFreshTranscript("vid");
 
-    // `lang=any`: the scrape was blocked, so there was no track list to read a
-    // language off, and guessing one would only cost a request.
     expect(outcome.trace).toContain(
       "download lang=any → YoutubeTranscriptTooManyRequestError: captcha required"
     );
   });
 
   it("records every request the download makes, which it otherwise hides", async () => {
-    // The download's own requests are most of the upstream surface and the
-    // package exposes none of them; only the injected fetch reaches them.
     youtubeServes(
       playerResponse({
         playabilityStatus: { status: "OK" },
@@ -335,8 +270,6 @@ describe("fetchFreshTranscript trace", () => {
 
     const outcome = await fetchFreshTranscript("vid");
 
-    // Query string dropped: it carries the video id and keys, and the endpoint is
-    // what identifies the call.
     expect(outcome.trace).toContain("POST www.youtube.com/youtubei/v1/player → 200");
   });
 
@@ -355,19 +288,10 @@ describe("fetchFreshTranscript trace", () => {
 
     const outcome = await fetchFreshTranscript("vid");
 
-    // An empty answer says something about the video; a throw says something
-    // about the egress. Both end as "no transcript" and must stay tellable apart.
     expect(outcome.trace).toContain("download lang=any → empty");
   });
 });
 
-/**
- * The download used to walk LANG_PREFERENCE blind — five attempts, four of them
- * guaranteed to miss on a single-track video, each able to pull its own ~1.2MB
- * watch page inside the package. That is ~7MB per video, and on metered proxy
- * egress it multiplies the bill roughly fivefold to learn what the scrape had
- * already returned.
- */
 describe("fetchFreshTranscript download language", () => {
   beforeEach(() => {
     fetchTranscript.mockResolvedValue([{ text: "hi", offset: 0, duration: 1, lang: "he" }]);
@@ -395,8 +319,6 @@ describe("fetchFreshTranscript download language", () => {
   });
 
   it("asks for the best language the scrape actually listed", async () => {
-    // Hebrew outranks English, and both are present — so no request is spent
-    // discovering that.
     servesTracks({ languageCode: "en" }, { languageCode: "he" });
 
     await fetchFreshTranscript("vid");
@@ -405,7 +327,6 @@ describe("fetchFreshTranscript download language", () => {
   });
 
   it("honours the legacy Hebrew code the same as the modern one", async () => {
-    // Older videos tag Hebrew "iw"; it must not be passed over for English.
     servesTracks({ languageCode: "en" }, { languageCode: "iw" });
 
     await fetchFreshTranscript("vid");
@@ -414,7 +335,6 @@ describe("fetchFreshTranscript download language", () => {
   });
 
   it("asks for no language when the list holds none the app speaks", async () => {
-    // Requesting a language the video does not have would fail on purpose.
     servesTracks({ languageCode: "ja" });
 
     await fetchFreshTranscript("vid");

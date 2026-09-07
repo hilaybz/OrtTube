@@ -10,11 +10,6 @@ import { grade } from "./chartTheme";
 
 const TOP_N = 5;
 
-/**
- * The class's most active members, ranked by quizzes completed (ties broken
- * by average score) — "who's doing the most," which the full roster table
- * below doesn't surface at a glance without sorting it yourself.
- */
 function topByActivity(members: RosterMemberProgress[]): RosterMemberProgress[] {
   return [...members]
     .sort((a, b) => {
@@ -26,11 +21,6 @@ function topByActivity(members: RosterMemberProgress[]): RosterMemberProgress[] 
     .slice(0, TOP_N);
 }
 
-/**
- * A compact, read-only top-N list — no search, no paging, no quiz picker.
- * Each row links through to the same student analytics view every other
- * student row in this product links to (`RosterTable`, `QuizClassTable`).
- */
 export function StudentActivityLeaderboard({
   roster,
 }: {

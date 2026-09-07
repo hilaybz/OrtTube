@@ -1,9 +1,3 @@
-/**
- * Search/filter/sort on the student feed (backlog 4.2 / issue #38) — the
- * student-side counterpart of `QuizLibrarySearchFilterSort.test.tsx`. One
- * control bar governs both sections; a status filter that empties a whole
- * section drops that section rather than leaving it standing empty.
- */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect } from "vitest";
@@ -36,7 +30,6 @@ function item(overrides: Partial<StudentFeedItem>): StudentFeedItem {
   };
 }
 
-/** Not yet attempted, class א, due last. */
 const ALGEBRA = item({
   quiz_id: "algebra",
   title: "חידון אלגברה",
@@ -44,7 +37,6 @@ const ALGEBRA = item({
   assigned_at: "2026-01-01T00:00:00.000Z",
   available_until: "2027-03-01T00:00:00.000Z",
 });
-/** Not yet attempted, class ב, due first. */
 const HISTORY = item({
   quiz_id: "history",
   title: null,
@@ -57,7 +49,6 @@ const HISTORY = item({
   available_until: "2027-02-01T00:00:00.000Z",
   resume_attempt_id: "a1",
 });
-/** Finished — completed, class א. */
 const GEOMETRY = item({
   quiz_id: "geometry",
   title: "חידון גיאומטריה",
@@ -68,7 +59,6 @@ const GEOMETRY = item({
   last_num_correct: 2,
   last_num_questions: 4,
 });
-/** Finished — missed, class ב, its window closed most recently. */
 const CHEMISTRY = item({
   quiz_id: "chemistry",
   title: "חידון כימיה",
@@ -88,12 +78,10 @@ function renderFeed(items: StudentFeedItem[] = ALL) {
   render(<StudentFeed items={items} />);
 }
 
-/** Every visible card heading, in render order (both sections, top to bottom). */
 function headings(): string[] {
   return screen.queryAllByRole("heading", { level: 3 }).map((h) => h.textContent ?? "");
 }
 
-/** The section headings still on the page. */
 function sections(): string[] {
   return screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent ?? "");
 }
@@ -204,10 +192,10 @@ describe("StudentFeed — sort", () => {
   it("defaults to soonest submission deadline first, within each section", () => {
     renderFeed();
     expect(headings()).toEqual([
-      "היסטוריה של רומא", // due 2027-02
-      "חידון אלגברה", // due 2027-03
-      "חידון כימיה", // the only finished quiz with a deadline
-      "חידון גיאומטריה", // no deadline — sinks
+      "היסטוריה של רומא",
+      "חידון אלגברה",
+      "חידון כימיה",
+      "חידון גיאומטריה",
     ]);
   });
 
@@ -255,7 +243,6 @@ describe("StudentFeed — empty feed", () => {
 });
 
 describe("StudentFeed — paging", () => {
-  /** Seven quizzes in one section: one page of six, then the rest. */
   const MANY = Array.from({ length: 7 }, (_, i) =>
     item({
       quiz_id: `q${i}`,

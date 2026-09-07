@@ -10,34 +10,16 @@ import type { ClassTag, QuizAllocationTags } from "@/lib/allocations";
 import type { Language } from "@/lib/lang";
 import { durationChipText } from "@/lib/quizDuration";
 
-/**
- * The teacher quiz card — the reference surface for every card in the teacher
- * app (the overview page's tiles match its frame).
- *
- * Its whole design is a hierarchy: the video thumbnail identifies the quiz at a
- * glance, the title is the only prominent text, and exactly ONE fact rides
- * along under it — where the quiz stands right now. Everything else the card
- * used to stack into a wall of badges (source video, channel, language,
- * creation date) moved into the hover panel over the thumbnail, and the actions
- * only surface on hover/focus, so a grid of cards reads as a grid of quizzes
- * rather than a grid of forms.
- *
- * Hover content is dimmed with opacity, never unmounted, so it stays in the
- * accessibility tree and `group-focus-within` brings it up for keyboard users.
- */
-
 export const LANG_LABEL: Record<Language, string> = {
   he: "עברית",
   ar: "ערבית",
   en: "אנגלית",
 };
 
-/** The heading shown on a card: the teacher's own title, else the video's. */
 export function cardHeading(quiz: { title: string | null; video_title: string | null }) {
   return quiz.title ?? quiz.video_title ?? "חידון";
 }
 
-/** Shared frame: glass surface, flush media band on top, padded body below. */
 function CardShell({
   interactive,
   className,
@@ -61,23 +43,9 @@ function CardShell({
   );
 }
 
-/**
- * The chips along the thumbnail's bottom edge share that edge with the hover
- * details, so they step aside while the details are up — the band swaps its
- * size facts for its identity facts instead of stacking both in one strip.
- */
 const THUMB_CHIP_HOVER_HIDE =
   "transition-opacity duration-200 group-focus-within:opacity-0 group-hover:opacity-0";
 
-/**
- * The secondary facts, revealed over the thumbnail on hover/focus: the source
- * video and its channel (skipped when the heading is already the video's own
- * title), the authoring teacher on a catalog card, and the base language.
- *
- * The backdrop is a bottom-up gradient rather than a flat sheet: the text sits
- * on the darkest part of it while the top of the frame — the part that
- * identifies the video — stays fully visible.
- */
 function ThumbDetails({
   quiz,
   authorName,
@@ -103,17 +71,12 @@ function ThumbDetails({
   );
 }
 
-/**
- * "In one class" reads as its name; more than one reads as a count — the whole
- * roster would never fit on a card, and the count is what a teacher checks.
- */
 function classesPhrase(verb: string, classes: ClassTag[]): string {
   return classes.length === 1
     ? `${verb} ב${classes[0].class_name}`
     : `${verb} ב-${classes.length} כיתות`;
 }
 
-/** One state of the allocation line: an icon, a phrase, and its tone. */
 function AllocationTag({
   icon,
   text,
@@ -131,21 +94,6 @@ function AllocationTag({
   );
 }
 
-/**
- * Where the quiz stands across its classes. Live and scheduled are shown
- * TOGETHER: a quiz that is open in one class and starts next week in another
- * used to report only the first, hiding the rollout the teacher planned.
- *
- * Closed classes only speak when nothing is open or upcoming — that is exactly
- * the "finished" state the library's status filter and the home KPI tiles
- * count — and with `closed` now a real bucket of
- * `list_my_quiz_allocation_tags`, an all-drafts quiz is finally
- * distinguishable from a finished one and says "טיוטה" honestly.
- *
- * Icons and tones follow `scheduleFormat`'s `allocationStatus`, so one quiz
- * wears the same vocabulary on a card and in a class's allocation row.
- * `undefined` tags mean the quiz has no allocation at all and render nothing.
- */
 function AllocationLine({ tags }: { tags: QuizAllocationTags | undefined }) {
   if (!tags) return null;
   const { live, scheduled, closed } = tags;
@@ -187,20 +135,12 @@ function AllocationLine({ tags }: { tags: QuizAllocationTags | undefined }) {
 
 export interface QuizCardProps {
   quiz: MyQuiz;
-  /** Allocation buckets for the status line. Omit when they weren't fetched. */
   tags?: QuizAllocationTags;
-  /** Wire this to a confirmation dialog to show the card's delete action. */
   onRequestDelete?: (quiz: MyQuiz) => void;
-  /** Where the card navigates. Defaults to this quiz's editor. */
   href?: string;
   className?: string;
 }
 
-/**
- * A card for one of the teacher's OWN quizzes. The whole card is a link to the
- * editor (a stretched anchor, so the card-wide target needs no button nested in
- * an anchor); the delete action floats above that link.
- */
 export function QuizCard({
   quiz,
   tags,
@@ -274,12 +214,6 @@ export function QuizCard({
   );
 }
 
-/**
- * The same frame for a quiz in the school catalog: no editor to link to (the
- * viewer doesn't own it), so the actions — preview, clone — are the card's own
- * footer instead of a stretched link, and the authoring teacher joins the hover
- * panel.
- */
 export function CatalogQuizCard({
   quiz,
   onPreview,
@@ -291,9 +225,7 @@ export function CatalogQuizCard({
   quiz: SharedQuiz;
   onPreview: (quizId: string) => void;
   onClone: (quizId: string) => void;
-  /** THIS card's clone is in flight — shows the spinner on its own button. */
   cloning: boolean;
-  /** Some other card's clone is in flight — one at a time. */
   cloneDisabled?: boolean;
   className?: string;
 }) {

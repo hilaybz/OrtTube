@@ -1,9 +1,5 @@
 import { messageForCode } from "@/lib/errors";
 
-/**
- * Thrown when an `/api/**` call returns the uniform error envelope. `.message`
- * is the Hebrew string for the code, ready to show in an Alert/Toast.
- */
 export class ApiError extends Error {
   constructor(public readonly code: string) {
     super(messageForCode(code));
@@ -12,8 +8,6 @@ export class ApiError extends Error {
 }
 
 /**
- * Client-side mutation helper. POSTs/PATCHes JSON to a route handler and either
- * returns the parsed body or throws `ApiError` carrying the envelope code.
  * Reads on the server go through `@/lib` directly (RLS), not this helper.
  */
 export async function apiFetch<T>(input: string, init?: RequestInit): Promise<T> {

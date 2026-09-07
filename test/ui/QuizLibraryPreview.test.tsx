@@ -1,8 +1,3 @@
-/**
- * The school catalog's "preview before cloning" flow (backlog 1.3 / issue
- * #13): opening a shared quiz read-only, correct answers and explanations
- * included, with a clone action right there instead of committing blind.
- */
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -14,9 +9,6 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, refresh }),
 }));
 
-// The real stage embeds the YouTube iframe. The stub publishes the same
-// imperative handle and exposes a button so a test can simulate the player
-// reporting a position/duration tick — same stub QuizEditorTimeline.test.tsx uses.
 const stage = { seekTo: vi.fn(), play: vi.fn(), pause: vi.fn() };
 vi.mock("@/components/video/VideoStage", () => ({
   VideoStage: ({
@@ -171,12 +163,8 @@ describe("QuizLibrary — preview before cloning", () => {
       inDialog.queryByRole("button", { name: "מחיקת השאלה" })
     ).not.toBeInTheDocument();
 
-    // Markers only render once the (stubbed) player reports a duration.
     await userEvent.click(screen.getByRole("button", { name: "report-ready" }));
     const [marker] = screen.getAllByTestId("timeline-marker");
-    // A draggable marker's own aria-label carries the drag hint (see
-    // CheckpointTimeline.tsx) — a future change that wires onMarkerMove/
-    // onEdit/onDelete through this read-only surface should fail here.
     expect(marker.getAttribute("aria-label")).not.toContain("גררו כדי להזיז");
   });
 

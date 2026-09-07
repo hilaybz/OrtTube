@@ -1,11 +1,3 @@
-/**
- * A feed card as the student reads it: where it goes and what its status block
- * says. The derivations themselves are unit-tested in
- * `test/unit/studentQuizCardStatus.test.ts`; what matters here is that the card
- * actually wires them — in particular that a finished quiz with nothing left to
- * attempt links straight to its results rather than to a player screen whose
- * only purpose would be a button to those same results.
- */
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { QuizCard } from "@/components/student/QuizCard";
@@ -55,7 +47,6 @@ describe("QuizCard (student feed)", () => {
       "/student/quiz/c1/q1/results"
     );
     expect(screen.getByText("צפייה בתוצאות")).toBeInTheDocument();
-    // The grade leads the status block; the date is the quiet half of it.
     expect(screen.getByText("ציון 80")).toBeInTheDocument();
     expect(screen.getByText("הוגש ב-10/03/2026")).toBeInTheDocument();
   });
@@ -69,9 +60,6 @@ describe("QuizCard (student feed)", () => {
   });
 
   it("shows a deadline, not a bare date, on a quiz still to submit", () => {
-    // Rendered with the real clock, so assert on the shape rather than the
-    // wording a specific "now" would produce: a far-future deadline is stated
-    // as a deadline with the hour it closes at.
     render(
       <QuizCard item={item({ status: "not_started", available_until: "2099-01-01T10:00:00.000Z" })} />
     );

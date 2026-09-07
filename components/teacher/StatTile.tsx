@@ -3,17 +3,6 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { cn } from "@/components/ui/cn";
 
-/**
- * A headline metric on a glass surface: a big tabular-numeral value with a
- * label and an optional supporting hint.
- *
- * `icon` and `href` are optional, so a tile given neither is a plain
- * value-and-label figure. When `href` is set the tile borrows the teacher quiz
- * card's interaction — the same lift-on-hover — so a page that mixes tiles and
- * quiz cards behaves as one family rather than two, and it grows a quiet
- * forward chevron: without it, nothing distinguishes a metric that drills into
- * a screen from one that is only a number, and the KPI row holds both.
- */
 export function StatTile({
   label,
   value,
@@ -24,9 +13,7 @@ export function StatTile({
   label: string;
   value: string | number;
   hint?: string;
-  /** Optional glyph, in a chip echoing the quiz card's media slot. */
   icon?: IconName;
-  /** Makes the whole tile a link to the screen this metric drills into. */
   href?: string;
 }) {
   const body = (
@@ -52,8 +39,6 @@ export function StatTile({
           </span>
         </div>
         {href && (
-          // Points leftward: in RTL that is "onward", the same direction the
-          // pager's next control uses.
           <Icon
             name="chevronLeft"
             size={16}

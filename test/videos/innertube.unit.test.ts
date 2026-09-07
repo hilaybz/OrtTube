@@ -1,19 +1,6 @@
-/**
- * The InnerTube player call — no network.
- *
- * This one request now answers everything we know about a video: whether
- * YouTube will play it, which caption tracks exist, and how long it is. It
- * replaced a watch-page scrape that cost ~1,197 KB for the same 10.4 KB of
- * fields and was served by only 3 of 5 residential exits.
- *
- * Because it is the sole source, the failure mapping matters as much as the
- * happy path: a bot wall must never be reported in a way that lets a caller
- * conclude "this video has no captions".
- */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { fetchPlayerResponse } from "@/lib/innertube";
 
-/** Stub `fetch` — with no proxy configured, `proxiedFetch` delegates to it. */
 function youtubeServes(body: string, status = 200): void {
   vi.stubGlobal(
     "fetch",
@@ -98,7 +85,6 @@ describe("fetchPlayerResponse", () => {
   });
 
   it("maps a bot wall answering 200 with HTML to no_player_json", async () => {
-    // Google's "automated queries" interstitial is a 200 that is not JSON.
     youtubeServes("<html><body>Sorry...</body></html>");
     expect(await fetchPlayerResponse("vid")).toEqual({ ok: false, failure: "no_player_json" });
   });
@@ -122,8 +108,6 @@ describe("fetchPlayerResponse", () => {
 
     const result = await fetchPlayerResponse("vid");
 
-    // The bare wrapper message is useless on its own; undici puts the real
-    // diagnosis on `.cause`.
     expect(result).toEqual({
       ok: false,
       failure: "TypeError: fetch failed (ECONNREFUSED)",

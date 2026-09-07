@@ -13,14 +13,6 @@ import type { BulkAssignResult } from "@/lib/allocations";
 import { TUTOR_MODE_LABELS } from "@/components/teacher/classes/labels";
 import { fromDatetimeLocalValue } from "@/components/teacher/scheduleFormat";
 
-/**
- * Assign a quiz to several classes at once: pick classes as toggled chips,
- * set ONE shared set of delivery settings, submit. Each becomes its own
- * independent allocation (server-side loop over the same
- * `assign_quiz_to_class` RPC the single-class flow uses), editable
- * individually afterward from the allocations list — this modal is only the
- * fast path for setting several up identically to start.
- */
 export function BulkAssignModal({
   open,
   quizId,
@@ -30,7 +22,6 @@ export function BulkAssignModal({
 }: {
   open: boolean;
   quizId: string;
-  /** Classes not yet allocated this quiz — the only ones selectable. */
   candidates: ClassRow[];
   onClose: () => void;
   onAssigned: () => void;

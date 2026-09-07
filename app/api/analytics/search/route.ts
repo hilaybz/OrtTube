@@ -6,13 +6,6 @@ import {
 import { err, handleError, requireAuth } from "../http";
 
 /**
- * GET /api/analytics/search?scope=student|class|quiz&q=…&limit=&offset=
- *
- * The analytics hub's search: matches text against the caller's OWN entities in
- * exactly one scope (`teacher_analytics_search`). Paged, returning the window
- * plus the total so the client pager is server-driven rather than slicing a full
- * list — a school's rosters and quiz libraries grow without bound.
- *
  * Teacher-authed; the RPC's WHERE clause IS the ownership predicate, and it
  * rejects a deactivated (or non-) teacher with `not_owner` → 403. An unknown
  * scope is rejected here before the round trip, with the same `invalid_args`

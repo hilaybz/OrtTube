@@ -2,10 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { listClassRoster } from "@/lib/classes";
 import { handleError, requireAuth } from "../../http";
 
-/**
- * GET /api/classes/[id]/roster  — enrolled members + pending invites
- * (owner-only; enforced by the SECURITY DEFINER RPC).
- */
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

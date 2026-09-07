@@ -1,13 +1,3 @@
-/**
- * The per-student table in the class analytics view.
- *
- * Its one structural change is the point of these tests: the per-quiz results
- * moved from a COLUMN PER QUIZ (a table whose width grew with everything a
- * teacher had ever assigned) to a single quiz-picker column. So what has to hold
- * is that the table's width no longer depends on the assignment count, that the
- * picker actually swaps which quiz the column reports, and that each row leads to
- * that student's analytics — the link Section 4's class roster also relies on.
- */
 import { describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -97,7 +87,6 @@ function rowFor(name: string): HTMLElement {
 describe("RosterTable (class analytics)", () => {
   it("renders one result column, not one per assigned quiz", () => {
     render(<RosterTable roster={roster()} />);
-    // תלמיד/ה · הושלמו · ציון ממוצע · <picked quiz> · (actions)
     const header = screen.getAllByRole("row")[0];
     expect(within(header).getAllByRole("columnheader")).toHaveLength(5);
   });
@@ -118,7 +107,6 @@ describe("RosterTable (class analytics)", () => {
     );
 
     expect(within(rowFor("Alice")).getByText("4/5")).toBeInTheDocument();
-    // Bob never finished this one: an em dash, with the reason for a screen reader.
     const bobRow = rowFor("Bob");
     expect(within(bobRow).queryByText("3/5")).not.toBeInTheDocument();
     expect(within(bobRow).getByText("לא הושלם")).toBeInTheDocument();

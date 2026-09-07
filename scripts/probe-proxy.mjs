@@ -1,18 +1,9 @@
 /*
- * Does a proxy get us past YouTube's bot check?
- *
  * Production cannot fetch transcripts: YouTube serves Vercel's egress a
- * `playabilityStatus: LOGIN_REQUIRED` bot check (issues #7/#8), while the same
- * video returns captions from a residential IP. It is the IP, not the code.
- * Paid egress is the remaining path (issue #9) — this script measures whether a
- * given proxy actually defeats the check, BEFORE any product code is wired to
- * depend on it.
- *
- * Run via:
- *     npm run probe:proxy
- * which loads .env.local through `node --env-file`. Put the proxies in
- * `YOUTUBE_PROXY_URLS` there (never on the command line — it would land in
- * shell history).
+ * `playabilityStatus: LOGIN_REQUIRED` bot check, while the same video returns
+ * captions from a residential IP. It is the IP, not the code. This script
+ * measures whether a given proxy actually defeats the check, BEFORE any
+ * product code is wired to depend on it.
  *
  * ── The trap this exists to avoid ──────────────────────────────────────────
  * A dev machine is usually on a residential IP where YouTube already works. A
@@ -20,9 +11,6 @@
  * perfect transcript and look like success. So every proxy row FIRST proves its
  * exit IP differs from the direct control's; if it doesn't, the row is reported
  * NOT PROXIED and its YouTube results are discarded rather than believed.
- *
- * Deliberately self-contained (no imports from `lib/`, which is TypeScript):
- * response parsing here is regex-level, because a probe only needs a yes/no.
  */
 
 // `fetch` MUST come from undici, not the global. Node bundles its own internal
@@ -33,7 +21,7 @@
 // Whatever wires the proxy into `lib/` later inherits this constraint.
 import { ProxyAgent, fetch } from "undici";
 
-// The exact video from the #8 evidence: known to return Hebrew ASR captions
+// A video known to return Hebrew ASR captions
 // from a residential IP, and known to return LOGIN_REQUIRED from Vercel. Using
 // anything else would confound "proxy is blocked" with "video has no captions".
 const VIDEO_ID = process.env.PROBE_VIDEO_ID ?? "tvyOITo5iOk";
@@ -44,8 +32,6 @@ const BROWSER_HEADERS = {
   "Accept-Language": "en-US,en;q=0.9",
 };
 
-// The client context `youtube-transcript` posts internally (its INNERTUBE_CONTEXT).
-// Mirrored here so the probe tests the request shape production actually sends.
 const INNERTUBE_CONTEXT = {
   client: {
     hl: "en",
@@ -62,11 +48,6 @@ const INNERTUBE_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=fa
 
 const TIMEOUT_MS = 20_000;
 
-/**
- * Accepts both the `http://user:pass@host:port` URL form and the
- * `host:port:user:pass` form Webshare's dashboard exports, so a downloaded
- * list can be pasted straight in without reformatting.
- */
 function normalizeProxy(raw) {
   const value = raw.trim();
   if (!value) return null;
@@ -80,7 +61,6 @@ function normalizeProxy(raw) {
   return null;
 }
 
-/** Hides credentials so a pasted terminal log can't leak the proxy password. */
 function redact(proxyUrl) {
   try {
     const u = new URL(proxyUrl);
@@ -90,7 +70,6 @@ function redact(proxyUrl) {
   }
 }
 
-/** Credentials embedded in the proxy URL are honoured by undici's ProxyAgent. */
 function makeDispatcher(proxyUrl) {
   return new ProxyAgent(proxyUrl);
 }
@@ -101,7 +80,6 @@ async function request(url, { dispatcher, method = "GET", headers, body } = {}) 
   return { status: res.status, text: await res.text() };
 }
 
-/** Step 1 — what IP does YouTube actually see for this route? */
 async function exitIp(dispatcher) {
   try {
     const { status, text } = await request("https://api.ipify.org?format=json", { dispatcher });
@@ -112,14 +90,6 @@ async function exitIp(dispatcher) {
   }
 }
 
-/**
- * Reads the two signals that matter out of a player response, without a full
- * JSON parse: whether YouTube declared the video playable, and how many caption
- * tracks it was willing to list. `OK` + tracks means healthy; `LOGIN_REQUIRED`
- * is the bot check; `OK` + zero tracks on a known-captioned video is a degraded
- * response — the case `lib/transcript.ts` is careful never to record as
- * "this video has no captions".
- */
 function readPlayerSignals(text) {
   const status = text.match(/"playabilityStatus":\{"status":"([A-Z_]+)"/)?.[1] ?? null;
   const trackCount = (text.match(/"baseUrl":"https:\/\/www\.youtube\.com\/api\/timedtext/g) ?? [])
@@ -127,7 +97,6 @@ function readPlayerSignals(text) {
   return { playability: status, trackCount };
 }
 
-/** Step 2 — the watch-page scrape (`fetchCaptionTracks`, `fetchDurationSeconds`). */
 async function probeWatchPage(dispatcher) {
   try {
     const { status, text } = await request(
@@ -154,8 +123,6 @@ async function probeWatchPage(dispatcher) {
  * step that actually decides whether a proxy is usable. Treating this as the
  * verdict is exactly the mistake that made an earlier run of this script report
  * a pool as working when no transcript could be downloaded through any of it.
- *
- * Returns the winning track's `baseUrl` so the download step can use it.
  */
 async function probeInnerTube(dispatcher) {
   try {
@@ -208,8 +175,6 @@ async function probeCaptionDownload(dispatcher, captionUrl) {
       const bot = /sending automated queries/i.test(text);
       return { verdict: `HTTP ${status}${bot ? " bot-wall" : ""}`, ok: false };
     }
-    // The dead watch-page path answered 200 with an empty body; a real track is
-    // kilobytes of markup. Size is what separates them.
     if (text.length < 200) return { verdict: `empty 200`, ok: false };
     return { verdict: `${text.length} bytes`, ok: true };
   } catch (e) {
@@ -219,10 +184,6 @@ async function probeCaptionDownload(dispatcher, captionUrl) {
 
 async function probe(label, dispatcher) {
   const { ip, error } = await exitIp(dispatcher);
-  // Never reached YouTube at all — a transport/auth problem, which says NOTHING
-  // about whether the bot check would have let us through. Kept strictly
-  // distinct from BLOCKED so a broken proxy can't be misread as evidence that
-  // proxying doesn't work.
   if (error) {
     return { label, ip: null, watch: "—", inner: "—", captions: "—", state: "UNREACHABLE", error };
   }
@@ -235,9 +196,6 @@ async function probe(label, dispatcher) {
     watch: watch.verdict,
     inner: inner.verdict,
     captions: captions.verdict,
-    // Only a real subtitle download counts. Passing the metadata steps and
-    // failing here is the exact shape that made an earlier run declare a pool
-    // usable when not one transcript could be fetched through it.
     state: captions.ok ? "PASS" : "BLOCKED",
   };
 }
@@ -267,16 +225,11 @@ async function main() {
 
   console.log(`Probing video ${VIDEO_ID} — ${proxies.length} proxy/proxies configured.`);
 
-  // The control runs first and doubles as a self-test: on a residential machine
-  // it must PASS. If it doesn't, this script (or the network) is broken and no
-  // proxy row below means anything.
   const control = await probe("direct (control)", undefined);
   const rows = [control];
 
   for (const proxyUrl of proxies) {
     const row = await probe(redact(proxyUrl), makeDispatcher(proxyUrl));
-    // A proxy that isn't actually in the path would otherwise report the
-    // control's own (working) result as a success.
     if (row.ip && control.ip && row.ip === control.ip) {
       row.state = "NOT PROXIED";
       row.watch = "—";
@@ -312,7 +265,6 @@ async function main() {
   const blocked = count("BLOCKED");
   const unreachable = count("UNREACHABLE");
   const misconfigured = count("NOT PROXIED");
-  // Only rows that actually reached YouTube can testify about the bot check.
   const conclusive = passing + blocked;
 
   if (unreachable > 0) {

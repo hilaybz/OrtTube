@@ -15,10 +15,9 @@
 /**
  * The four states an allocation can be in, derived purely from its stored
  * fields and the current time — never a SQL label, so it's unit-testable
- * without a DB. Mirrors the SQL `_allocation_is_live` predicate
- * (`128_class_quiz_scheduling_window.sql`); tests pin both to the same
- * boundary (`available_until === now` is `done`, not `live`: `>`, not `>=`)
- * so the two can't silently drift.
+ * without a DB. Mirrors the SQL `_allocation_is_live` predicate; tests pin
+ * both to the same boundary (`available_until === now` is `done`, not `live`:
+ * `>`, not `>=`) so the two can't silently drift.
  */
 export type AllocationState = "draft" | "scheduled" | "live" | "done";
 

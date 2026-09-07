@@ -3,11 +3,6 @@ import { getQuizStats, getQuestionStats } from "@/lib/analytics";
 import { handleError, requireAuth } from "../../http";
 
 /**
- * GET /api/analytics/quiz/[quizId]  (teacher quiz analytics)
- *
- * Combined payload: `{ stats, questions }` — quiz-level completion/attempt/score
- * summary (`quiz_stats`) plus the per-question correct% + distractor
- * distribution (`question_stats`). Teacher-authed; both RPCs deny non-owners
  * (`not_owner` → 403). Owner-facing, so the answer key / base text in
  * `question_stats` is intentionally exposed here (never on a student path).
  */

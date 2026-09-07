@@ -1,7 +1,6 @@
 import type { QuizAllocationTags } from "@/lib/allocations";
 
 /**
- * Pure search/filter/sort helpers for the teacher quiz library (backlog 1.4).
  * Deliberately dependency-free beyond the `QuizAllocationTags` type (a
  * type-only import, so it vanishes at compile time — same "safe to import
  * from a client bundle" reasoning as `lib/allocationState.ts`). Everything
@@ -9,14 +8,6 @@ import type { QuizAllocationTags } from "@/lib/allocations";
  * `list_shared_quizzes` paginates, so the full list is already in memory.
  */
 
-// ── Sort ─────────────────────────────────────────────────────────────────────
-
-/**
- * Recency is the only ordering the library offers: a teacher looks for the quiz
- * they just built, or the one from last term. Ordering by number of questions
- * answered no real question ("which quiz has 9 questions?") and cost the
- * library a whole control's worth of attention.
- */
 export type SortOption = "date_desc" | "date_asc";
 
 export const SORT_LABELS: Record<SortOption, string> = {
@@ -26,10 +17,6 @@ export const SORT_LABELS: Record<SortOption, string> = {
 
 export const SORT_OPTIONS = Object.keys(SORT_LABELS) as SortOption[];
 
-/**
- * Returns a NEW sorted array (never mutates `quizzes`) so callers can safely
- * use it inside a `useMemo` alongside the object it was given.
- */
 export function sortQuizzes<T extends { created_at: string }>(
   quizzes: T[],
   sort: SortOption
@@ -43,12 +30,8 @@ export function sortQuizzes<T extends { created_at: string }>(
   return sorted;
 }
 
-// ── Visibility ───────────────────────────────────────────────────────────────
-
-/** Library visibility axis: everything, or one of the two stored values. */
 export type VisibilityFilter = "all" | "private" | "shared";
 
-/** Options for the filter bar's "נראות" dropdown, in menu order. */
 export const VISIBILITY_OPTIONS: ReadonlyArray<{
   value: VisibilityFilter;
   label: string;
@@ -58,15 +41,12 @@ export const VISIBILITY_OPTIONS: ReadonlyArray<{
   { value: "shared", label: "משותף" },
 ];
 
-/** `all` matches everything; otherwise the quiz's own visibility must match. */
 export function matchesVisibility(
   filter: VisibilityFilter,
   visibility: "private" | "shared"
 ): boolean {
   return filter === "all" || filter === visibility;
 }
-
-// ── Status (My quizzes only) ─────────────────────────────────────────────────
 
 /**
  * Where a quiz stands across all its classes — the same axis the teacher
@@ -87,12 +67,6 @@ export const STATUS_OPTIONS: ReadonlyArray<{
   { value: "finished", label: "הסתיימו" },
 ];
 
-/**
- * The `status` search param the teacher home's KPI tiles link with
- * (`/dashboard/quizzes?status=active|finished`) as a filter value. Anything
- * else — absent, misspelled, repeated — is `all`, so a hand-edited URL can
- * never leave the library showing an empty grid for no visible reason.
- */
 export function normalizeStatusParam(
   raw: string | string[] | undefined
 ): StatusFilter {
@@ -117,14 +91,6 @@ export function matchesStatus(
   return filter === "active" ? openable : !openable && (tags?.closed.length ?? 0) > 0;
 }
 
-// ── Search ───────────────────────────────────────────────────────────────────
-
-/**
- * True when `query` is blank (no filtering) or found, case-insensitively, in
- * any of `haystacks` — `null`/`undefined` fields (e.g. an untitled quiz, or a
- * video whose channel name never resolved) are simply skipped rather than
- * matching or throwing.
- */
 export function matchesText(
   haystacks: (string | null | undefined)[],
   query: string
@@ -134,9 +100,6 @@ export function matchesText(
   return haystacks.some((h) => h != null && h.toLowerCase().includes(q));
 }
 
-// ── Class-assignment filter (My quizzes only) ───────────────────────────────
-
-/** Sentinel selected value for "not assigned to any class." */
 export const UNASSIGNED_CLASS = "__unassigned__";
 
 /**

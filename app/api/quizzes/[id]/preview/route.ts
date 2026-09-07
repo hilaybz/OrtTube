@@ -3,10 +3,6 @@ import { getQuizForPreview } from "@/lib/sharing";
 import { handleError, requireAuth } from "../../share/http";
 
 /**
- * GET /api/quizzes/[id]/preview  (backlog 1.3 / issue #13)
- *
- * Full read of a quiz the caller may READ — their own, or a `shared` quiz in
- * their school — including the answer key and explanations, for the
  * catalog's preview-before-cloning flow. Same gate as `clone_quiz`/`POST
  * /api/quizzes/share`, so this shares that route's HTTP plumbing
  * (`SharingError` → uniform error envelope) rather than the `[id]/*`

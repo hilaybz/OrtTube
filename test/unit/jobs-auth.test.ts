@@ -4,7 +4,6 @@ import { assertSecret } from "@/lib/jobs/auth";
 const CRON_SECRET = "cron-secret-value";
 const ADMIN_SECRET = "admin-secret-value";
 
-/** A job request carrying the given raw Authorization header (or none). */
 function jobRequestWith(authorization?: string): Request {
   return new Request("https://example.test/api/jobs/whatever", {
     method: "POST",
@@ -15,8 +14,6 @@ function jobRequestWith(authorization?: string): Request {
 const bearer = (token: string) => `Bearer ${token}`;
 
 describe("assertSecret", () => {
-  // Snapshot both secret env vars, install known values for the test, then
-  // restore whatever was there before.
   let savedEnv: Record<string, string | undefined>;
 
   beforeEach(() => {

@@ -1,10 +1,3 @@
-/**
- * Question fixtures (builders). Small, honest builders so a quiz's questions read
- * as data, not option soup. `teacher.authorQuiz({ questions })` and
- * `teacher.addQuestion` consume these to create the real structural rows + answer
- * key + base (and optional extra-language) text.
- */
-
 export interface OptionFixture {
   is_correct: boolean;
   order_index: number;
@@ -18,14 +11,10 @@ export interface QuestionFixture {
   basePrompt: string;
   baseExplanation?: string;
   options: OptionFixture[];
-  /** Extra-language prompts, e.g. `{ en: "..." }` (base is written by the RPC). */
   promptLangs?: Record<string, string>;
-  /** Extra-language option text keyed by the option's base text, e.g.
-   *  `{ "כן": { en: "yes" } }`. */
   optionLangs?: Record<string, Record<string, string>>;
 }
 
-/** A single-answer question: exactly one `correct` among the choices. */
 export function singleChoice(spec: {
   prompt: string;
   at: number;
@@ -53,7 +42,6 @@ export function singleChoice(spec: {
   };
 }
 
-/** A multi-answer question: every string in `correct` is a right answer. */
 export function multiChoice(spec: {
   prompt: string;
   at: number;
@@ -81,12 +69,6 @@ export function multiChoice(spec: {
   };
 }
 
-/**
- * A raw question builder for edge cases the tidy `singleChoice`/`multiChoice`
- * builders can't express — e.g. a "single" with two correct options, or a "multi"
- * with none, used to exercise the correctness guards. Options are given as
- * `{ text, correct }` in display order.
- */
 export function question(spec: {
   kind: "single" | "multi";
   prompt: string;

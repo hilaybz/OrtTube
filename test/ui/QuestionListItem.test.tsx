@@ -1,11 +1,3 @@
-/**
- * `QuestionListItem` — extracted out of `QuizEditor.tsx` (backlog 1.3) so the
- * read-only quiz preview renders through the exact same component. The one
- * behavioral branch the extraction introduces: `onEdit`/`onDelete` are
- * optional, and their buttons must not render at all when omitted, not just
- * be disabled — a preview must never show edit affordances for a quiz the
- * viewer doesn't own.
- */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";

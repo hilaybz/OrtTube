@@ -15,10 +15,6 @@ export function gateDecision(
 }
 
 /**
- * The other half of the same rule, asked forwards: may the student jump to
- * this instant? Anything up to and including the gate is theirs to re-watch;
- * anything past it is exactly what the gate exists to withhold. `null` gate
- * means every question is answered, so the whole video is open.
  *
  * `VideoStage.seekTo` clamps to `maxSeek` regardless, so this is not what
  * *enforces* the gate — it is what keeps a forbidden checkpoint from being

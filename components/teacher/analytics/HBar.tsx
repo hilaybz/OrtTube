@@ -1,13 +1,3 @@
-/**
- * One labelled horizontal bar. There is no charting library in this repo
- * (see `docs/data-model.md`/plan for `class_quiz_analytics`) — bars are a
- * plain width-percent `<div>`, the same primitive `CheckpointTimeline.tsx`
- * uses for its playhead fill. Growing from the inline-start edge makes this
- * RTL-correct for free — no `left`/`right` math needed.
- *
- * The count renders as visible text rather than only a bar width, so the
- * value is available to screen readers without extra ARIA wiring.
- */
 export function HBar({
   label,
   count,
@@ -16,7 +6,6 @@ export function HBar({
 }: {
   label: string;
   count: number;
-  /** Denominator the bar's width is relative to; 0 renders an empty bar. */
   total: number;
   variant?: "brand" | "success";
 }) {

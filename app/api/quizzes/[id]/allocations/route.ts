@@ -4,17 +4,6 @@ import type { TutorMode } from "@/lib/classes";
 import { err, handleError, isValidIsoOrNull, requireAuth } from "../../../classes/http";
 
 /**
- * /api/quizzes/[id]/allocations  (the quiz-side mirror of
- * /api/classes/[id]/quizzes — this reads/writes by quiz instead of by class)
- *
- *   GET  → every allocation of this quiz, any state (draft/scheduled/live/
- *          done) — the editor's allocation-management list. Owner-checked by
- *          `list_quiz_allocations` itself.
- *   POST → bulk-assign to several classes at once with one shared settings
- *          object: { classIds: string[], tutorMode?, maxAttempts?,
- *          published?, availableFrom?, availableUntil? }. Each class becomes
- *          its own independent allocation (loops the same
- *          `assign_quiz_to_class` RPC the single-class flow uses). Partial
  *          failure is possible — one bad class id doesn't block the rest —
  *          so the response reports `assigned`/`failed` rather than a single
  *          pass/fail, at HTTP 200 (the request itself succeeded).

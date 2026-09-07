@@ -22,27 +22,17 @@ describe("sliceTranscriptToPlayhead", () => {
     { text: "one", offset: 0, duration: 1000 },
     { text: "two", offset: 5000, duration: 1000 },
     { text: "three", offset: 10000, duration: 1000 },
-    { text: "four", offset: 20000, duration: 1000 }, // after the playhead
+    { text: "four", offset: 20000, duration: 1000 },
   ];
 
-  // UPDATED (D2): a segment is included only if it has FULLY ELAPSED
-  // (offset+duration <= playhead). A segment that merely started before the
-  // playhead but is still playing would leak its post-playhead text, so it is
-  // dropped — closing the spoiler gap the old start-only filter left open.
   it("includes only fully-elapsed segments; the in-progress one is dropped", () => {
-    // At playhead 10s, "three" (offset 10s, ends 11s) has only just STARTED, so
-    // it is excluded — nothing past the playhead can leak.
     expect(sliceTranscriptToPlayhead(segments, 10, 2000)).toBe("one two");
-    // Once it has fully elapsed (ends at 11s) it is included.
     const elapsed = sliceTranscriptToPlayhead(segments, 11, 2000);
     expect(elapsed).toBe("one two three");
     expect(elapsed).not.toContain("four");
   });
 
   it("keeps the most-recent segments when over the token cap", () => {
-    // At playhead 11s "three" has fully elapsed and is eligible. tokenCap 2 →
-    // charCap 8: "three" (6 incl. space) fits; adding "two" (→10) would exceed,
-    // so older segments are dropped and the newest is kept whole.
     const text = sliceTranscriptToPlayhead(segments, 11, 2);
     expect(text).toBe("three");
   });
@@ -55,7 +45,7 @@ describe("sliceTranscriptToPlayhead", () => {
     const long: TranscriptSegment[] = [
       { text: "abcdefghij", offset: 0, duration: 1000 },
     ];
-    const text = sliceTranscriptToPlayhead(long, 5, 1); // charCap 4
+    const text = sliceTranscriptToPlayhead(long, 5, 1);
     expect(text).toBe("ghij");
   });
 });

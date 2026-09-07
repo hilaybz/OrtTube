@@ -19,16 +19,6 @@ const LANGUAGE_SEGMENTS: ReadonlyArray<Segment<Language>> = SUPPORTED_LANGUAGES.
 );
 
 /**
- * Create-a-quiz flow, in two steps a teacher can see at once: identify the
- * video, then name it. The link box is `dir="ltr"` — its content is a URL, so
- * it reads and edits left-to-right with the caret at its own inline start —
- * while its hint stays a normal RTL Hebrew sentence with the English example
- * isolated in a `<bdi>` so the bidi algorithm can't scramble it.
- *
- * The pasted link is resolved to a video id as it is typed and echoed back as
- * the real thumbnail, so a wrong paste is caught here rather than after a quiz,
- * a video row and a transcript fetch already exist.
- *
  * A title is REQUIRED here even though `create_quiz_for_video` accepts null:
  * an untitled quiz falls back to the video's title everywhere it is listed,
  * which makes two quizzes on one video indistinguishable. That is a form-level
@@ -86,8 +76,6 @@ export function NewQuizForm({ from }: { from?: BackTargetKey }) {
           durationMinutes: timeRestricted ? Number(durationMinutes) : undefined,
         }),
       });
-      // The editor inherits this page's origin, so a teacher who started on the
-      // overview goes back there rather than into the quiz library.
       const editor = `/dashboard/quizzes/${quiz.quiz_id}/edit`;
       router.push(from ? withBackTarget(editor, from) : editor);
     } catch (err) {
@@ -117,13 +105,6 @@ export function NewQuizForm({ from }: { from?: BackTargetKey }) {
           error={urlError}
           className="w-full"
         />
-        {/* All the box needs is one well-formed example, pinned under it as a
-            quiet meta line: the sample is `<bdi dir="ltr">` so the bidi
-            algorithm cannot reorder its slashes inside the RTL sentence, and
-            it is monospaced so it reads as a value rather than as prose. The
-            paragraph that used to spell out which formats are accepted is
-            gone — the box takes watch links, Shorts and bare ids, and proves
-            it by echoing the video below rather than by promising it above. */}
         <p className="-mt-1 flex flex-wrap items-center gap-1.5 text-xs text-[var(--body-subtle)]">
           <Icon name="link" size={13} className="flex-none" />
           לדוגמה
@@ -162,10 +143,6 @@ export function NewQuizForm({ from }: { from?: BackTargetKey }) {
           </p>
         </div>
 
-        {/* One decision, not two: a quiz is capped or it isn't. The default
-            (unchecked) still shows students an estimate from the video's
-            length — that is what "no cap" means, so it needs no control of its
-            own, only the sentence under the box. */}
         <div className="flex flex-col gap-2">
           <span className="text-sm font-medium text-[var(--heading)]">משך החידון</span>
           <div className="flex flex-wrap items-center gap-3">
@@ -215,7 +192,6 @@ export function NewQuizForm({ from }: { from?: BackTargetKey }) {
   );
 }
 
-/** A numbered step marker + its title, so the flow reads as two ordered steps. */
 function StepHeading({
   step,
   title,
@@ -238,11 +214,6 @@ function StepHeading({
   );
 }
 
-/**
- * The resolved video, echoed back: its thumbnail once a link parses, a quiet
- * "not recognised yet" note while the box holds something that doesn't, and
- * nothing at all for an empty box.
- */
 function VideoEcho({ videoId, typing }: { videoId: string | null; typing: boolean }) {
   if (videoId) {
     return (

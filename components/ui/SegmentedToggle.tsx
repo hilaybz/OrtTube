@@ -6,10 +6,6 @@ export interface Segment<T extends string> {
   label: string;
 }
 
-/**
- * A pill-group single-select (e.g. יומי / שבועי / חודשי). Controlled via
- * `value` + `onChange`. Rendered as a radiogroup for assistive tech.
- */
 export function SegmentedToggle<T extends string>({
   segments,
   value,

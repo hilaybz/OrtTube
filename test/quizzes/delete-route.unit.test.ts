@@ -1,16 +1,3 @@
-/**
- * Quiz route unit test — `DELETE /api/quizzes/[id]` (soft delete).
- *
- * Supabase and the service layer are mocked, so this runs with no DB and no
- * network. What it pins is the handler's contract rather than the deletion
- * itself: 401 before anything is attempted, the owner check left to the RPC, and
- * the stable error code from the service mapped to the right HTTP status.
- *
- * The ownership rule deliberately lives in `soft_delete_quiz` (via
- * `_assert_quiz_owner`), so the test asserts the route *forwards* a `not_owner`
- * failure rather than pre-empting it — a duplicate check in TypeScript could only
- * drift from the one that actually binds.
- */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -20,8 +7,6 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const softDeleteQuizMock = vi.fn();
-// Keep the real QuizError: `handleError` narrows on `instanceof`, so a stand-in
-// class would silently fall through to a 500 and hide a broken status mapping.
 vi.mock("@/lib/quiz", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/quiz")>()),
   softDeleteQuiz: (...args: unknown[]) => softDeleteQuizMock(...args),
@@ -37,7 +22,6 @@ function signedIn(): void {
   getClaimsMock.mockResolvedValue({ data: { claims: { sub: TEACHER_ID } } });
 }
 
-/** The teacher DELETEs quiz-1. */
 function deleteQuiz(quizId = QUIZ_ID) {
   const req = new NextRequest(`http://localhost/api/quizzes/${quizId}`, {
     method: "DELETE",

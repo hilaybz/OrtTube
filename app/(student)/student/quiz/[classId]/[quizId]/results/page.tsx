@@ -16,12 +16,6 @@ import { VideoStage } from "@/components/video/VideoStage";
 import { ReviewList, type ReviewItem } from "@/components/student/ReviewList";
 import { gradeOf } from "@/components/student/grade";
 
-/**
- * The score, presented the way a student reads a score: a grade out of 100,
- * with the raw "how many did I get right" underneath it. `gradeOf` returns null
- * only when the attempt recorded no questions, and then there is no grade to
- * claim.
- */
 function ScoreHeader({ correct, total }: { correct: number; total: number }) {
   const grade = gradeOf(correct, total);
   return (
@@ -52,10 +46,6 @@ function ScoreHeader({ correct, total }: { correct: number; total: number }) {
  * moment it came from are the same visit. Free seeking (`maxSeek={null}`): the
  * block-skip gate exists to keep a student from skipping questions they have
  * not answered, and on this page every question is behind them.
- *
- * Absent only when the video can't be named — the closed-window fallback below
- * reads the attempt straight off `attempts`, which carries a score but not the
- * video it was scored on. A score with no re-watch beats no page at all.
  */
 function VideoPanel({ videoId, title }: { videoId: string; title: string | null }) {
   return (
@@ -77,9 +67,6 @@ export default async function ResultsPage({
   const client = (await createClient()) as unknown as SupabaseClient;
   const playerHref = `/student/quiz/${classId}/${quizId}`;
 
-  // The score banner spans the full width; below it the video and the review sit
-  // side by side on a wide screen and stack on a narrow one — score, then video,
-  // then answers, which is the order a student wants them in either way.
   const wrap = (
     score: React.ReactNode,
     video: React.ReactNode,
@@ -108,9 +95,9 @@ export default async function ResultsPage({
   } catch {
     // Not a member / signed out / never assigned — OR the allocation's
     // window has since closed (or it's a draft), which raises the same
-    // not_assigned. A closed window doesn't erase a finished attempt (Epic
-    // 2A: "attempts, grades and analytics remain intact"), so fall back to a
-    // direct RLS-scoped read of the student's own attempts before giving up.
+    // not_assigned. A closed window doesn't erase a finished attempt, so fall
+    // back to a direct RLS-scoped read of the student's own attempts before
+    // giving up.
     // In this fallback, attempts_left/max_attempts are unknown — retaking is
     // correctly treated as unavailable, since it genuinely isn't once the
     // allocation isn't live.
@@ -187,10 +174,7 @@ export default async function ResultsPage({
 
   // Revealed: prompt/option labels come straight off the review itself now —
   // get_attempt_review reads them off the attempt's frozen snapshot, so they
-  // survive a closed window or later unassignment. (A previous version joined
-  // a second, separately-fetched answer-free read here; that read requires the
-  // assignment to still be live and raised not_assigned once a window closed,
-  // which — silently caught — mislabeled every question as "removed".)
+  // survive a closed window or later unassignment.
   //
   // Both fields are read defensively. The RPC types as `Json`, so TypeScript
   // cannot tell whether the deployed database actually has the migration that

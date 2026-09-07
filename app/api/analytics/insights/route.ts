@@ -6,18 +6,6 @@ import { isSupportedLanguage, type Language } from "@/lib/lang";
 import { LANGUAGE_NAMES } from "@/lib/ai/translate";
 
 /**
- * POST /api/analytics/insights  — "analyse with AI" over the tutor questions.
- *
- * Reads the questions students asked OrtAI in ONE scope (a quiz or a class) via
- * the owner-checked `tutor_prompts_in_scope` RPC — run with the CALLER'S session
- * client, so RLS and the RPC's owner check apply and a non-owner gets
- * `not_owner` → 403 — then has Claude tell the teacher what those questions say
- * students are struggling with.
- *
- * Two clean halves, on purpose: the DB read is owner-gated in one place, and the
- * model call is a pure text transform that never touches the database. Nothing
- * is stored; each press is a fresh read of the current questions.
- *
  * Streamed as plain text, like `/api/ask` — an Opus-class synthesis over a few
  * hundred prompts takes long enough that a spinner would be the whole
  * experience. The one non-streaming response is the EMPTY scope: with no
@@ -36,7 +24,6 @@ export const maxDuration = 60;
 const MODEL = "claude-opus-5";
 const MAX_TOKENS = 2048;
 
-/** Upper bound on prompts handed to the model, keeping the request bounded. */
 const MAX_PROMPTS = 300;
 
 /**
@@ -136,7 +123,6 @@ export async function POST(req: NextRequest) {
   }
   const language: Language = isSupportedLanguage(body.lang) ? body.lang : "he";
 
-  // Owner-checked read with the caller's own session.
   let prompts: string[];
   let flagged: number;
   try {

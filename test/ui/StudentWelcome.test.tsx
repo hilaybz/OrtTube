@@ -1,13 +1,3 @@
-/**
- * The student feed's greeting panel. It mirrors the teacher overview's header
- * in shape and register but answers a student's question rather than a
- * teacher's: not "how many classes do I run?" but "what do I owe, and what is
- * due first?". These tests pin that content — and the restraint of *not*
- * manufacturing a "next up" when nothing has a deadline to be next by.
- *
- * The clock is fixed at 11:00 Israeli time on Saturday 14 March 2026, since the
- * greeting and the date are both school-local.
- */
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { StudentWelcome } from "@/components/student/StudentWelcome";
@@ -98,7 +88,6 @@ describe("StudentWelcome", () => {
     );
     const link = screen.getByRole("link", { name: /חידון קרוב/ });
     expect(link).toHaveAttribute("href", "/student/quiz/c1/near");
-    // The "when" travels with the "what".
     expect(link).toHaveTextContent("מחר");
     expect(screen.queryByText(/חידון רחוק/)).not.toBeInTheDocument();
   });

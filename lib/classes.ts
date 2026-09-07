@@ -7,21 +7,12 @@ import {
 import type { TranslationItem } from "@/lib/ai/translate";
 
 /**
- * Class service layer. Thin, typed TypeScript wrappers over
- * the SECURITY DEFINER roster/assignment RPCs plus direct,
- * RLS-scoped class CRUD.
- *
- * Clients are typed as the un-parameterised `SupabaseClient` on purpose (same
- * convention as lib/quiz.ts / lib/video.ts): these functions compile independently
- * of `lib/supabase/types.ts` being regenerated for the RPCs this task adds.
- *
  * All mutations here run through the caller's AUTHENTICATED (RLS-subject) client
  * so `auth.uid()` resolves to the owning teacher (or the student, for the feed).
  * Only the assignment translation hook reaches for a service-role client, and it
  * does so lazily inside `ensureTranslation`.
  */
 
-/** Stable error thrown when an RPC raises one of its documented codes. */
 export class ClassError extends Error {
   code: string;
   constructor(code: string) {
@@ -44,8 +35,6 @@ async function requireUserId(client: SupabaseClient): Promise<string> {
   return user.id;
 }
 
-// ── Class CRUD (direct, RLS-scoped) ───────────────────────────────────────────
-
 export interface ClassRow {
   id: string;
   teacher_id: string;
@@ -55,11 +44,6 @@ export interface ClassRow {
   created_at: string;
 }
 
-/**
- * Create a class owned by the signed-in teacher. `school_id` is derived from the
- * caller's profile so the RLS insert check (`school_id = current_school_id()`)
- * always matches; the composite FK then keeps class.school_id = teacher.school_id.
- */
 export async function createClass(
   client: SupabaseClient,
   params: { name: string; language?: Language }
@@ -84,7 +68,6 @@ export async function createClass(
   return row as unknown as ClassRow;
 }
 
-/** Update a class's name and/or language (owner-only via RLS). */
 export async function updateClass(
   client: SupabaseClient,
   classId: string,
@@ -106,7 +89,6 @@ export async function updateClass(
   return row as unknown as ClassRow;
 }
 
-/** Delete a class (owner-only via RLS). Cascades members/invites/assignments. */
 export async function deleteClass(
   client: SupabaseClient,
   classId: string
@@ -114,7 +96,6 @@ export async function deleteClass(
   unwrap(await client.from("classes").delete().eq("id", classId));
 }
 
-/** The signed-in teacher's own classes (owner-RLS scoped), alphabetical by name. */
 export async function listMyClasses(client: SupabaseClient): Promise<ClassRow[]> {
   const rows = unwrap(
     await client
@@ -125,20 +106,6 @@ export async function listMyClasses(client: SupabaseClient): Promise<ClassRow[]>
   return (rows as unknown as ClassRow[]) ?? [];
 }
 
-/**
- * The caller's OWN classes that this quiz is assigned to, name-ordered.
- *
- * Feeds the class filter on the quiz's analytics view, so the set has to be
- * exactly the set that filter can open. `class_quizzes_owner_select` confines
- * the allocation rows to classes the caller teaches — the same
- * `is_teacher_of_class` predicate `class_quiz_analytics` gates on — so a
- * colleague's class running the same shared quiz never appears, and the filter
- * cannot offer a selection that would then deny the reader.
- *
- * Two plain reads rather than an embedded join: the allocation rows carry no
- * class name, and the names come back RLS-scoped anyway, so the second read
- * adds a round trip and no trust assumption.
- */
 export async function listMyClassesRunningQuiz(
   client: SupabaseClient,
   quizId: string
@@ -156,11 +123,6 @@ export async function listMyClassesRunningQuiz(
   return (rows as unknown as Pick<ClassRow, "id" | "name">[]) ?? [];
 }
 
-/**
- * This class's name (owner-RLS scoped), or `null` if it doesn't exist or isn't
- * owned by the caller. A narrow read for callers that need a name to render
- * before the heavier analytics RPCs (which also carry it) have resolved.
- */
 export async function getClassName(
   client: SupabaseClient,
   classId: string
@@ -171,18 +133,6 @@ export async function getClassName(
   return (row as { name: string } | null)?.name ?? null;
 }
 
-/**
- * Roster sizes for several classes at once, keyed by class id; a class with no
- * members is absent from the map rather than zero.
- *
- * `class_stats` also reports a roster size, but it computes a full per-quiz
- * analytics array alongside it — four correlated aggregates over every attempt
- * of every assigned quiz — and it answers for one class per call. A caller that
- * wants nothing but the head count for a list of classes pays that whole cost
- * once per class. This reads the membership rows directly instead, in one round
- * trip, and counts them here. `class_members_owner_select` confines the rows to
- * classes the caller owns, so an id they don't own simply contributes nothing.
- */
 export async function countClassMembers(
   client: SupabaseClient,
   classIds: readonly string[]
@@ -201,18 +151,10 @@ export async function countClassMembers(
   return counts;
 }
 
-// ── Roster (RPC) ──────────────────────────────────────────────────────────────
-
 export type AddStudentResult =
   | { status: "added"; student_id: string }
   | { status: "invited"; email: string };
 
-/**
- * Add a student to a class by email. Enrolls an existing same-school student, or
- * creates a pending invite (converted to membership on the student's signup by
- * the invite-conversion trigger). Raises `cross_school` for a different-school student and
- * `is_teacher` for a teacher's email.
- */
 export async function addStudentToClass(
   client: SupabaseClient,
   classId: string,
@@ -265,7 +207,6 @@ export interface ClassRoster {
   invites: RosterInvite[];
 }
 
-/** The class roster: enrolled members + pending invites (owner-only). */
 export async function listClassRoster(
   client: SupabaseClient,
   classId: string
@@ -279,8 +220,6 @@ export async function listClassRoster(
     invites: roster.invites ?? [],
   };
 }
-
-// ── Assignment (RPC + eager translation hook) ─────────────────────────────────
 
 export type TutorMode = "off" | "hints" | "full";
 
@@ -305,7 +244,6 @@ export interface AssignmentResult {
  */
 export { allocationState, type AllocationState } from "./allocationState";
 
-/** Signature of the translation primitive (injectable for tests). */
 export type EnsureTranslationFn = (
   quizId: string,
   language: Language,
@@ -321,18 +259,6 @@ export type EnsureTranslationFn = (
 ) => Promise<EnsureTranslationResult>;
 
 /**
- * Assign a quiz to a class with per-class `tutor_mode` + `max_attempts` +
- * `published` + an optional scheduling window, then best-effort
- * eager-translate the quiz into the class language (`ensureTranslation`).
- *
- * `published` defaults to `true` — omitting it keeps the pre-2A.1 behaviour of
- * assignment meaning instant visibility. Pass `false` to assign as a draft the
- * students in the class can't see until it's explicitly published.
- *
- * `availableFrom`/`availableUntil` default to `null` (no window — visible for
- * as long as `published` stays true). Both are ISO timestamps; the RPC
- * rejects `availableFrom >= availableUntil` with `invalid_schedule_window`.
- *
  * The translation is intentionally non-fatal: any failure is swallowed so a
  * translation hiccup never fails the assignment (the reader path falls back to
  * base_language and re-fills lazily). When `class_language === base_language`
@@ -384,7 +310,6 @@ export async function assignQuizToClass(
           translate: opts?.translate,
         });
       } catch {
-        // best-effort: a translation failure must not fail the assignment.
       }
     };
     if (awaitIt) {
@@ -407,10 +332,6 @@ export async function unassignQuiz(
   );
 }
 
-/**
- * Flip an existing assignment's published state without touching its
- * `tutor_mode` / `max_attempts`. Owner-checked the same way `unassignQuiz` is.
- */
 export async function setClassQuizPublished(
   client: SupabaseClient,
   classId: string,
@@ -426,13 +347,6 @@ export async function setClassQuizPublished(
   );
 }
 
-/**
- * Edit an existing allocation's scheduling window without touching
- * `tutor_mode` / `max_attempts` / `published`. Same one-field-setter shape as
- * `setClassQuizPublished`, for the same reason: the editor/class-page row
- * actions are single-purpose, so a partial update never clobbers an unrelated
- * field. Pass `null` for either bound to clear it.
- */
 export async function setClassQuizSchedule(
   client: SupabaseClient,
   classId: string,
@@ -465,7 +379,6 @@ export interface AssignedQuiz {
   assigned_at: string;
   question_count: number;
   author_id: string;
-  /** The quiz author's display name — `null` if never set. */
   author_name: string | null;
   /**
    * Whether the viewing teacher authored this quiz. `false` means it's a
@@ -477,7 +390,6 @@ export interface AssignedQuiz {
   is_own: boolean;
 }
 
-/** Owner-facing list of a class's assigned (non-deleted) quizzes. */
 export async function listClassQuizzes(
   client: SupabaseClient,
   classId: string
@@ -493,51 +405,33 @@ export async function listClassQuizzes(
  * if any, puts it in `in_progress`). `completed` — at least one completed
  * attempt; the RPC reports the LATEST one's score, never the best of several.
  * `missed` — the allocation's window has closed and the student never
- * started it at all (issue #69's student-side gap: this used to just vanish
- * from the feed instead of showing as missed).
+ * started it at all.
  */
 export type StudentFeedStatus = "not_started" | "in_progress" | "completed" | "missed";
 
 export interface StudentFeedItem {
   class_id: string;
   class_name: string;
-  /** The class owner's display name — the assigning teacher, which is NOT
-   *  necessarily the quiz's author (a shared quiz can be assigned by any
-   *  same-school teacher). Null if the teacher has no display_name set. */
   teacher_name: string | null;
   quiz_id: string;
   title: string | null;
   youtube_video_id: string;
   video_title: string | null;
-  /** The video's length — used to derive an estimate when unrestricted (see
-   * `lib/quizDuration.ts`). `null` if the length was never determined. */
   duration_seconds: number | null;
   time_restricted: boolean;
-  /** Only non-null while `time_restricted`. */
   duration_minutes: number | null;
   max_attempts: number | null;
-  /** Null = no deadline. Past = the window has closed (see `status`). */
   available_until: string | null;
   assigned_at: string;
-  /** Whether the allocation is currently open (`_allocation_is_live`) —
-   *  drives the CTA on a `completed` card ("ניסיון נוסף" only while live). */
   is_live: boolean;
   status: StudentFeedStatus;
-  /** Null = unlimited. */
   attempts_left: number | null;
   last_num_correct: number | null;
   last_num_questions: number | null;
   last_completed_at: string | null;
-  /** The unfinished attempt to resume, when `status === "in_progress"`. */
   resume_attempt_id: string | null;
 }
 
-/**
- * The signed-in student's flat feed of assigned quizzes — live ones plus
- * recently-closed ones the student either completed or missed entirely.
- * Replaces the old per-class-tabbed `list_assigned_for_student` +
- * per-quiz `list_my_attempts_for_quiz` fan-out with one query.
- */
 export async function listStudentFeed(
   client: SupabaseClient
 ): Promise<StudentFeedItem[]> {

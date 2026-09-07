@@ -6,12 +6,6 @@ import { firstName } from "@/lib/datetime";
 import { StudentFeed } from "@/components/student/StudentFeed";
 import { StudentWelcome } from "@/components/student/StudentWelcome";
 
-/**
- * The student's homepage: a greeting with what is due next, then the feed
- * itself. `list_student_feed` hands over every assigned quiz in one query, so
- * the header's "what's next" and the feed's sections are two readings of the
- * same rows — no second fetch, and nothing that can disagree with itself.
- */
 export default async function StudentFeedPage() {
   const client = (await createClient()) as unknown as SupabaseClient;
   const now = new Date();
@@ -28,11 +22,6 @@ export default async function StudentFeedPage() {
   );
 }
 
-/**
- * The student's own display name, for the greeting. Comes off the same memoized
- * profile the enclosing layout already read, so the name costs no extra round
- * trip. A failure just drops the name from the greeting rather than the page.
- */
 async function loadGreetingName(client: SupabaseClient): Promise<string | null> {
   try {
     const profile = await getMyProfile(client);

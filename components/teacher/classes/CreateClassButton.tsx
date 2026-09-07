@@ -12,10 +12,6 @@ import { apiFetch, ApiError } from "@/lib/http";
 import { SUPPORTED_LANGUAGES, type Language } from "@/lib/lang";
 import { LANGUAGE_LABELS } from "./labels";
 
-/**
- * "כיתה חדשה" action: opens a form modal that creates a class
- * (POST /api/classes) and refreshes the server-rendered list on success.
- */
 export function CreateClassButton() {
   const router = useRouter();
   const [open, setOpen] = useState(false);

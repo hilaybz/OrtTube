@@ -4,11 +4,6 @@ import { createPortal } from "react-dom";
 import { cn } from "./cn";
 import { Icon } from "./Icon";
 
-/**
- * Glass dialog (per modals.md). Fixed backdrop (blur 8px), glass content,
- * Escape + backdrop-click close, focus moved inside on open and restored on
- * close. `role="dialog" aria-modal`.
- */
 export function Modal({
   open,
   title,
@@ -78,7 +73,6 @@ export function Modal({
       }
     };
     document.addEventListener("keydown", onKey);
-    // Move focus into the dialog.
     panelRef.current?.focus();
     return () => {
       document.removeEventListener("keydown", onKey);

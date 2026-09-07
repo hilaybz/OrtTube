@@ -8,7 +8,6 @@ import type { Language } from "@/lib/lang";
 import { getPool } from "../db";
 import type { Teacher } from "./teacher";
 
-/** One option of an authored question, with its identity + answer-key bit. */
 export class QuizOption {
   constructor(
     readonly id: string,
@@ -18,42 +17,31 @@ export class QuizOption {
   ) {}
 }
 
-/**
- * A question authored through the DSL. Exposes the answer key by id so tests can
- * submit correct / subset / superset / distractor selections without raw SQL.
- */
 export class AuthoredQuestion {
   constructor(
     readonly id: string,
     readonly options: QuizOption[],
-    /** The quiz this question belongs to, so owner-scoped RPCs run as its owner. */
     readonly quiz: Quiz
   ) {}
 
-  /** The correct option ids (one for single, ≥1 for multi). */
   get correctIds(): string[] {
     return this.options.filter((o) => o.isCorrect).map((o) => o.id);
   }
-  /** Every option id, in order. */
   get optionIds(): string[] {
     return this.options.map((o) => o.id);
   }
-  /** The wrong-answer option ids. */
   get distractorIds(): string[] {
     return this.options.filter((o) => !o.isCorrect).map((o) => o.id);
   }
-  /** The first correct option id (the single-choice answer). */
   get firstCorrect(): string {
     return this.correctIds[0];
   }
-  /** Find an option by its base-language text. */
   optionByText(text: string): QuizOption {
     const found = this.options.find((o) => o.baseText === text);
     if (!found) throw new Error(`no option with base text "${text}"`);
     return found;
   }
 
-  /** Soft-delete this question (owner-scoped `soft_delete_question` RPC). */
   softDelete(): Promise<void> {
     return this.quiz.owner.removeQuestion(this);
   }
@@ -87,7 +75,6 @@ export class AuthoredQuestion {
   }
 }
 
-/** Row returned by `list_shared_quizzes`. */
 export interface SharedQuizRow {
   quiz_id: string;
   title: string | null;
@@ -101,9 +88,7 @@ export interface SharedQuizRow {
   duration_seconds: number | null;
 }
 
-/** A quiz authored by a teacher. Carries its owner so owner-scoped RPCs run as them. */
 export class Quiz {
-  /** Questions authored through the DSL, in creation order. */
   readonly questions: AuthoredQuestion[] = [];
 
   constructor(
@@ -114,7 +99,6 @@ export class Quiz {
     readonly youtubeId?: string
   ) {}
 
-  /** Soft-delete the quiz (owner-scoped `soft_delete_quiz` RPC). */
   async softDelete(): Promise<void> {
     const { error } = await this.owner.client.rpc("soft_delete_quiz", {
       p_quiz_id: this.id,
@@ -122,17 +106,14 @@ export class Quiz {
     if (error) throw new Error(`soft_delete_quiz failed: ${error.message}`);
   }
 
-  /** Publish this quiz to the same-school shared catalog (owner-only). */
   makeShared(): Promise<void> {
     return this.owner.setVisibility(this, "shared");
   }
 
-  /** Return this quiz to private (owner-only). */
   makePrivate(): Promise<void> {
     return this.owner.setVisibility(this, "private");
   }
 
-  /** Retitle this quiz (owner-only). An empty string clears the title. */
   rename(title: string): Promise<void> {
     return this.owner.setTitle(this, title);
   }

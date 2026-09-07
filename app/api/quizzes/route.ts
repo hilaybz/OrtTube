@@ -4,21 +4,6 @@ import { isSupportedLanguage } from "@/lib/lang";
 import { extractVideoId } from "@/lib/youtube";
 import { err, handleError, requireAuth } from "./http";
 
-/**
- * POST /api/quizzes  (quiz authoring — create)
- *
- * Body: { youtubeId | youtubeUrl, baseLanguage, title?, timeRestricted?,
- * durationMinutes? }. Atomically upserts the canonical video and creates the
- * first quiz on it via `create_quiz_for_video`. Teacher-authed; the RPC
- * enforces the active-teacher gate and derives the school from the caller's
- * profile. YouTube metadata is fetched server-side inside the wrapper.
- *
- * `timeRestricted`/`durationMinutes` set the quiz's stated duration (issue
- * #80) up front; omitted, the quiz starts unrestricted. `durationMinutes` is
- * ignored unless `timeRestricted` is `true` — the RPC itself is the source
- * of truth for the pair's validity (`invalid_duration`), this is just a
- * cheap early reject for the obviously-malformed case.
- */
 export async function POST(req: NextRequest) {
   const auth = await requireAuth();
   if (auth.response) return auth.response;

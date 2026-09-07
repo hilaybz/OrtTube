@@ -1,15 +1,3 @@
-/**
- * Proxy egress for YouTube requests — no network.
- *
- * YouTube bot-checks Vercel's datacenter IP, so production routes these
- * requests through proxies instead. The pool is deliberately unreliable: free
- * proxies get burned, and only some of any given list answer (measured: 3 of
- * 10). So what needs pinning is not "a proxy is used" but the fallthrough — a
- * refused exit must cost one wasted request, not the whole fetch.
- *
- * `undici` is mocked at the module boundary so a dispatcher never opens a
- * socket, and each case scripts what an exit returns.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const undiciFetch = vi.hoisted(() => vi.fn());
@@ -48,12 +36,10 @@ vi.mock("undici", () => ({
   },
 }));
 
-/** The exit a recorded call was dispatched through, as `host:port`. */
 function exitOf(call: number): string {
   return new URL(undiciFetch.mock.calls[call][1].dispatcher.uri).host;
 }
 
-/** An undici-shaped response: only what `proxiedFetch` reads off it. */
 function reply(body: string, status = 200) {
   return {
     status,
@@ -66,7 +52,6 @@ function reply(body: string, status = 200) {
 const BOT_CHECK = JSON.stringify({ playabilityStatus: { status: "LOGIN_REQUIRED" } });
 const GOOD = JSON.stringify({ playabilityStatus: { status: "OK" } });
 
-/** Imported fresh per test so the module's proxy pool and memo start clean. */
 async function loadEgress(proxies?: string) {
   if (proxies === undefined) delete process.env.YOUTUBE_PROXY_URLS;
   else process.env.YOUTUBE_PROXY_URLS = proxies;
@@ -117,7 +102,6 @@ describe("proxy URL parsing", () => {
   });
 
   it("drops an unparseable entry instead of throwing", async () => {
-    // One malformed entry must not take down every YouTube fetch in the app.
     const { normalizeProxyUrl } = await loadEgress("");
     expect(normalizeProxyUrl("nonsense")).toBeNull();
   });
@@ -170,8 +154,6 @@ describe("fallthrough", () => {
   });
 
   it("returns the LAST refused response when every exit is blocked", async () => {
-    // fetchFreshTranscript already classifies a bot-checked response as a
-    // transient error; throwing a novel one here would only bypass that.
     undiciFetch.mockResolvedValue(reply(BOT_CHECK));
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p");
 
@@ -199,17 +181,14 @@ describe("self-healing exits", () => {
     undiciFetch.mockResolvedValue(reply(BOT_CHECK));
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
 
-    // The pool is built lazily, so nothing exists until the first request.
     await proxiedFetch("https://www.youtube.com/watch?v=x");
 
     expect(agentClosed).toHaveBeenCalledTimes(1);
-    // Two constructions: the original, then its replacement for the same slot.
     expect(proxyAgentCtor).toHaveBeenCalledTimes(2);
     expect(proxyAgentCtor).toHaveBeenLastCalledWith("http://u:p@1.1.1.1:1");
   });
 
   it("retires an exit that threw, not only one that was refused", async () => {
-    // A dead tunnel would otherwise be retried for the life of the instance.
     undiciFetch.mockRejectedValue(new TypeError("fetch failed"));
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
 
@@ -220,7 +199,6 @@ describe("self-healing exits", () => {
   });
 
   it("leaves a working exit's agent alone", async () => {
-    // Rebuilding on success would throw away connection reuse for nothing.
     undiciFetch.mockResolvedValue(reply(GOOD));
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
 
@@ -231,19 +209,6 @@ describe("self-healing exits", () => {
   });
 });
 
-/**
- * This used to be a "last-known-good" memo that sent every request straight to
- * whichever exit answered last. That was right for ten fixed datacenter IPs,
- * where which ones worked was a durable property worth remembering. It is wrong
- * for a rotating residential endpoint: the entries are interchangeable draws
- * from one pool, an exit's IP changes whenever `replaceAgent` rebuilds it, and
- * pinning one slot concentrates every request on a single exit IP — the exact
- * behaviour that gets an IP burned.
- *
- * Scripted by EXIT rather than call order throughout: with an ordered mock a
- * request succeeds on its first attempt no matter which exit it picks, so a
- * call-count assertion alone would pass with the rotation deleted.
- */
 describe("exit rotation", () => {
   it("starts each request at a different exit", async () => {
     undiciFetch.mockResolvedValue(reply(GOOD));
@@ -270,8 +235,6 @@ describe("exit rotation", () => {
     expect(undiciFetch).toHaveBeenCalledTimes(1);
     expect(exitOf(0)).toBe("1.1.1.1:1");
 
-    // Second request begins at the next slot, which is walled, and falls through
-    // to the one that works rather than reporting the wall to the caller.
     const res = await proxiedFetch("https://www.youtube.com/watch?v=b");
     expect(exitOf(1)).toBe("2.2.2.2:2");
     expect(exitOf(2)).toBe("1.1.1.1:1");
@@ -281,8 +244,6 @@ describe("exit rotation", () => {
 
 describe("request forwarding", () => {
   it("forwards method, headers and body — the InnerTube POST depends on it", async () => {
-    // Nothing else in this file asserts the second argument, so dropping `body`
-    // from the dispatch would otherwise go unnoticed until production.
     undiciFetch.mockResolvedValue(reply(GOOD));
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
 
@@ -303,12 +264,6 @@ describe("request forwarding", () => {
   });
 
   it("aborts a stalled proxy on a SHORT deadline, not merely 'at some point'", async () => {
-    // undici's own defaults are 300s for headers and body; on a sequential sweep
-    // that is long enough to outlive the caller. This used to assert only
-    // `instanceof AbortSignal`, which still passed with the timeout set to fifty
-    // minutes — it pinned that a signal EXISTS, not that it carries a deadline.
-    // The value is asserted directly because `AbortSignal.timeout` is native and
-    // fake timers do not reach it.
     const timeout = vi.spyOn(AbortSignal, "timeout");
     try {
       undiciFetch.mockResolvedValue(reply(GOOD));
@@ -324,8 +279,6 @@ describe("request forwarding", () => {
   });
 
   it("honours the caller's own budget alongside the per-exit deadline", async () => {
-    // The transcript fetch owns a whole-fetch budget; without merging it here a
-    // sweep could keep spending exits after the request that wanted them died.
     undiciFetch.mockResolvedValue(reply(GOOD));
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
     const caller = new AbortController();
@@ -341,7 +294,7 @@ describe("request forwarding", () => {
   it("stops trying exits once the caller's budget is spent", async () => {
     const caller = new AbortController();
     undiciFetch.mockImplementation(async () => {
-      caller.abort(); // the budget expires during the first exit's request
+      caller.abort();
       return reply(BOT_CHECK);
     });
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p,3.3.3.3:3:u:p");
@@ -352,8 +305,6 @@ describe("request forwarding", () => {
   });
 
   it("rejects shapes it would otherwise send with the body silently dropped", async () => {
-    // The exported type is the platform fetch, which is wider than what is
-    // supported. Failing loudly beats YouTube answering 400 with no trace.
     undiciFetch.mockResolvedValue(reply(GOOD));
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
 
@@ -366,9 +317,6 @@ describe("request forwarding", () => {
 
 describe("pool construction is not brought down by one bad entry", () => {
   it("survives an entry whose scheme makes ProxyAgent throw", async () => {
-    // `new ProxyAgent("htp://…")` throws InvalidArgumentError. Uncaught, that
-    // would break every YouTube fetch in the app for as long as the typo lived
-    // in the env var.
     undiciFetch.mockResolvedValue(reply(GOOD));
     const { proxiedFetch } = await loadEgress("htp://1.2.3.4:8080,2.2.2.2:2:u:p");
 
@@ -392,10 +340,6 @@ describe("pool construction is not brought down by one bad entry", () => {
 
 describe("sweep cooldown", () => {
   it("does not re-sweep the whole pool right after every exit refused", async () => {
-    // A genuinely login-gated video returns LOGIN_REQUIRED from every IP on
-    // earth, and is indistinguishable from a burned pool. Re-sweeping ten exits
-    // at ~1.2MB each on every retry would spend the monthly quota on a video
-    // that can never succeed.
     undiciFetch.mockResolvedValue(reply(BOT_CHECK));
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p,3.3.3.3:3:u:p");
 
@@ -404,39 +348,29 @@ describe("sweep cooldown", () => {
 
     await proxiedFetch("https://www.youtube.com/watch?v=gated");
 
-    // One probe, not another full pass.
     expect(undiciFetch).toHaveBeenCalledTimes(4);
   });
 
   it("is per-endpoint, so a working endpoint cannot clear a walled one's cooldown", async () => {
-    // Observed in production: YouTube serves the watch page from a datacenter
-    // IP but walls api/timedtext from the same address. With a single global
-    // cooldown, the watch-page success reset it before it could ever apply, and
-    // one attempt made TWO full 10-exit sweeps of timedtext — 20 bot walls.
     undiciFetch.mockImplementation(async (url: string) =>
       url.includes("timedtext") ? reply("nope", 429) : reply(GOOD)
     );
     const { proxiedFetch } = await loadEgress("1.1.1.1:1:u:p,2.2.2.2:2:u:p,3.3.3.3:3:u:p");
 
     await proxiedFetch("https://www.youtube.com/api/timedtext?v=x");
-    expect(undiciFetch).toHaveBeenCalledTimes(3); // full sweep, all refused
+    expect(undiciFetch).toHaveBeenCalledTimes(3);
 
-    // A different endpoint succeeds in between — this must NOT reset the
-    // timedtext cooldown.
     await proxiedFetch("https://www.youtube.com/watch?v=x");
     expect(undiciFetch).toHaveBeenCalledTimes(4);
 
     await proxiedFetch("https://www.youtube.com/api/timedtext?v=x");
 
-    // One probe, not another sweep: 4 + 1, not 4 + 3.
     expect(undiciFetch).toHaveBeenCalledTimes(5);
   });
 });
 
 describe("trace", () => {
   it("names what each exit did, so a burned pool is visible", async () => {
-    // Without this the caller sees only the last exit's bot check and cannot
-    // tell "rotate the proxies" from "YouTube walled everything".
     undiciFetch
       .mockRejectedValueOnce(Object.assign(new TypeError("fetch failed"), {
         cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
@@ -487,7 +421,6 @@ describe("trace", () => {
   });
 
   it("stays silent on a clean first-exit success", async () => {
-    // The happy path is most requests; a line per call would drown the trace.
     undiciFetch.mockResolvedValue(reply(GOOD));
     const { createProxiedFetch } = await loadEgress("1.1.1.1:1:u:p");
     const trace: string[] = [];
@@ -500,8 +433,6 @@ describe("trace", () => {
 
 describe("response rebuilding", () => {
   it("does not forward content-encoding, which no longer describes the body", async () => {
-    // undici already decoded it; forwarding the header would describe bytes
-    // that no longer exist.
     const res = reply(GOOD);
     res.headers.set("content-encoding", "gzip");
     undiciFetch.mockResolvedValue(res);
@@ -529,12 +460,6 @@ describe("response rebuilding", () => {
   });
 });
 
-/**
- * The pool is no longer ten independent proxies — it is N draws from ONE
- * rotating residential endpoint, billed by the gigabyte. Walking every slot
- * therefore mostly means retrying the same endpoint N times, serially, and
- * paying for each attempt.
- */
 describe("sweep cost", () => {
   const TEN = Array.from({ length: 10 }, (_, i) => `${i}.${i}.${i}.${i}:1:u:p`).join(",");
 

@@ -2,15 +2,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Language } from "@/lib/lang";
 
 /**
- * AI translation primitive for the multilingual content layer.
- *
  * This module translates TEXT ONLY. The answer key (`is_correct`),
  * `position_seconds` and option identity live on the structural rows and are
  * never passed through here — so a translation can never desync correctness.
- *
- * `translateTexts` batches every string of a quiz into a single Claude call and
- * returns a map keyed by the caller's opaque ids, so lib/quiz.ts can fan the
- * results back out to `question_translations` / `option_translations`.
  */
 
 const MODEL = "claude-haiku-4-5-20251001";
@@ -22,9 +16,7 @@ export const LANGUAGE_NAMES: Record<Language, string> = {
 };
 
 export interface TranslationItem {
-  /** Opaque, stable id chosen by the caller (e.g. `q:<uuid>:prompt`). */
   id: string;
-  /** The source text in `from` language. */
   text: string;
 }
 
@@ -33,8 +25,6 @@ export interface TranslationItem {
  * `id -> translated text`. Empty-text items are echoed unchanged. On a malformed
  * model response the returned map may omit some ids; callers must treat a missing
  * id as "leave untranslated" (the read path then falls back to base_language).
- *
- * Node/server only (needs `ANTHROPIC_API_KEY`).
  */
 export async function translateTexts(
   items: TranslationItem[],
@@ -43,7 +33,6 @@ export async function translateTexts(
 ): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   const nonEmpty = items.filter((it) => it.text && it.text.trim().length > 0);
-  // Echo blank items straight through.
   for (const it of items) {
     if (!it.text || it.text.trim().length === 0) out[it.id] = it.text ?? "";
   }

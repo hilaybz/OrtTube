@@ -1,12 +1,3 @@
-/**
- * Quiz route unit test — `POST /api/quizzes/[id]/generate` transcript warming (C1).
- *
- * All I/O (Supabase user/service clients, the transcript cache, the AI generator,
- * persistence) is mocked, so this runs with no DB, no network, and no API key. It
- * pins the C1 fix: a video whose transcript_status is 'pending' is WARMED via
- * getTranscript instead of being refused with a 409 before any fetch; only a
- * CONFIRMED 'unavailable' video 409s up front.
- */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -57,7 +48,6 @@ import { POST } from "@/app/api/quizzes/[id]/generate/route";
 
 const TEACHER_ID = "teacher-uuid";
 
-/** The teacher POSTs to generate questions for quiz-1, optionally with a body. */
 function generateRequest(body: Record<string, unknown> = {}): NextRequest {
   return new NextRequest("http://localhost/api/quizzes/quiz-1/generate", {
     method: "POST",
@@ -67,7 +57,6 @@ function generateRequest(body: Record<string, unknown> = {}): NextRequest {
 }
 const routeParams = Promise.resolve({ id: "quiz-1" });
 
-/** Wire supabase.from("quizzes"/"videos") to return the given rows. */
 function stubQuizAndVideo(quizRow: unknown, videoRow: unknown) {
   fromMock.mockImplementation((table: string) => {
     const row = table === "quizzes" ? quizRow : videoRow;
@@ -79,7 +68,6 @@ function stubQuizAndVideo(quizRow: unknown, videoRow: unknown) {
   });
 }
 
-// The quiz being generated: authored by our teacher, on video vid-1, in Hebrew.
 const authoredQuiz = {
   id: "quiz-1",
   author_id: TEACHER_ID,
@@ -119,8 +107,6 @@ describe("generate route transcript warming (C1)", () => {
 
     const response = await POST(generateRequest({ count: 1 }), { params: routeParams });
 
-    // Must have attempted to warm the cache, and NOT refused up front.
-    // `force` because a teacher pressing generate is an explicit human retry.
     expect(getTranscriptMock).toHaveBeenCalledWith(
       { __service: true },
       "yt-pending",
@@ -130,11 +116,6 @@ describe("generate route transcript warming (C1)", () => {
   });
 
   it("RE-CHECKS an 'unavailable' video instead of refusing up front", async () => {
-    // Inverted deliberately. The old behaviour — refuse without fetching — made a
-    // single blocked fetch permanent for every user, and the editor disabled the
-    // only button that could have retried. `unavailable` is a verdict with an
-    // expiry, not a property of the video, so a teacher's explicit generate must
-    // reach getTranscript, which owns throttling.
     stubQuizAndVideo(authoredQuiz, {
       youtube_video_id: "yt-none",
       transcript_status: "unavailable",
@@ -164,10 +145,6 @@ describe("generate route transcript warming (C1)", () => {
   });
 
   it("does NOT claim 'no captions' when the fetch merely failed", async () => {
-    // The bug this replaced: a blocked fetch, a throttled one and a genuinely
-    // caption-less video all produced the same 409 telling the teacher their
-    // video had no subtitles. Only one of those was a statement about the video,
-    // and the other two are transient — so the copy has to differ.
     stubQuizAndVideo(authoredQuiz, {
       youtube_video_id: "yt-blocked",
       transcript_status: "pending",
@@ -179,8 +156,6 @@ describe("generate route transcript warming (C1)", () => {
 
     const response = await POST(generateRequest({ count: 1 }), { params: routeParams });
 
-    // 503, matching sign-in's `lookup_failed`: transient, and retrying means
-    // something. A 409 would say the request itself conflicted with the state.
     expect(response.status).toBe(503);
     expect((await response.json()).error.code).toBe("transcript_fetch_failed");
   });
@@ -207,7 +182,7 @@ describe("generate route transcript warming (C1)", () => {
       questions: [
         { order_index: 0, prompt: "existing A" },
         { order_index: 1, prompt: "existing B" },
-        { order_index: 2, prompt: null }, // untranslated base prompt → skipped
+        { order_index: 2, prompt: null },
       ],
     });
 
@@ -223,9 +198,6 @@ describe("generate route transcript warming (C1)", () => {
   });
 });
 
-// Generation has no per-run language input: the language is read off the quiz
-// row, so a quiz authored in Arabic must generate in Arabic even when the
-// request body says nothing about language and the transcript is in another one.
 describe("generate route language", () => {
   it.each(["he", "ar", "en"] as const)(
     "generates in the quiz's own base_language (%s)",
@@ -327,7 +299,6 @@ describe("generate route malformed bodies", () => {
     });
   });
 
-  /** A raw body string, bypassing the JSON.stringify helper. */
   function rawBodyRequest(body: string): NextRequest {
     return new NextRequest("http://localhost/api/quizzes/quiz-1/generate", {
       method: "POST",
@@ -353,7 +324,7 @@ describe("generate route malformed bodies", () => {
     expect(response.status).not.toBe(500);
     expect(generateMock).toHaveBeenCalledWith(
       expect.anything(),
-      3, // the documented default count
+      3,
       "he",
       expect.objectContaining({
         difficulty: "medium",
@@ -469,7 +440,6 @@ describe("generate route difficulty", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error.code).toBe("invalid_request");
-    // The request must not have reached the model at all.
     expect(generateMock).not.toHaveBeenCalled();
   });
 

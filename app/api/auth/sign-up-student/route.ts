@@ -1,24 +1,10 @@
 /**
- * POST /api/auth/sign-up-student
- *
  * Robust, role-aware student signup. Because GoTrue creates the `auth.users` row
  * before app logic can validate, this endpoint OWNS the ordering and cleans up on
  * failure so a rejected/failed signup never leaves an orphan `auth.users` row.
  *
- * Order:
- *   1. Normalize email; look up `class_invites` by (citext) email.
- *        - none                       -> 409 { code: 'no_invite' }
- *        - invites across >1 school_id -> 409 { code: 'ambiguous_school' }
- *   2. Resolve the single school_id from the invite(s).
- *   3. auth.admin.createUser({ email, password, email_confirm: true }).
- *   4. Insert `profiles` (role='student', resolved school_id, email, display_name).
- *      The invite-conversion AFTER-INSERT trigger converts matching invites -> class_members.
- *   5. On ANY failure after step 3, delete the created auth.users row. 201 on success.
- *
  * Process death mid-flow cannot be caught here — the `reconcile-auth` job is
  * the safety net for orphaned auth users.
- *
- * Body: { email, password, displayName }
  */
 import { createServiceClient } from "@/lib/auth/serviceClient";
 import { jsonError, jsonOk } from "@/lib/auth/http";
@@ -75,7 +61,6 @@ export async function POST(req: Request): Promise<Response> {
 
   const service = createServiceClient();
 
-  // 1. Look up invites by email, resolving each invite's school via its class.
   const { data: invites, error: inviteErr } = await service
     .from("class_invites")
     .select("class_id, classes(school_id)")
@@ -97,7 +82,6 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  // 2. Resolve the school; reject if invites span multiple schools.
   const schoolIds = new Set<string>();
   for (const inv of invites) {
     const sid = schoolIdOf(inv as { classes?: unknown });
@@ -105,7 +89,6 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   if (schoolIds.size === 0) {
-    // Invites exist but none resolve to a school (data integrity issue).
     return jsonError(
       "signup_failed",
       "Your invitation could not be linked to a school. Please contact your teacher.",
@@ -122,7 +105,6 @@ export async function POST(req: Request): Promise<Response> {
 
   const schoolId = [...schoolIds][0];
 
-  // 3. Create the auth user.
   const { data: created, error: createErr } = await service.auth.admin.createUser({
     email,
     password,

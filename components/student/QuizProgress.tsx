@@ -4,12 +4,6 @@ import { Icon } from "@/components/ui/Icon";
 const RADIUS = 13;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-/**
- * How far through the quiz's questions the student is, above the player: a
- * progress ring that fills as checkpoints are answered, with the count spelled
- * out beside it. A `progressbar` rather than loose text, so assistive tech gets
- * the same "3 of 5" the ring shows.
- */
 export function QuizProgress({
   answered,
   total,

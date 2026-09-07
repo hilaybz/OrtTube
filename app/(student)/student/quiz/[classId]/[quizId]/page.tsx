@@ -28,7 +28,6 @@ export default async function QuizPlayerPage({
     try {
       completed = await findLatestCompletedAttempt(client, classId, quizId);
     } catch {
-      // fall through to notFound()
     }
     if (completed) {
       redirect(resultsHref);
@@ -50,8 +49,6 @@ export default async function QuizPlayerPage({
 
   return (
     <>
-      {/* Warm the transcript now so the AI tutor is ready if this student asks
-          — reaching for it mid-quiz is the worst moment to start a cold fetch. */}
       <TranscriptWarmer quizId={quizId} classId={classId} />
       <QuizPlayer classId={classId} quizId={quizId} state={state} />
     </>

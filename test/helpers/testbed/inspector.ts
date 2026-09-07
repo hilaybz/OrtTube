@@ -1,6 +1,4 @@
 /**
- * Inspector: out-of-band reads for assertions.
- *
  * Wraps service-role / `pg` reads used ONLY to assert on state the DSL cannot
  * (or should not) surface through an actor — membership rows, pending invites,
  * assignment settings, answer keys, attempt snapshots. Never used to DRIVE the
@@ -12,7 +10,6 @@ import type { Student } from "./student";
 import type { Quiz, AuthoredQuestion } from "./quiz";
 import type { Attempt } from "./attempt";
 
-/** One live option of a quiz's stored structure: identity, answer key, base text. */
 export interface OptionStructure {
   id: string;
   orderIndex: number;
@@ -20,7 +17,6 @@ export interface OptionStructure {
   text: string | null;
 }
 
-/** One live question of a quiz's stored structure, with its options in order. */
 export interface QuestionStructure {
   id: string;
   kind: string;
@@ -32,12 +28,6 @@ export interface QuestionStructure {
 }
 
 export class Inspector {
-  /**
-   * The quiz's whole live structure — questions in display order with their
-   * base-language prompt/explanation, and each option's id, answer-key bit and
-   * text. Deep enough to compare two quizzes, or one quiz before and after an
-   * edit elsewhere.
-   */
   async structureOf(quiz: Quiz | string): Promise<QuestionStructure[]> {
     const id = typeof quiz === "string" ? quiz : quiz.id;
     const questions = await getPool().query<{
@@ -93,7 +83,6 @@ export class Inspector {
     }));
   }
 
-  /** Whether the student currently has a membership row in the class. */
   async isMember(classroom: Classroom, student: Student): Promise<boolean> {
     const res = await getPool().query(
       "SELECT 1 FROM public.class_members WHERE class_id=$1 AND student_id=$2",
@@ -102,7 +91,6 @@ export class Inspector {
     return res.rowCount === 1;
   }
 
-  /** Whether a membership row exists for a raw student id (e.g. a just-signed-up invitee). */
   async hasMemberId(classroom: Classroom, studentId: string): Promise<boolean> {
     const res = await getPool().query(
       "SELECT 1 FROM public.class_members WHERE class_id=$1 AND student_id=$2",
@@ -111,7 +99,6 @@ export class Inspector {
     return res.rowCount === 1;
   }
 
-  /** Whether a pending invite for `email` exists on the class. */
   async hasPendingInvite(classroom: Classroom, email: string): Promise<boolean> {
     const res = await getPool().query(
       "SELECT 1 FROM public.class_invites WHERE class_id=$1 AND email=$2",
@@ -120,7 +107,6 @@ export class Inspector {
     return res.rowCount === 1;
   }
 
-  /** The stored assignment settings for a class/quiz pair (or null if unassigned). */
   async assignment(
     classroom: Classroom,
     quiz: Quiz
@@ -145,7 +131,6 @@ export class Inspector {
     return res.rows[0] ?? null;
   }
 
-  /** An attempt's stored completion/score columns — for asserting force-finalization. */
   async attemptRow(attempt: Attempt): Promise<{
     completed_at: string | null;
     num_questions: number | null;
@@ -162,7 +147,6 @@ export class Inspector {
     return res.rows[0] ?? null;
   }
 
-  /** Map<questionId, correctOptionIds[]> for a quiz (live options only). */
   async answerKeyFor(quiz: Quiz): Promise<Map<string, string[]>> {
     const res = await getPool().query<{ id: string; question_id: string }>(
       `SELECT o.id, o.question_id
@@ -183,7 +167,6 @@ export class Inspector {
     return key;
   }
 
-  /** The `was_correct` snapshot recorded for a question in an attempt (null if unanswered). */
   async wasCorrect(attempt: Attempt, q: AuthoredQuestion): Promise<boolean | null> {
     const res = await getPool().query<{ was_correct: boolean }>(
       "SELECT was_correct FROM public.answers WHERE attempt_id=$1 AND question_id=$2",
@@ -192,7 +175,6 @@ export class Inspector {
     return res.rowCount ? res.rows[0].was_correct : null;
   }
 
-  /** The number of questions frozen into an attempt's snapshot at start. */
   async snapshotSize(attempt: Attempt): Promise<number> {
     const res = await getPool().query<{ n: number }>(
       "SELECT count(*)::int AS n FROM public.attempt_questions WHERE attempt_id=$1",
@@ -201,7 +183,6 @@ export class Inspector {
     return res.rows[0].n;
   }
 
-  /** The number of attempt rows recorded for a quiz. */
   async attemptCount(quiz: Quiz): Promise<number> {
     const res = await getPool().query<{ n: number }>(
       "SELECT count(*)::int AS n FROM public.attempts WHERE quiz_id=$1",
@@ -210,7 +191,6 @@ export class Inspector {
     return res.rows[0].n;
   }
 
-  /** The stored quiz row (owner/visibility/lineage/video), or null if missing. */
   async quizRow(quiz: Quiz | string): Promise<{
     author_id: string;
     video_id: string;
@@ -242,12 +222,6 @@ export class Inspector {
     );
   }
 
-  /**
-   * Null out a quiz's video's `duration_seconds` — simulates the real-world
-   * case where the YouTube watch-page scrape that populates it failed (see
-   * `lib/youtube.ts`), for tests asserting reads degrade gracefully rather
-   * than erroring. Never used to drive the system under test.
-   */
   async clearVideoDuration(quiz: Quiz): Promise<void> {
     await getPool().query(
       "UPDATE public.videos SET duration_seconds = NULL WHERE id = $1",
@@ -255,7 +229,6 @@ export class Inspector {
     );
   }
 
-  /** Whether the profile for a user id still exists. */
   async contentUpdatedAt(quiz: Quiz | string): Promise<Date | null> {
     const id = typeof quiz === "string" ? quiz : quiz.id;
     const res = await getPool().query<{ content_updated_at: Date | null }>(
@@ -273,7 +246,6 @@ export class Inspector {
     return res.rowCount === 1;
   }
 
-  /** Whether the auth user for an id still exists. */
   async authUserExists(userId: string): Promise<boolean> {
     const res = await getPool().query("SELECT 1 FROM auth.users WHERE id=$1", [
       userId,
@@ -281,7 +253,6 @@ export class Inspector {
     return res.rowCount === 1;
   }
 
-  /** The raw pg pool, for a bespoke assertion the typed reads above don't cover. */
   pool() {
     return getPool();
   }

@@ -1,8 +1,6 @@
 import "server-only";
 
 /**
- * Per-key sliding-window rate limiting for routes that cost real money.
- *
  * In-memory, so each serverless instance counts separately — good enough to stop
  * cost abuse at pilot scale; swap for a shared store (e.g. Upstash) if the app
  * grows.
@@ -22,8 +20,6 @@ export function createRateLimiter(opts: {
     const now = Date.now();
     const recent = (buckets.get(key) ?? []).filter((t) => now - t < opts.windowMs);
     if (recent.length >= opts.max) {
-      // Written back even when refusing, so the expired entries just dropped
-      // don't have to be re-filtered on the next call.
       buckets.set(key, recent);
       return true;
     }

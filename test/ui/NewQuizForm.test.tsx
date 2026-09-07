@@ -1,15 +1,3 @@
-/**
- * The create-a-quiz form. Two rules carry real weight here:
- *
- * - **A title is required.** `create_quiz_for_video` happily stores NULL, and
- *   that server contract is deliberately untouched — this is a form-level rule,
- *   so it has to be enforced (and surfaced) in the client, and nothing may be
- *   created while it fails.
- * - **The link box is LTR inside an RTL form.** Its content is a URL, so it is
- *   `dir="ltr"`; the pasted link is resolved to a video id as it is typed so a
- *   wrong paste is caught before a quiz, a video row and a transcript fetch
- *   exist.
- */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -110,13 +98,10 @@ describe("NewQuizForm", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe("/api/quizzes");
-    // The URL is sent as-is: the server stays the authority on extracting it.
     expect(JSON.parse(init.body)).toEqual({
       youtubeUrl: WATCH_URL,
       baseLanguage: "he",
       title: "מבוא לרשתות",
-      // Unrestricted by default: no stated minute count, so students see the
-      // estimate derived from the video's length instead.
       timeRestricted: false,
     });
     await vi.waitFor(() =>
@@ -165,8 +150,6 @@ describe("NewQuizForm", () => {
     render(<NewQuizForm />);
     const cap = screen.getByRole("checkbox", { name: "הגבלת זמן" });
     expect(cap).not.toBeChecked();
-    // Unchecked IS "estimate from the video", so there is no second control
-    // (and no radio) offering it.
     expect(screen.queryByText("הערכה מהסרטון")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("משך החידון בדקות")).not.toBeInTheDocument();
 

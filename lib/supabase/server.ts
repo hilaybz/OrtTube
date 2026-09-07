@@ -4,8 +4,6 @@ import { cookies } from "next/headers";
 import type { Database } from "./types";
 
 /**
- * The caller's Supabase client, one per request.
- *
  * Memoized because the client validates the session JWT against the auth server
  * before its first data call, and that is a network round trip. A layout and the
  * page inside it each used to build their own client and so each paid for that

@@ -19,8 +19,8 @@ describe("isSupportedLanguage", () => {
   });
 
   it("rejects everything else", () => {
-    expect(isSupportedLanguage("iw")).toBe(false); // legacy Hebrew code, not supported
-    expect(isSupportedLanguage("EN")).toBe(false); // case-sensitive
+    expect(isSupportedLanguage("iw")).toBe(false);
+    expect(isSupportedLanguage("EN")).toBe(false);
     expect(isSupportedLanguage("")).toBe(false);
     expect(isSupportedLanguage(null)).toBe(false);
     expect(isSupportedLanguage(undefined)).toBe(false);
@@ -29,8 +29,6 @@ describe("isSupportedLanguage", () => {
 });
 
 describe("resolveLanguage", () => {
-  // Precedence: student preference -> class language -> quiz base language.
-  // Naming the three positional inputs keeps each case readable.
   type Code = string | null | undefined;
   const languageSeenBy = (prefs: {
     studentPreference: Code;

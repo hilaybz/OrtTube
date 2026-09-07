@@ -1,17 +1,8 @@
-/**
- * `CheckpointTimeline` in isolation — plain numbers/callbacks, no
- * `react-youtube`/`VideoStage` involved. Pins the proportional math, the
- * click-vs-marker-vs-drag disambiguation, and the same-timestamp clustering
- * (a stack marker regardless of N, never N overlapping dots).
- */
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { CheckpointTimeline, type TimelineMarker } from "@/components/video/CheckpointTimeline";
 
-// jsdom has no layout engine, so every element reports a 0×0 rect by
-// default — stub the track's rect to a known, easy-to-reason-about size.
-// Duration 300 over width 300 makes 1px == 1 second.
 const TRACK_RECT = { left: 0, width: 300 } as DOMRect;
 
 function stubTrackRect() {
@@ -21,8 +12,6 @@ function stubTrackRect() {
 }
 
 beforeEach(() => {
-  // jsdom doesn't implement pointer capture; the component calls it
-  // unconditionally on drag-start, so it must exist even as a no-op.
   Element.prototype.setPointerCapture = vi.fn();
   Element.prototype.releasePointerCapture = vi.fn();
 });
@@ -57,7 +46,7 @@ describe("CheckpointTimeline", () => {
       />
     );
     const marker = screen.getByTestId("timeline-marker").parentElement as HTMLElement;
-    expect(marker.style.left).toBe("25%"); // 75/300
+    expect(marker.style.left).toBe("25%");
   });
 
   it("clicking empty track seeks; clicking a lone marker calls onMarkerClick, not onSeek", async () => {
@@ -80,7 +69,7 @@ describe("CheckpointTimeline", () => {
 
     await userEvent.click(screen.getByTestId("timeline-marker"));
     expect(onMarkerClick).toHaveBeenCalledWith("q1", 100);
-    expect(onSeek).toHaveBeenCalledTimes(1); // still just the track click
+    expect(onSeek).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to onSeek when onMarkerClick is omitted", async () => {
@@ -236,7 +225,7 @@ describe("CheckpointTimeline", () => {
       const m = screen.getByTestId("timeline-marker");
 
       fireEvent.pointerDown(m, { clientX: 100, pointerId: 1 });
-      fireEvent.pointerMove(m, { clientX: 102, pointerId: 1 }); // 2px, below the 5px threshold
+      fireEvent.pointerMove(m, { clientX: 102, pointerId: 1 });
       fireEvent.pointerUp(m, { clientX: 102, pointerId: 1 });
 
       expect(onMarkerMove).not.toHaveBeenCalled();
@@ -261,7 +250,7 @@ describe("CheckpointTimeline", () => {
       const m = screen.getByTestId("timeline-marker");
 
       fireEvent.pointerDown(m, { clientX: 100, pointerId: 1 });
-      fireEvent.pointerMove(m, { clientX: 150, pointerId: 1 }); // 50px = 50s past threshold
+      fireEvent.pointerMove(m, { clientX: 150, pointerId: 1 });
       fireEvent.pointerUp(m, { clientX: 150, pointerId: 1 });
 
       expect(onMarkerMove).toHaveBeenCalledWith("q1", 150);
@@ -301,7 +290,7 @@ describe("CheckpointTimeline", () => {
           onSeek={vi.fn()}
           onMarkerClick={onMarkerClick}
           onMarkerMove={onMarkerMove}
-          draggableIds={new Set()} // q1 not included
+          draggableIds={new Set()}
         />
       );
       stubTrackRect();
@@ -398,12 +387,10 @@ describe("CheckpointTimeline", () => {
       const m = screen.getByTestId("timeline-marker");
 
       fireEvent.pointerDown(m, { clientX: 100, pointerId: 1 });
-      fireEvent.pointerMove(m, { clientX: 160, pointerId: 1 }); // -> 160s
+      fireEvent.pointerMove(m, { clientX: 160, pointerId: 1 });
       fireEvent.pointerUp(m, { clientX: 160, pointerId: 1 });
 
       expect(onMarkerMove).toHaveBeenCalledWith("q1", 160);
-      // The `markers` prop is still the OLD position (100s / 33%) — a naive
-      // "clear drag state on drop" implementation would snap back here.
       expect(markerLeft()).toBe(`${(160 / 300) * 100}%`);
     });
 
@@ -425,8 +412,6 @@ describe("CheckpointTimeline", () => {
       fireEvent.pointerMove(m, { clientX: 160, pointerId: 1 });
       fireEvent.pointerUp(m, { clientX: 160, pointerId: 1 });
 
-      // A re-render with an unrelated prop change but the same (old, 100s)
-      // marker position — e.g. a currentTime tick — must not un-pin it.
       rerender(
         <CheckpointTimeline
           durationSeconds={300}
@@ -458,7 +443,6 @@ describe("CheckpointTimeline", () => {
       fireEvent.pointerMove(m, { clientX: 160, pointerId: 1 });
       fireEvent.pointerUp(m, { clientX: 160, pointerId: 1 });
 
-      // The save's refresh landed — markers now reports the new position.
       rerender(
         <CheckpointTimeline
           durationSeconds={300}
@@ -489,7 +473,7 @@ describe("CheckpointTimeline", () => {
       fireEvent.pointerDown(m, { clientX: 100, pointerId: 1 });
       fireEvent.pointerMove(m, { clientX: 160, pointerId: 1 });
       fireEvent.pointerUp(m, { clientX: 160, pointerId: 1 });
-      expect(markerLeft()).toBe(`${(160 / 300) * 100}%`); // pinned immediately
+      expect(markerLeft()).toBe(`${(160 / 300) * 100}%`);
 
       await vi.waitFor(() => expect(markerLeft()).toBe(`${(100 / 300) * 100}%`));
     });
@@ -535,7 +519,7 @@ describe("CheckpointTimeline", () => {
           markers={two}
           onSeek={vi.fn()}
           onClusterMove={onClusterMove}
-          draggableIds={new Set(["q1"])} // q2 missing
+          draggableIds={new Set(["q1"])}
         />
       );
       const stack = screen.getByTestId("timeline-cluster");
@@ -564,7 +548,7 @@ describe("CheckpointTimeline", () => {
       const stack = screen.getByTestId("timeline-cluster");
 
       fireEvent.pointerDown(stack, { clientX: 100, pointerId: 1 });
-      fireEvent.pointerMove(stack, { clientX: 102, pointerId: 1 }); // 2px, below threshold
+      fireEvent.pointerMove(stack, { clientX: 102, pointerId: 1 });
       fireEvent.pointerUp(stack, { clientX: 102, pointerId: 1 });
 
       expect(onClusterMove).not.toHaveBeenCalled();
@@ -579,7 +563,7 @@ describe("CheckpointTimeline", () => {
           durationSeconds={300}
           currentSeconds={0}
           markers={[
-            { id: "q1", seconds: 5, label: "שאלה 1" }, // ~1.7% — near the start
+            { id: "q1", seconds: 5, label: "שאלה 1" },
             { id: "q2", seconds: 5, label: "שאלה 2" },
           ]}
           onSeek={vi.fn()}
@@ -597,7 +581,7 @@ describe("CheckpointTimeline", () => {
           durationSeconds={300}
           currentSeconds={0}
           markers={[
-            { id: "q1", seconds: 298, label: "שאלה 1" }, // ~99% — near the end
+            { id: "q1", seconds: 298, label: "שאלה 1" },
             { id: "q2", seconds: 298, label: "שאלה 2" },
           ]}
           onSeek={vi.fn()}
@@ -703,7 +687,6 @@ describe("CheckpointTimeline — readOnly (the student player's progress display
     });
     const nodes = screen.getAllByTestId("checkpoint-marker");
     expect(nodes).toHaveLength(1);
-    // The unanswered one is what the student is on, so that is the state shown.
     expect(nodes[0]).toHaveAttribute("data-state", "current");
     expect(nodes[0]).toHaveTextContent("שאלה 1 · 1:40 · נענתה");
     expect(nodes[0]).toHaveTextContent("שאלה 2 · 1:40 · השאלה הנוכחית");

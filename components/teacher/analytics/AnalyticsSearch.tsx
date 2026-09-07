@@ -12,15 +12,12 @@ import { Pager } from "@/components/ui/Pager";
 import { usePagedRpc } from "@/components/ui/usePagedList";
 import type { AnalyticsScope, AnalyticsSearchHit } from "@/lib/analytics";
 
-/** Copy per scope: what the reader is picking, and how the field asks for it. */
 const SCOPES: {
   value: AnalyticsScope;
   label: string;
   icon: IconName;
   placeholder: string;
-  /** Shown when the scope has no entities at all. */
   none: string;
-  /** Shown when a query matched nothing. */
   noMatch: string;
 }[] = [
   {
@@ -49,7 +46,6 @@ const SCOPES: {
   },
 ];
 
-/** Keeps the RPC off the keyboard's critical path without an effect-body write. */
 function useDebounced<T>(value: T, delay = 250): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -59,25 +55,6 @@ function useDebounced<T>(value: T, delay = 250): T {
   return debounced;
 }
 
-/**
- * The analytics hub's way in: pick a scope, type, choose a result.
- *
- * The scope lives in the URL (`?scope=`) and the chosen entity next to it
- * (`&id=`), so a view is linkable and survives a refresh — that contract is what
- * the class screens link into (`components/teacher/analyticsLinks.ts`).
- * The QUERY deliberately does not: putting it in the URL would turn every
- * keystroke into a server navigation, and nobody wants to bookmark a half-typed
- * name.
- *
- * Every state is a real state — loading dims the previous rows instead of
- * collapsing them, an error explains itself and offers a retry, and "no
- * entities" reads differently from "no match for what you typed", because those
- * need different things from the reader.
- *
- * The result list is keyboard-operable: ArrowDown/ArrowUp walk it (from the
- * search field too, so a reader never has to leave the keyboard), Home/End jump
- * to the ends, and each result is a button, so Enter and Space already work.
- */
 export function AnalyticsSearch({
   scope,
   selectedId,
@@ -119,7 +96,6 @@ export function AnalyticsSearch({
     router.replace(`/dashboard/analytics?scope=${next}`);
   }
 
-  /** Move focus between result buttons; `from` -1 enters the list from the field. */
   function focusResult(from: number, delta: number | "first" | "last") {
     const buttons = Array.from(
       listRef.current?.querySelectorAll<HTMLButtonElement>("[data-result]") ?? []
@@ -260,7 +236,6 @@ export function AnalyticsSearch({
   );
 }
 
-/** The one-line supporting fact under a hit, per scope. */
 function describeHit(scope: AnalyticsScope, hit: AnalyticsSearchHit): string {
   if (scope === "student") {
     const classes = hit.class_names ? ` · ${hit.class_names}` : "";

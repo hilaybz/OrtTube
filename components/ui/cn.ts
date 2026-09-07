@@ -1,4 +1,3 @@
-/** Join class name parts, dropping falsy values. */
 export function cn(
   ...parts: Array<string | false | null | undefined>
 ): string {

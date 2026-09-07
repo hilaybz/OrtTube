@@ -3,8 +3,6 @@ import { useId } from "react";
 import { cn } from "./cn";
 
 /**
- * Labelled native select styled as a glass input.
- *
  * Like `Field`, it declares no focused look of its own: the quiet, keyboard-
  * first focus treatment for every text-entry control lives in `app/globals.css`,
  * because a browser matches `:focus-visible` on a select the user merely

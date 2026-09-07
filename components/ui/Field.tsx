@@ -3,10 +3,6 @@ import { useId } from "react";
 import { cn } from "./cn";
 
 /**
- * Labelled text input (per inputs.md): glass surface, 1px glass border. Label is
- * always associated via generated id/htmlFor; error renders an
- * `aria-describedby` message and flips the border to danger.
- *
  * The focused look is not declared here: a browser matches `:focus-visible` on a
  * text input even for a plain click, so a brand border and ring meant an
  * emphatic green box around a field the user had merely clicked into. The quiet
@@ -24,7 +20,6 @@ export function Field({
   label: string;
   name: string;
   error?: string;
-  /** Control pinned inside the input's trailing edge (e.g. a show-password toggle). */
   trailing?: React.ReactNode;
 }) {
   const id = useId();

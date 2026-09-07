@@ -2,16 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { upsertQuestion, type OptionInput } from "@/lib/quiz";
 import { err, handleError, requireAuth } from "../../http";
 
-/**
- * POST /api/quizzes/[id]/questions  (quiz authoring — upsert a question)
- *
- * Body: { questionId?, kind, positionSeconds, orderIndex, basePrompt,
- *         baseExplanation?, options: [{ option_id?, is_correct, order_index,
- *         base_text }], source? }. Creates a new question (questionId omitted) or
- *         edits an existing one in place. Teacher-authed; ownership + the
- *         answer-key invariants (>=1 correct, exactly one for `single`) are
- *         enforced by `upsert_question`. Returns the question id.
- */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

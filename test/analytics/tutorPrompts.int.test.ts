@@ -1,21 +1,3 @@
-/**
- * Tutor-prompts (AI-summary feed) integration tests — the owner-checked
- * `tutor_prompts_in_scope` RPC read, end-to-end against a live local Supabase
- * with the v2 schema applied.
- *
- * This exercises only the DB read (`fetchTutorPrompts`), NOT the AI summary
- * step, so no Claude call is ever made. Told through the actor DSL: a teacher
- * authors two quizzes and assigns both to a class; students' tutor prompts are
- * seeded on one quiz (the other is left promptless for the empty-scope case).
- *
- * Coverage:
- *   - owner sees the prompts in scope (quiz + class);
- *   - a promptless scope returns an empty prompt list;
- *   - a non-owner teacher is denied (`not_owner`, SQLSTATE 42501);
- *   - passing both scopes or neither raises `invalid_args` (SQLSTATE 22023).
- *
- * Skipped when the local DB is unreachable so unit suites still pass offline.
- */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { closePool } from "../helpers/db";
 import {
@@ -32,21 +14,18 @@ import { stackOnline } from "../helpers/stack";
 
 const online = await stackOnline();
 
-// Raw RPC invoker for the bad-scope cases (both/neither), which `fetchTutorPrompts`
-// cannot express — it always sends exactly one scope. Mirrors the un-parameterised
-// `.rpc` cast used in `lib/analytics.ts`.
 type RpcInvoker = (
   fn: string,
   args?: Record<string, unknown>
 ) => Promise<{ data: unknown; error: { code?: string; message: string } | null }>;
 
 describe.skipIf(!online)("tutor prompts in scope (AI summary feed)", () => {
-  let teacher: Teacher; // owns the class + quizzes
-  let peerTeacher: Teacher; // same school, NOT the owner
+  let teacher: Teacher;
+  let peerTeacher: Teacher;
   let alice: Student;
   let classroom: Classroom;
-  let quizWithPrompts: Quiz; // has seeded tutor prompts
-  let quizEmpty: Quiz; // assigned but no prompts
+  let quizWithPrompts: Quiz;
+  let quizEmpty: Quiz;
 
   beforeEach(async () => {
     const testbed: Testbed = await freshTestbed();
@@ -77,7 +56,6 @@ describe.skipIf(!online)("tutor prompts in scope (AI summary feed)", () => {
     await teacher.assignQuiz(quizWithPrompts, { to: classroom, tutor: "hints", maxAttempts: null });
     await teacher.assignQuiz(quizEmpty, { to: classroom, tutor: "hints", maxAttempts: null });
 
-    // Two prompts on Quiz A (one named-student, one anonymized); none on Quiz B.
     await testbed.seed.logTutorQuestion({
       student: alice,
       classroom,

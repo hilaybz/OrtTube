@@ -1,11 +1,3 @@
-/**
- * Narrow integration test for the checkpoint timeline wired into QuizEditor —
- * `CheckpointTimeline` already has full unit coverage (test/ui/CheckpointTimeline.test.tsx),
- * so this only proves the wiring: a marker click seeks the (mocked) player and
- * highlights/scrolls to the matching question card; a drag commits through the
- * existing question-upsert endpoint and refreshes; the "current time" prefill
- * button in QuestionModal reflects the player's real reported position.
- */
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -18,9 +10,6 @@ vi.mock("next/navigation", () => ({
 
 const stage = { seekTo: vi.fn(), play: vi.fn(), pause: vi.fn() };
 
-// The real stage embeds the YouTube iframe. The stub publishes the same
-// imperative handle (seekTo/play/pause) and exposes a button so a test can
-// simulate the player reporting a position/duration tick.
 vi.mock("@/components/video/VideoStage", () => ({
   VideoStage: ({
     onProgress,
@@ -97,9 +86,6 @@ function renderEditor() {
   render(<QuizEditor initial={QUIZ} classes={[]} allocations={[]} />);
 }
 
-// A second fixture with two questions sharing a timestamp, for the
-// whole-cluster-drag test — kept separate so the other tests' marker
-// counts/positions stay simple and unambiguous.
 const CLUSTERED_QUIZ: AuthorQuiz = {
   ...QUIZ,
   questions: [
@@ -117,7 +103,6 @@ describe("QuizEditor — checkpoint timeline wiring", () => {
     refresh.mockClear();
     stage.seekTo.mockClear();
     vi.unstubAllGlobals();
-    // jsdom implements neither of these.
     Element.prototype.scrollIntoView = vi.fn();
     Element.prototype.setPointerCapture = vi.fn();
     Element.prototype.releasePointerCapture = vi.fn();
@@ -129,7 +114,7 @@ describe("QuizEditor — checkpoint timeline wiring", () => {
 
     const markers = screen.getAllByTestId("timeline-marker");
     expect(markers).toHaveLength(2);
-    await userEvent.click(markers[0]); // q1 at 30s
+    await userEvent.click(markers[0]);
 
     expect(stage.seekTo).toHaveBeenCalledWith(30);
     const card = screen.getByText("שאלה ראשונה").closest("li");
@@ -153,13 +138,10 @@ describe("QuizEditor — checkpoint timeline wiring", () => {
       width: 300,
     } as DOMRect);
 
-    // Track is 300px wide over a 300s duration (1px == 1s). Drag 100px past
-    // the 5px threshold, well clear of a plain click.
     fireEvent.pointerDown(marker, { clientX: 30, pointerId: 1 });
     fireEvent.pointerMove(marker, { clientX: 130, pointerId: 1 });
     fireEvent.pointerUp(marker, { clientX: 130, pointerId: 1 });
 
-    // The save is async (await apiFetch then refresh()) — wait for it to settle.
     await vi.waitFor(() => expect(refresh).toHaveBeenCalled());
 
     expect(fetch).toHaveBeenCalledWith(
@@ -237,7 +219,6 @@ describe("QuizEditor — checkpoint timeline wiring", () => {
   it("the current-time prefill button reflects the player's reported position, and is absent before any tick", async () => {
     renderEditor();
 
-    // No progress reported yet — opening the modal must not claim a fake 0:00.
     await userEvent.click(screen.getByRole("button", { name: "הוספת שאלה" }));
     expect(screen.queryByText(/מהזמן הנוכחי בנגן/)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "ביטול" }));
@@ -267,7 +248,7 @@ describe("QuizEditor — checkpoint timeline wiring", () => {
     } as DOMRect);
 
     fireEvent.pointerDown(stack, { clientX: 30, pointerId: 1 });
-    fireEvent.pointerMove(stack, { clientX: 130, pointerId: 1 }); // -> 130s
+    fireEvent.pointerMove(stack, { clientX: 130, pointerId: 1 });
     fireEvent.pointerUp(stack, { clientX: 130, pointerId: 1 });
 
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));

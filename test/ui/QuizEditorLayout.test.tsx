@@ -1,16 +1,3 @@
-/**
- * The editor's page structure, as the redesign fixed it:
- *
- * - the sections run title box → video → questions → הקצאות, with the
- *   quiz-level settings (visibility, duration) folded into that first box
- *   rather than each holding a card of its own;
- * - the destructive action is a trash icon in the page header, not a text link
- *   buried in the settings box, and it still confirms before deleting;
- * - visibility is the choice itself (פרטי / משותף), with no "נראות" label;
- * - the question list pages, while the timeline above it keeps every marker —
- *   so picking a marker whose question sits on another page has to move the
- *   list there, or the click would appear to do nothing.
- */
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -118,7 +105,6 @@ describe("QuizEditor — page structure", () => {
       .getAllByRole("heading", { level: 2 })
       .map((h) => h.textContent ?? "");
     expect(sections).toEqual(["הסרטון", "שאלות (2)", "הקצאות"]);
-    // The title box comes first, so the title input precedes the video section.
     const titleInput = screen.getByLabelText("כותרת החידון");
     const videoHeading = screen.getByRole("heading", { level: 2, name: "הסרטון" });
     expect(
@@ -135,14 +121,10 @@ describe("QuizEditor — page structure", () => {
 
   it("keeps the quiz duration in the settings box, as a single opt-in cap", async () => {
     renderEditor();
-    // Only the cap is offered: there is no second "estimate from the video"
-    // choice, because that IS the unchecked state.
     const cap = screen.getByRole("checkbox", { name: "הגבלת זמן" });
     expect(cap).not.toBeChecked();
     expect(screen.queryByText("הערכה מהסרטון")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("משך החידון בדקות")).not.toBeInTheDocument();
-    // Folded into the first card: it precedes the video section rather than
-    // sitting in a card of its own between them.
     const videoHeading = screen.getByRole("heading", { level: 2, name: "הסרטון" });
     expect(
       cap.compareDocumentPosition(videoHeading) & Node.DOCUMENT_POSITION_FOLLOWING
@@ -201,21 +183,13 @@ describe("QuizEditor — page structure", () => {
     renderEditor();
     expect(screen.getByText(/אורך הסרטון ייקבע/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "report-ready" }));
-    // Scoped to the header: the timeline under the player shows a duration too.
-    // "אורך הסרטון", not "משך" — the quiz's own duration is a separate,
-    // teacher-controlled fact, set in the settings box above.
     const identity = screen.getByRole("heading", { level: 1 }).parentElement!;
     expect(identity).toHaveTextContent("אורך הסרטון 10 דקות");
   });
 
   it("shows a stored length immediately, without waiting for playback", async () => {
-    // `videos.duration_seconds` used to be empty for most quizzes because
-    // YouTube blocked the scrape that fills it, so the editor ignored the column
-    // and waited for the player. The scrape works through the proxy pool now, and
-    // a teacher who never presses play should not be told the length is pending
-    // when it is already known.
     const withLength = quiz(2);
-    withLength.video.duration_seconds = 754; // 12:34
+    withLength.video.duration_seconds = 754;
 
     render(<QuizEditor initial={withLength} classes={[]} allocations={[]} />);
 
@@ -254,7 +228,6 @@ describe("QuizEditor — page structure", () => {
 
     const markers = screen.getAllByTestId("timeline-marker");
     expect(markers).toHaveLength(10);
-    // The 10th question is on page 2; the list has to follow the marker there.
     await userEvent.click(markers[9]);
 
     expect(stage.seekTo).toHaveBeenCalledWith(300);

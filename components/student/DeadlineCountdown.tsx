@@ -3,25 +3,6 @@ import { useEffect, useState } from "react";
 import { StatusBlock } from "./StatusBlock";
 import { countdownTickMs, deadlineView, formatRemaining, URGENCY_TONE } from "./deadline";
 
-/**
- * The time a student has left on a quiz they still owe, ticking. Shown on the
- * screen that opens a quiz, because that is the moment the question is asked:
- * "can I do this now, or is it already too late?" — a date alone doesn't answer
- * it, and neither does a deadline the student has to subtract from the clock in
- * their head.
- *
- * Two states have to read as calmly as the countdown does: a quiz with no
- * deadline says so plainly rather than showing an empty slot, and one whose
- * window already closed says *that* rather than counting down past zero.
- *
- * `clockOffsetMs` is the caller's server-minus-device offset (see `QuizPlayer`),
- * so a student whose device clock is wrong sees the same time left as everyone
- * else — the same correction the player's own cutoff timer runs on.
- *
- * The repaint interval follows the granularity on screen rather than being a
- * fixed 1s: mm:ss in the last hour has to tick every second, "יומיים ו-3 שעות"
- * does not.
- */
 export function DeadlineCountdown({
   availableUntil,
   clockOffsetMs = 0,

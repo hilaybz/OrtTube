@@ -1,15 +1,8 @@
 /**
- * POST /api/admin/seed-teacher
- *
  * Teacher provisioning. Guarded by ADMIN_SECRET (separate from CRON_SECRET).
  * Creates a teacher auth user + profile, resolving/creating the school. Teachers
  * are onboarded by an administrator through this endpoint; there is no teacher
  * self-signup.
- *
- * Body: { email, password, displayName, schoolId?, schoolName? }
- *   - schoolId given         -> use it.
- *   - schoolName given (no id) -> find a school by name, else create one.
- *   - neither                -> 400.
  *
  * Same delete-on-failure cleanup as student signup: if the profile insert fails,
  * the created auth user is removed. Returns 201 { userId, schoolId }.
@@ -103,14 +96,12 @@ export async function POST(req: Request): Promise<Response> {
 
   const service = createServiceClient();
 
-  // Resolve (or create) the school first.
   const school = await resolveSchoolId(service, schoolId, schoolName);
   if (!school.ok) {
     return jsonError("school_not_found", school.message, 400);
   }
   const resolvedSchoolId = school.schoolId;
 
-  // Create the auth user.
   const { data: created, error: createErr } = await service.auth.admin.createUser({
     email,
     password,
@@ -130,7 +121,6 @@ export async function POST(req: Request): Promise<Response> {
 
   const userId = created.user.id;
 
-  // Insert the teacher profile; delete-on-failure cleanup.
   try {
     const { error: profErr } = await service.from("profiles").insert({
       id: userId,

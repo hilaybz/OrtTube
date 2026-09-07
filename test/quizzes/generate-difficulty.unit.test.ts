@@ -1,12 +1,3 @@
-/**
- * Difficulty-lever unit tests — asserts the prompt the model actually receives.
- *
- * The Anthropic client is mocked, so this runs with no network and no API key.
- * These tests pin the lever's contract rather than its wording: `medium` must
- * leave the prompt byte-identical to a call that omits difficulty (so an
- * unchanged generate behaves exactly as it did before the option existed), while
- * `easy` / `hard` must actually reach the model.
- */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const createMock = vi.fn();
@@ -19,13 +10,11 @@ vi.mock("@anthropic-ai/sdk", () => ({
 import { generateQuizQuestions } from "@/lib/ai/generate";
 import type { TranscriptSegment } from "@/lib/transcript";
 
-// Long enough to clear the 40-char minimum that short-circuits generation.
 const segments: TranscriptSegment[] = [
   { text: "the first topic is introduced here in detail", offset: 0, duration: 5000 },
   { text: "and then a second distinct topic follows on", offset: 20_000, duration: 5000 },
 ];
 
-/** The user-message text handed to the model on the most recent call. */
 function promptSentToModel(): string {
   const call = createMock.mock.calls[0]?.[0] as
     | { messages: Array<{ content: string }> }
@@ -35,7 +24,6 @@ function promptSentToModel(): string {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // One well-formed question so generation completes; content is irrelevant here.
   createMock.mockResolvedValue({
     content: [
       {

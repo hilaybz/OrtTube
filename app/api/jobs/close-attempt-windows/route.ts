@@ -1,6 +1,4 @@
-// POST /api/jobs/close-attempt-windows
-//
-// Hard-cutoff sweep backstop (Epic 2A.2). Force-completes attempts nobody ever
+// Hard-cutoff sweep backstop. Force-completes attempts nobody ever
 // came back to interact with after their allocation's `available_until`
 // passed — the two interactive paths (`submit_answer`, `complete_attempt`)
 // already finalize anyone actually present, so this exists purely so
@@ -14,9 +12,6 @@
 // schedule here failed deployment outright), and a day's lag costs nothing
 // since this job is a backstop, not the primary mechanism. Tighten the
 // cadence in vercel.json if the project ever moves to a paid tier.
-//
-// Batch limit, highest priority first: JSON body `batchLimit` → `?batchLimit=`
-// → default 500. Clamped to >= 1.
 import { assertSecret } from "@/lib/jobs/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { callRpc, jobError, jobOk, pickInt, readBody } from "../shared";

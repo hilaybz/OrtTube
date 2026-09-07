@@ -2,11 +2,6 @@ import { formatDate, formatTime, schoolDayNumber } from "@/lib/datetime";
 import type { StatusTone } from "./StatusBlock";
 
 /**
- * How a submission deadline reads to a student. Both places one appears — the
- * status block on a feed card and the live countdown on the screen that opens a
- * quiz — phrase `available_until` through here, so "due today" says the same
- * thing in both and neither invents its own wording.
- *
  * Calendar questions ("is that today?") are answered in the school's own zone,
  * the way the teacher side already answers them: a window closing at 23:30
  * tonight is "היום" for the student sitting in that classroom, whatever the
@@ -18,14 +13,8 @@ import type { StatusTone } from "./StatusBlock";
  * a plural noun ("2 ימים" is wrong where "יומיים" is right).
  */
 
-/** How pressing a deadline is — drives the status block's colour, not its text. */
 export type DeadlineUrgency = "calm" | "soon" | "urgent" | "passed";
 
-/**
- * Deadline pressure in the status block's palette — one mapping, so a card and
- * a ticking countdown never disagree about whether a deadline is worth a
- * colour: plain while there is time, amber inside a day, red inside hours.
- */
 export const URGENCY_TONE: Record<DeadlineUrgency, StatusTone> = {
   calm: "neutral",
   soon: "warning",
@@ -33,26 +22,12 @@ export const URGENCY_TONE: Record<DeadlineUrgency, StatusTone> = {
   passed: "danger",
 };
 
-/** Under this much time left, a deadline is urgent however far off the date is. */
 const URGENT_MS = 6 * 60 * 60 * 1000;
 
 export interface DeadlineView {
-  /** The lead line: "נותרו 43 דקות" / "היום" / "מחר" / "בעוד 4 ימים". */
   lead: string;
-  /**
-   * The calendar framing on its own — "היום" / "מחר" / "בעוד 4 ימים" — kept
-   * apart from `lead` because a live countdown spends the lead on the ticking
-   * figure and still has to say *which day* 18:00 means.
-   */
   day: string;
-  /** The instant itself, school time — "עד 18:00" or "14.3 בשעה 18:00". */
   exact: string;
-  /**
-   * Day and instant in one phrase, with nothing repeated: "היום · עד 18:00" for
-   * the near dates whose instant alone would be ambiguous, and the dated
-   * instant on its own for the ones where it isn't. For callers whose headline
-   * is the countdown rather than the day.
-   */
   when: string;
   urgency: DeadlineUrgency;
 }
@@ -84,12 +59,6 @@ function hebMinutes(minutes: number): string {
   return `${minutes} דקות`;
 }
 
-/**
- * How much time is left, worded. Coarser the further out it is, because that is
- * how the answer is used: seconds matter in the last minutes before a window
- * closes and are noise a week ahead. Returns `null` once nothing is left — the
- * caller says "המועד עבר" rather than counting down through zero.
- */
 export function formatRemaining(msLeft: number): string | null {
   if (msLeft <= 0) return null;
   const total = Math.floor(msLeft / 1000);
@@ -103,30 +72,15 @@ export function formatRemaining(msLeft: number): string | null {
   if (hours > 0) {
     return minutes > 0 ? joinParts(hebHours(hours), hebMinutes(minutes)) : hebHours(hours);
   }
-  // The last hour is the one a student watches tick, so it ticks: mm:ss.
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-/**
- * How often a live countdown has to repaint to stay honest at its own
- * granularity: every second inside the last hour (it shows mm:ss), every half
- * minute inside the day, every minute beyond that.
- */
 export function countdownTickMs(msLeft: number): number {
   if (msLeft < 60 * 60 * 1000) return 1000;
   if (msLeft < 24 * 60 * 60 * 1000) return 30_000;
   return 60_000;
 }
 
-/**
- * The static reading of a deadline, for a card that is not ticking: the human
- * distance to it plus the instant itself, and how urgent that is.
- *
- * The distance is stated in calendar days once it is more than an hour out
- * ("מחר" is what a student plans around, not "בעוד 19 שעות"), and switches to
- * the remaining-time wording inside the last hour, where the date has stopped
- * being the useful part.
- */
 export function deadlineView(iso: string, now: Date = new Date()): DeadlineView {
   const due = new Date(iso);
   const msLeft = due.getTime() - now.getTime();
@@ -147,9 +101,6 @@ export function deadlineView(iso: string, now: Date = new Date()): DeadlineView 
 
   const urgency: DeadlineUrgency =
     msLeft < URGENT_MS ? "urgent" : days <= 1 ? "soon" : "calm";
-  // Past tomorrow the date has to appear somewhere, so it appears in the
-  // instant; today and tomorrow are already named, and repeating the date
-  // there would only add digits to read.
   const exact = days <= 1 ? `עד ${clock}` : `${date} בשעה ${clock}`;
   const when = days <= 1 ? `${day} · ${exact}` : exact;
 

@@ -1,28 +1,8 @@
 /**
- * The analytics cutoff end to end: after a teacher edits a quiz's questions or
- * answers, every teacher-facing analytic counts only attempts started since that
- * edit (`148_analytics_since_content_edit.sql`).
- *
- * The story is one class, one quiz, one student:
- *
- *   1. Ada completes the quiz 2/2 under the original wording.
- *   2. The teacher rewrites Q1's prompt, which moves `content_updated_at`.
- *   3. Every analytic now reads empty — the old attempt is no longer comparable,
- *      because `answers.was_correct` is a snapshot against the wording and answer
- *      key as they stood.
- *   4. Ada attempts again, and only that attempt counts.
- *
  * The cut is whole ATTEMPTS, not individual answers: `attempt_questions` freezes
  * only which questions an attempt contains, while prompt text and `is_correct` are
  * read live, so an attempt in flight during an edit really does see the new
  * version and cannot be partly counted.
- *
- * Progress is cut alongside performance, deliberately — so the last case here
- * pins the flip side, that nothing on the STUDENT's side is filtered: Ada keeps
- * seeing her own result, because hiding it would ask her to redo work she has
- * already done and may have no retake left for.
- *
- * Skipped when the local DB is unreachable so unit suites still pass offline.
  */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { closePool } from "../helpers/db";
@@ -128,7 +108,6 @@ describe.skipIf(!online)("analytics cutoff after a content edit", () => {
       expect(analytics.attempt_count).toBe(0);
       expect(analytics.average_score).toBeNull();
       expect(analytics.excluded_attempt_count).toBe(1);
-      // Five bands are always present; every one of them is now empty.
       expect(analytics.score_distribution).toHaveLength(5);
       expect(analytics.score_distribution.every((band) => band.count === 0)).toBe(true);
     });
@@ -160,7 +139,6 @@ describe.skipIf(!online)("analytics cutoff after a content edit", () => {
       expect(stats.attempt_count).toBe(1);
       expect(stats.completion_count).toBe(1);
       expect(stats.average_score).toBeCloseTo(0.5);
-      // The pre-edit attempt is hidden, not gone.
       expect(stats.excluded_attempt_count).toBe(1);
     });
   });
@@ -187,7 +165,6 @@ describe.skipIf(!online)("analytics cutoff after a content edit", () => {
     expect(view.content_updated_at).not.toBeNull();
 
     await teacher.reviseQuestion(q1, { prompt: "Q1 rewritten" });
-    // Nothing is feeding analytics any more, so the editor stops warning.
     const after = await teacher.editorView(quiz);
     expect(after.analytics_attempt_count).toBe(0);
   });

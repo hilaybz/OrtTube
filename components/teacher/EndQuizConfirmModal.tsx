@@ -4,10 +4,6 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 
 /**
- * Shared "end this quiz for the class now" confirmation — used by both
- * `AssignedQuizzesSection` (class page) and `AllocationsSection` (quiz
- * editor), one copy so the two can't drift.
- *
  * Ending a quiz is implemented as setting `available_until` to right now —
  * the exact same window-close mechanism a scheduled end already triggers, so
  * everything this modal describes is EXISTING, already-shipped behavior
@@ -23,12 +19,6 @@ export function EndQuizConfirmModal({
   onClose,
 }: {
   open: boolean;
-  /**
-   * The confirmation's first line — worded per caller, since "what's ending"
-   * reads differently depending on which side is the varying one: the class
-   * page's row list varies by QUIZ (within one class), the editor's own
-   * allocation row list varies by CLASS (for one quiz).
-   */
   prompt: React.ReactNode;
   busy: boolean;
   onConfirm: () => void;

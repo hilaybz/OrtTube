@@ -2,11 +2,6 @@
 import { cn } from "@/components/ui/cn";
 import { Icon } from "@/components/ui/Icon";
 
-/**
- * Top chrome: the mobile drawer trigger plus a content slot (search/filters) and
- * an optional trailing slot. Deliberately thin — account actions (sign-out) live
- * at the bottom of the sidebar, not here.
- */
 export function Topbar({
   onMenu,
   children,

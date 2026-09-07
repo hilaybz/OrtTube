@@ -2,24 +2,6 @@
 import { cn } from "./cn";
 import { IconButton } from "./IconButton";
 
-/**
- * Offset pager for any list that can grow: previous / next plus a page readout
- * ("עמוד 1 מתוך 2"). RTL-correct — "previous" sits at the inline start and its
- * chevron points there — with disabled edges and labelled controls.
- *
- * The readout names the page rather than the row range it happens to contain:
- * where the reader *is* and how much is left is what the control is for, and
- * "מציג 1–12 מתוך 13" made a reader do arithmetic to learn there was one more
- * page. `total` is therefore not a prop — `<Pager {...paged} />` still works,
- * since a spread carries the extra key harmlessly.
- *
- * Built to be fed straight from `usePagedList` / `usePagedRpc`:
- * `<Pager {...paged} />`. It renders nothing for a list that fits on one page,
- * so a caller never has to guard it.
- *
- * `pageSizeOptions` + `setPageSize` (which `usePagedList` already returns) add
- * the rows-per-page control; leave them out for a fixed page size.
- */
 export function Pager({
   page,
   pageCount,
@@ -30,14 +12,12 @@ export function Pager({
   label = "ניווט בין עמודים",
   className,
 }: {
-  /** 0-based. */
   page: number;
   pageCount: number;
   pageSize: number;
   onPageChange: (page: number) => void;
   setPageSize?: (size: number) => void;
   pageSizeOptions?: readonly number[];
-  /** Names what is being paged, for screen readers: "ניווט בין תלמידים". */
   label?: string;
   className?: string;
 }) {

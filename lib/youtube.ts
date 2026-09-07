@@ -15,17 +15,13 @@ export function extractVideoId(url: string): string | null {
   return null;
 }
 
-/** Alias matching the backend-plan naming; extractVideoId is the original name. */
 export const parseYouTubeId = extractVideoId;
 
 export interface OEmbedInfo {
   title: string | null;
-  /** The uploading channel's display name (oEmbed's `author_name`) — shown
-   * as the video's creator on quiz cards. */
   channelName: string | null;
 }
 
-/** Fetches title + channel name in one oEmbed call. */
 export async function fetchYouTubeOEmbed(videoId: string): Promise<OEmbedInfo> {
   try {
     const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&format=json`;
@@ -54,24 +50,12 @@ export interface VideoMetadata {
  * (used for the title) does not expose duration, so this is the only reliable
  * no-API-key source. Returns null on any failure — callers tolerate a null and
  * the value can be backfilled later.
- *
- * This used to scrape the watch page, which meant fetching ~1,197 KB for one
- * integer, on the least reliable endpoint we touch, a second time on top of the
- * copy the transcript path already pulled. The player endpoint carries the same
- * field in ~156 KB and is what actually works from a proxied IP.
  */
 async function fetchDurationSeconds(videoId: string): Promise<number | null> {
   const result = await fetchPlayerResponse(videoId);
   return result.ok ? result.lengthSeconds : null;
 }
 
-/**
- * Fetches real metadata for a YouTube video: `title` + `channelName` via
- * oEmbed (one call) and `durationSeconds` via a watch-page scrape. Node/server
- * only. Any field may be null if YouTube is unreachable or changes its page
- * shape — callers must tolerate nulls (the row is still created; metadata can
- * be backfilled later).
- */
 export async function fetchVideoMetadata(videoId: string): Promise<VideoMetadata> {
   const [oembed, durationSeconds] = await Promise.all([
     fetchYouTubeOEmbed(videoId),

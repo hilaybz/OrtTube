@@ -14,28 +14,12 @@ import { StudentQuizTable } from "./StudentQuizTable";
 import { TutorQuestionLog } from "./TutorQuestionLog";
 import { grade } from "./chartTheme";
 
-/**
- * Language names for the profile chip. Declared here rather than imported: the
- * existing copies live inside the class and editor component folders, which this
- * section does not own, and a three-entry map is not worth a cross-boundary
- * dependency.
- */
 const LANGUAGE_LABELS: Record<Language, string> = {
   he: "עברית",
   ar: "العربية",
   en: "English",
 };
 
-/**
- * One student, across every class the viewing teacher owns.
- *
- * This is the view a per-class RPC could not give: a student in three of a
- * teacher's classes was three separate half-answers before. Identity first, then
- * the numbers, then the charts that put those numbers against the classes they
- * came from, then the questions the student asked OrtAI — which is often the
- * most useful thing on the page, because it is the student saying in their own
- * words what they did not understand.
- */
 export async function StudentAnalyticsView({ studentId }: { studentId: string }) {
   const client = (await createClient()) as unknown as SupabaseClient;
 

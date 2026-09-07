@@ -14,9 +14,7 @@ import { formatTime, parseTime } from "./format";
 import { analyticsAtRiskNotice } from "@/lib/analyticsCutoff";
 
 interface DraftOption {
-  /** Local, stable key for React (not the DB id). */
   key: string;
-  /** Present once persisted; drives update-vs-insert in `upsert_question`. */
   option_id?: string;
   text: string;
   is_correct: boolean;
@@ -61,13 +59,6 @@ function draftFrom(question: AuthorQuestion | null): {
   };
 }
 
-/**
- * Add / edit one question. Text, kind, position and the option set (add, edit,
- * reorder, correctness) are saved atomically via `POST /api/quizzes/[id]/questions`
- * (`upsert_question`). Deleting a PERSISTED option is an immediate owner-checked
- * `soft_delete_option` call (backstopped by the last-correct constraint), so the
- * save only ever sends the live set and the answer key stays consistent.
- */
 export function QuestionModal({
   open,
   quizId,
@@ -82,9 +73,6 @@ export function QuestionModal({
   quizId: string;
   question: AuthorQuestion | null;
   nextOrderIndex: number;
-  /** The editor's preview-player position, if known yet — powers the "use
-   * current time" shortcut below. `null` while the player hasn't reported a
-   * position yet, so the button never claims a fabricated 0:00. */
   currentPlayerSeconds?: number | null;
   onClose: () => void;
   onSaved: () => void;
@@ -119,7 +107,6 @@ export function QuestionModal({
   }
 
   function setCorrect(key: string) {
-    // single → exactly one correct; multi → toggle.
     setOptions((prev) =>
       prev.map((o) => {
         if (kind === "single") return { ...o, is_correct: o.key === key };
@@ -131,7 +118,6 @@ export function QuestionModal({
   function setKindAndFix(next: QuestionKind) {
     setKind(next);
     if (next === "single") {
-      // Collapse to a single correct answer (keep the first currently-correct).
       setOptions((prev) => {
         const firstCorrect = prev.find((o) => o.is_correct)?.key ?? prev[0]?.key;
         return prev.map((o) => ({ ...o, is_correct: o.key === firstCorrect }));
@@ -156,7 +142,7 @@ export function QuestionModal({
         return;
       }
       setBusy(false);
-      onSaved(); // refresh underlying data
+      onSaved();
     }
     setOptions((prev) => prev.filter((o) => o.key !== target.key));
   }

@@ -1,9 +1,5 @@
 import { cn } from "./cn";
 
-/**
- * A frosted glass surface (see `.glass` in globals.css). `interactive` adds the
- * hover treatment for clickable cards; static cards get no hover per the spec.
- */
 export function GlassCard({
   as: As = "div",
   interactive = false,

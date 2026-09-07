@@ -1,5 +1,4 @@
 /**
- * The scheduling-window hard cutoff (Epic 2A.2), driven by the real
  * `QuizPlayer`. Fake timers throughout, with the device clock deliberately
  * skewed from the server's — the whole point of the offset calculation is
  * that the cutoff fires at the SERVER's deadline instant, not whatever the
@@ -115,9 +114,6 @@ async function startQuiz(state: StudentAttemptState): Promise<void> {
   const user = userEvent.setup({ delay: null });
   render(<QuizPlayer classId="class-1" quizId="quiz-1" state={state} />);
   await user.click(screen.getByRole("button", { name: "התחלה" }));
-  // The mock VideoStage never advances the playhead, so the checkpoint gate
-  // overlay never opens (matches real behavior — nothing is due at 0:00 for a
-  // question at 0:30) — the checkpoint stepper is what confirms "playing".
   await waitFor(() =>
     expect(screen.getByRole("list", { name: "נקודות העצירה בחידון" })).toBeInTheDocument()
   );
@@ -149,35 +145,24 @@ describe("QuizPlayer — scheduling-window cutoff", () => {
     };
     await startQuiz(state);
 
-    // Just short of the true five-minute mark: nothing has happened yet.
     await vi.advanceTimersByTimeAsync(4 * 60 * 1000 + 59_000);
     expect(stage.pause).not.toHaveBeenCalled();
     expect(completeCalls).toBe(0);
 
-    // Cross the true deadline (five minutes of elapsed time, not the device
-    // clock's ten). A naive "trust the device clock" implementation would
-    // still be waiting another five minutes here.
     await vi.advanceTimersByTimeAsync(2_000);
 
     await waitFor(() => expect(stage.pause).toHaveBeenCalled());
     await waitFor(() => expect(completeCalls).toBe(1));
-    // The "done" screen shows timed-out copy, not the ordinary
-    // "you finished the quiz" heading — a student mid-cutoff should
-    // understand what happened rather than wonder why the video just ended.
     await waitFor(() =>
       expect(screen.getByText("הזמן למבחן הסתיים")).toBeInTheDocument()
     );
     expect(screen.queryByText("סיימת את החידון!")).not.toBeInTheDocument();
-    // The checkpoint stepper (the "playing" phase) is gone — no further
-    // interaction with the quiz is offered.
     expect(
       screen.queryByRole("list", { name: "נקודות העצירה בחידון" })
     ).not.toBeInTheDocument();
   });
 
   it("shows the time left before the student commits to starting", async () => {
-    // Device clock reads 12:00 while the server was at 12:05 — the countdown
-    // must report the true half hour left, not the device's 35 minutes.
     vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
     render(
       <QuizPlayer
@@ -204,12 +189,11 @@ describe("QuizPlayer — scheduling-window cutoff", () => {
 
   it("never schedules a cutoff when the allocation has no window", async () => {
     vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
-    await startQuiz(BASE_STATE); // available_until: null
+    await startQuiz(BASE_STATE);
 
-    await vi.advanceTimersByTimeAsync(60 * 60 * 1000); // an hour of elapsed time
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     expect(stage.pause).not.toHaveBeenCalled();
     expect(completeCalls).toBe(0);
-    // Still on the "playing" phase — nothing forced it to "done".
     expect(
       screen.getByRole("list", { name: "נקודות העצירה בחידון" })
     ).toBeInTheDocument();

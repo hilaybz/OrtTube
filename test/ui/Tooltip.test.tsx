@@ -1,10 +1,3 @@
-/**
- * `Tooltip` — the hover/keyboard label behind every `IconButton`. The bubble is
- * portaled to <body> with fixed viewport coordinates, because a `.glass` card
- * (`overflow: hidden`) used to clip it away entirely; and it must never outlive
- * the interaction that opened it, because a modal opening over the trigger
- * means no `mouseleave` ever arrives.
- */
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -70,7 +63,6 @@ describe("Tooltip", () => {
 
     await userEvent.hover(trigger);
     const bubble = screen.getByRole("tooltip");
-    // Not nested inside the `.glass` card that would have clipped it.
     expect(bubble.parentElement).toBe(document.body);
     expect(bubble).toHaveStyle({ position: "fixed" });
   });
@@ -78,7 +70,6 @@ describe("Tooltip", () => {
   it("flips to the other side rather than being pushed off the top of the viewport", async () => {
     render(<Tooltip content="עריכה"><button type="button">×</button></Tooltip>);
     const trigger = screen.getByRole("button");
-    // A control right at the top edge: there is no room above it.
     stubRect(trigger.parentElement!, {
       top: 4,
       bottom: 40,
@@ -91,14 +82,12 @@ describe("Tooltip", () => {
     await userEvent.hover(trigger);
     const bubble = screen.getByRole("tooltip");
     expect(bubble).toHaveAttribute("data-side", "bottom");
-    // Placed under the trigger, and still inside the viewport.
     expect(Number.parseFloat(bubble.style.top)).toBeGreaterThanOrEqual(40);
   });
 
   it("clamps horizontally so a label at the end of a row is never cut off", async () => {
     render(<Tooltip content="ניקוי הסינון"><button type="button">×</button></Tooltip>);
     const trigger = screen.getByRole("button");
-    // Flush against the right edge of a 1024px viewport.
     stubRect(trigger.parentElement!, {
       top: 300,
       bottom: 336,
@@ -147,10 +136,6 @@ describe("Tooltip", () => {
   });
 
   it("closes when the pointer turns up elsewhere while the trigger is not hovered", async () => {
-    // The last line of defence for the same class of bug: an overlay drawn over
-    // the trigger swallows the pointer without a `mouseleave` ever firing, so
-    // any pointer movement outside a trigger that no longer matches `:hover`
-    // retires the bubble.
     render(
       <div>
         <Tooltip content="עריכה">
@@ -163,9 +148,6 @@ describe("Tooltip", () => {
     await userEvent.hover(trigger);
     expect(screen.getByRole("tooltip")).toBeInTheDocument();
 
-    // jsdom keeps reporting the trigger as `:hover` after a synthetic hover, so
-    // the browser's own answer — "the pointer is not over me any more" — has to
-    // be stood in for here.
     vi.spyOn(trigger.parentElement!, "matches").mockReturnValue(false);
     act(() =>
       screen
@@ -180,17 +162,11 @@ describe("Tooltip", () => {
     await userEvent.tab();
     expect(screen.getByRole("tooltip")).toHaveTextContent("עריכה");
 
-    // The same button clicked: the press dismisses the bubble, and the focus the
-    // click leaves behind must not bring it straight back.
     await userEvent.click(screen.getByRole("button", { name: "עריכה" }));
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
   it("cannot outlive the hover that created it when a modal opens over the trigger", async () => {
-    // The reported repro: the trash icon in "החידונים שלי" opens a confirmation
-    // modal on top of itself, so the pointer never leaves the trigger and no
-    // `mouseleave` ever fires. Cancelling the dialog used to leave the bubble
-    // stuck on screen.
     function Harness() {
       const [open, setOpen] = useState(false);
       return (
@@ -221,7 +197,6 @@ describe("Tooltip", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "ביטול" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    // Still gone — the bubble did not survive the dialog it opened.
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 });

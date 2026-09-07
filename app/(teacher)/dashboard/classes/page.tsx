@@ -6,12 +6,6 @@ import { Alert } from "@/components/ui/Alert";
 import { ClassGrid } from "@/components/teacher/classes/ClassGrid";
 import { CreateClassButton } from "@/components/teacher/classes/CreateClassButton";
 
-/**
- * Teacher's classes index: the classes they own, each linking to its detail
- * page, plus a "כיתה חדשה" create action. Reads run through the caller's
- * session so RLS scopes the list to the signed-in teacher; a read failure
- * degrades to a friendly Alert.
- */
 export default async function ClassesPage() {
   const client = (await createClient()) as unknown as SupabaseClient;
 

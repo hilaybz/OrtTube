@@ -1,11 +1,3 @@
-/**
- * Unit tests — the eager-translation hook in `assignQuizToClass`.
- *
- * Pure logic, no DB: a fake Supabase client returns a canned assignment row and
- * an injected `ensureTranslation` spy records how it is (or isn't) called. Proves
- * the hook fires for a class language != base, is skipped when they match, and is
- * best-effort (a translation throw never fails the assignment).
- */
 import { describe, it, expect, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {

@@ -10,13 +10,6 @@ import { IconButton } from "@/components/ui/IconButton";
 type Status = "idle" | "running" | "done" | "empty" | "error";
 
 /**
- * "Analyse with AI" over the tutor questions in one scope.
- *
- * Teacher-triggered only — this spends a frontier-model call, so it never runs
- * on page load, and nothing is stored: each press reads the questions as they
- * stand now. The answer streams in, which is the difference between a teacher
- * watching a spinner for twenty seconds and reading while it writes.
- *
  * `/api/analytics/insights` answers in one of two shapes and this component
  * branches on the content type: `text/plain` is the streamed analysis,
  * `application/json` is the "nothing to analyse" case (no questions in scope, no
@@ -31,7 +24,6 @@ export function TutorInsights({
   hasQuestions,
 }: {
   scope: { quizId: string } | { classId: string };
-  /** Skips the model call entirely when the scope is known to be empty. */
   hasQuestions: boolean;
 }) {
   const [status, setStatus] = useState<Status>("idle");
@@ -150,11 +142,6 @@ export function TutorInsights({
   );
 }
 
-/**
- * Renders the model's plain-text answer: `• ` lines collect into a list, every
- * other non-empty line is a paragraph. No HTML from the model ever reaches the
- * DOM as markup.
- */
 function InsightText({ text }: { text: string }) {
   const blocks: { kind: "p" | "ul"; lines: string[] }[] = [];
   for (const raw of text.split("\n")) {
@@ -199,7 +186,6 @@ function InsightText({ text }: { text: string }) {
   );
 }
 
-/** Three-dot "thinking" bubble, animated with the shared pulse utility. */
 function TypingDots() {
   return (
     <span className="inline-flex items-center gap-1" aria-hidden="true">

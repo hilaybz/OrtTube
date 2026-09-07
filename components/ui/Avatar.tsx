@@ -5,7 +5,6 @@ function initials(name: string): string {
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
-/** Circular avatar. Falls back to initials when no image is supplied. */
 export function Avatar({
   name,
   src,

@@ -35,7 +35,6 @@ function InlineRun({ parts }: { parts: Inline[] }) {
           case "break":
             return <br key={i} />;
           default:
-            // A Fragment, not a span: plain text belongs directly in the block.
             return <Fragment key={i}>{part.text}</Fragment>;
         }
       })}
@@ -82,12 +81,6 @@ const MarkdownBlock = memo(function MarkdownBlock({ source }: { source: string }
   );
 });
 
-/**
- * The tutor's answer. Each block fades and lifts into place once, on the frame
- * it is inserted (`@starting-style`), which is what makes a streamed answer
- * arrive smoothly: settled blocks never animate again, and the block still
- * being written just grows.
- */
 export function MarkdownText({ text, className }: { text: string; className?: string }) {
   const blocks = useMemo(() => splitBlocks(text), [text]);
   return (

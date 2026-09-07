@@ -1,13 +1,3 @@
-/**
- * The student must be able to tell a single-answer question from a multi-answer
- * one BEFORE answering. Grading is exact-set-match, so picking one option on a
- * multi-answer question loses the mark outright — a distinction the UI used to
- * leave the student to infer, since both rendered identical square controls.
- *
- * This pins the distinction at the level a student actually perceives it: the
- * shape of the control, the instruction text, and the ARIA role. It is the kind
- * of regression that is invisible in a diff, hence a test rather than a comment.
- */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -17,8 +7,6 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-// The real stage embeds the YouTube iframe player. Replace it with a stub that
-// renders the overlay and lets a test move the playhead onto the checkpoint.
 vi.mock("@/components/video/VideoStage", () => ({
   VideoStage: ({
     overlay,
@@ -81,7 +69,6 @@ function question(kind: "single" | "multi"): StudentQuestion {
   };
 }
 
-/** Serve the two reads `start()` makes, keyed by URL. */
 function serveQuiz(kind: "single" | "multi"): void {
   vi.stubGlobal(
     "fetch",
@@ -113,7 +100,6 @@ function serveQuiz(kind: "single" | "multi"): void {
   );
 }
 
-/** Start the quiz and run the video up to the checkpoint so the question shows. */
 async function playToCheckpoint(kind: "single" | "multi"): Promise<void> {
   serveQuiz(kind);
   render(<QuizPlayer classId="class-1" quizId="quiz-1" state={STATE} />);
@@ -159,7 +145,6 @@ describe("QuizPlayer — single vs multi answer questions", () => {
     await userEvent.click(screen.getByRole("radio", { name: /אלף/ }));
     await userEvent.click(screen.getByRole("radio", { name: /בית/ }));
 
-    // Picking a second answer replaces the first rather than adding to it.
     expect(screen.getAllByRole("radio", { checked: true })).toHaveLength(1);
     expect(screen.getByRole("radio", { name: /בית/ })).toBeChecked();
   });

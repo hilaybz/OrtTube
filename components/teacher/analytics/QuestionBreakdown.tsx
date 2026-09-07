@@ -8,16 +8,6 @@ import { HBar } from "./HBar";
 import { pct } from "./chartTheme";
 import type { ClassQuizQuestionStat } from "@/lib/analytics";
 
-/**
- * Per-question breakdown: correct-% and one bar per option showing how many
- * students (latest completed attempt) chose it. The correct option is
- * marked with a badge; soft-deleted questions/options are dimmed and noted
- * rather than hidden, so a since-edited question's history stays visible —
- * same "keep, don't hide" precedent as `question_stats`.
- *
- * Paged: each question is a whole card of bars, and a long quiz is otherwise a
- * page a teacher scrolls past rather than reads.
- */
 export function QuestionBreakdown({
   questions,
 }: {

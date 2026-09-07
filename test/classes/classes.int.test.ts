@@ -1,21 +1,3 @@
-/**
- * Classes integration tests — classes, roster-by-email, and per-class assignment
- * (spec §3.2 / §3.5). Every action runs through an actor's AUTHENTICATED
- * (RLS-subject) client via the actor DSL (`test/helpers/testbed`), so each RPC's
- * `auth.uid()` owner/member check is real.
- *
- * Covers: class CRUD; add-student same-school / cross-school / is_teacher / invite
- * fallback + auto-conversion on signup; roster read; owner enforcement;
- * assignment storing tutor_mode/max_attempts + same-school guard + private-quiz
- * guard; soft-deleted quizzes hidden from listings; the student class-tabbed feed;
- * the published/draft split (2A.1) across every student-facing read; the
- * scheduling-window setter, quiz-side allocation reads, and bulk-assign
- * (2A.2 / 2A.3). Attempt-level window enforcement (force-completion, the
- * reveal gate, the cron sweep) lives in `test/attempts/window.int.test.ts`.
- *
- * Runs at the integration/gate step (owns DB application). Skipped when the local
- * DB is unreachable so unit suites still pass without Supabase running.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { closePool } from "../helpers/db";
 import {
@@ -51,8 +33,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     await closePool();
   });
 
-  // ── Class CRUD ──────────────────────────────────────────────────────────────
-
   it("createClass creates an owned class with the caller's school", async () => {
     const created = await teacher.openClass({ name: "Bio 101", language: "en" });
     expect(created.name).toBe("Bio 101");
@@ -74,8 +54,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     const listed = await teacher.myClasses();
     expect(listed.some((c) => c.id === temp.id)).toBe(false);
   });
-
-  // ── Add student by email ────────────────────────────────────────────────────
 
   it("adds an existing same-school student", async () => {
     const result = await biology.enroll(student);
@@ -108,7 +86,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
 
     expect(await testbed.db.hasPendingInvite(biology, futureEmail)).toBe(true);
 
-    // Signing up that student fires the invite-conversion trigger.
     const newcomer = await lincoln.enrollStudent({
       name: "Newcomer",
       email: futureEmail,
@@ -120,7 +97,7 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
   it("remove_student and revoke_invite are idempotent and owner-scoped", async () => {
     await biology.enroll(student);
     await biology.removeStudent(student);
-    await biology.removeStudent(student); // idempotent
+    await biology.removeStudent(student);
     expect(await testbed.db.isMember(biology, student)).toBe(false);
 
     const pendingEmail = "pending@test.orttube.local";
@@ -147,15 +124,12 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     ).rejects.toMatchObject({ code: "not_owner" });
   });
 
-  // ── Assignment ──────────────────────────────────────────────────────────────
-
   it("assign_quiz_to_class stores tutor_mode/max_attempts and returns languages", async () => {
     const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
     const result = await teacher.assignQuiz(quiz, {
       to: biology,
       tutor: "full",
       maxAttempts: 3,
-      // class lang == base (he) here, so translation is a no-op anyway
     });
     expect(result.tutor_mode).toBe("full");
     expect(result.max_attempts).toBe(3);
@@ -166,7 +140,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
   });
 
   it("assign fires eager translation when the class language differs from base", async () => {
-    // Class is `he` by default; author the quiz in `en` so the hook fires into `he`.
     const quiz = await teacher.authorQuiz({ baseLanguage: "en" });
     const translationCalls: Array<{ quizId: string; language: string }> = [];
     await teacher.assignQuiz(quiz, {
@@ -187,7 +160,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
   });
 
   it("rejects assigning a different-school quiz with cross_school", async () => {
-    // A quiz in another school, authored by an other-school teacher.
     const rivalSchool = await testbed.createSchool("School B");
     const otherSchoolTeacher = await rivalSchool.enrollTeacher({ name: "Rhea" });
     const foreignQuiz = await otherSchoolTeacher.authorQuiz({ baseLanguage: "he" });
@@ -199,7 +171,7 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
 
   it("rejects assigning another teacher's PRIVATE same-school quiz (quiz_forbidden)", async () => {
     const peerTeacher = await lincoln.enrollTeacher({ name: "Grace" });
-    const privateQuiz = await peerTeacher.authorQuiz({ baseLanguage: "he" }); // default visibility private
+    const privateQuiz = await peerTeacher.authorQuiz({ baseLanguage: "he" });
 
     await expect(
       teacher.assignQuiz(privateQuiz, { to: biology })
@@ -259,8 +231,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     expect(await testbed.db.assignment(biology, quiz)).toBeNull();
   });
 
-  // ── Student feed ────────────────────────────────────────────────────────────
-
   it("list_student_feed lists only assigned, non-deleted quizzes", async () => {
     const assigned = await teacher.authorQuiz({ baseLanguage: "he", title: "Assigned" });
     const unassigned = await teacher.authorQuiz({ baseLanguage: "he", title: "Unassigned" });
@@ -291,7 +261,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     const item = (await student.feed()).find((i) => i.quiz_id === quiz.id)!;
     expect(item.time_restricted).toBe(true);
     expect(item.duration_minutes).toBe(9);
-    // `authorQuiz`'s fixture always sets p_duration_seconds: 600.
     expect(item.duration_seconds).toBe(600);
   });
 
@@ -309,7 +278,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
   it("a non-member student sees no quizzes for a class they aren't in", async () => {
     const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
     await teacher.assignQuiz(quiz, { to: biology });
-    // `student` is NOT enrolled in `biology` here.
     const feed = await student.feed();
     expect(feed.some((i) => i.class_id === biology.id)).toBe(false);
   });
@@ -345,7 +313,7 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     const attempt1 = await student.startAttempt(quiz, { in: biology });
     await attempt1.answerAllCorrectly();
     await attempt1.complete();
-    await student.startAttempt(quiz, { in: biology }); // attempt 2, left unfinished
+    await student.startAttempt(quiz, { in: biology });
 
     const feed = await student.feed();
     const item = feed.find((i) => i.quiz_id === quiz.id);
@@ -364,12 +332,10 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     await biology.enroll(student);
     await teacher.assignQuiz(quiz, { to: biology, maxAttempts: null });
 
-    // Attempt 1: both correct (2/2).
     const attempt1 = await student.startAttempt(quiz, { in: biology });
     await attempt1.answerAllCorrectly();
     await attempt1.complete();
 
-    // Attempt 2 (the latest): one wrong (1/2) — this is the score that must win.
     const attempt2 = await student.startAttempt(quiz, { in: biology });
     await attempt2.answerCorrectly(quiz.questions[0]);
     await attempt2.answer(quiz.questions[1], []);
@@ -450,8 +416,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     expect(feed.some((i) => i.quiz_id === quiz.id)).toBe(false);
   });
 
-  // ── Publish/draft (2A.1) ────────────────────────────────────────────────────
-
   it("assigning without `published` behaves exactly as before: instantly visible", async () => {
     const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
     const result = await teacher.assignQuiz(quiz, { to: biology });
@@ -487,7 +451,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     const feed = await student.feed();
     expect(feed.some((i) => i.class_id === biology.id && i.quiz_id === quiz.id)).toBe(false);
 
-    // The owner still sees the draft assignment.
     const listed = await biology.assignedQuizzes();
     const row = listed.find((q) => q.quiz_id === quiz.id);
     expect(row).toBeTruthy();
@@ -533,8 +496,6 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     ).rejects.toMatchObject({ code: "not_owner" });
   });
 
-  // ── Scheduling window & allocation reads (2A.2 / 2A.3) ──────────────────────
-
   it("assign rejects an invalid schedule window (availableFrom not before availableUntil)", async () => {
     const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
     const t = new Date().toISOString();
@@ -558,8 +519,8 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
   it("list_quiz_allocations returns every state to the owner, not_owner to everyone else", async () => {
     const quiz = await teacher.authorQuiz({ baseLanguage: "he" });
     const secondClass = await teacher.openClass({ name: "History", language: "he" });
-    await teacher.assignQuiz(quiz, { to: biology, published: false }); // draft
-    await teacher.assignQuiz(quiz, { to: secondClass }); // live
+    await teacher.assignQuiz(quiz, { to: biology, published: false });
+    await teacher.assignQuiz(quiz, { to: secondClass });
 
     const allocations = await teacher.listAllocations(quiz);
     expect(allocations).toHaveLength(2);
@@ -604,16 +565,13 @@ describe.skipIf(!online)("classes / roster / assignment", () => {
     // "never published" reached the card as the same pair of empty arrays, and
     // the library could not offer a finished/active status axis at all.
     expect(forQuiz!.closed.map((c) => c.class_id)).toEqual([closedClass.id]);
-    // A draft lands in no bucket, but the quiz itself still shows up.
     for (const bucket of [forQuiz!.live, forQuiz!.scheduled, forQuiz!.closed]) {
       expect(bucket.map((c) => c.class_id)).not.toContain(draftClass.id);
     }
-    // Each published state claims exactly one bucket: no class is double-counted.
     expect(forQuiz!.live.map((c) => c.class_id)).not.toContain(closedClass.id);
     expect(forQuiz!.scheduled.map((c) => c.class_id)).not.toContain(closedClass.id);
     expect(forQuiz!.closed.map((c) => c.class_id)).not.toContain(liveClass.id);
     expect(forQuiz!.closed.map((c) => c.class_id)).not.toContain(scheduledClass.id);
-    // A quiz with no allocation at all doesn't appear.
     expect(tags.some((t) => t.quiz_id === untouchedQuiz.id)).toBe(false);
   });
 

@@ -1,22 +1,3 @@
-/**
- * Scheduling-window hard cutoff — attempt-level enforcement (Epic 2A.2).
- *
- * `test/classes/classes.int.test.ts` covers the assignment-side window
- * (validation, the schedule setter, read gating on `not_assigned`). This file
- * covers what happens to an ATTEMPT already in flight when the window closes:
- * `submit_answer` force-finalizing in place, `complete_attempt` backdating,
- * the reveal gate widening once no retake remains, and the
- * `close_expired_attempt_windows` cron sweep as the backstop for attempts
- * nobody came back to interact with.
- *
- * Every action runs through the actor DSL (`test/helpers/testbed`), so each
- * RPC's `auth.uid()` check is real; `testbed.admin.closeExpiredAttemptWindows`
- * calls the service-role-only sweep RPC directly, matching how the cron job
- * route itself invokes it.
- *
- * Runs at the integration/gate step (owns DB application). Skipped when the
- * local DB is unreachable so unit suites still pass without Supabase running.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { closePool } from "../helpers/db";
 import {
@@ -66,11 +47,9 @@ describe.skipIf(!online)("scheduling window — attempt finalization", () => {
   });
 
   it("submit_answer force-finalizes the attempt when the window has closed — and the write survives the thrown error", async () => {
-    // No window at assignment time, so the attempt can start normally.
     await teacher.assignQuiz(quiz, { to: biology });
     const attempt = await student.startAttempt(quiz, { in: biology });
 
-    // Close the window now, mid-attempt, before any answer is submitted.
     const closedAt = isoAgo(1000);
     await teacher.setSchedule(quiz, {
       in: biology,
@@ -89,11 +68,8 @@ describe.skipIf(!online)("scheduling window — attempt finalization", () => {
     expect(row!.completed_at).not.toBeNull();
     expect(new Date(row!.completed_at!).getTime()).toBe(new Date(closedAt).getTime());
     expect(row!.num_questions).toBe(1);
-    // The answer never got recorded — unanswered counts wrong, by omission.
     expect(row!.num_correct).toBe(0);
 
-    // A second submit on the now-completed attempt gets the ordinary
-    // rejection, not another window_closed.
     await expect(attempt.answerCorrectly(quiz.questions[0])).rejects.toMatchObject({
       code: "attempt_completed",
     });
@@ -119,11 +95,8 @@ describe.skipIf(!online)("scheduling window — attempt finalization", () => {
     await attempt.answerCorrectly(quiz.questions[0]);
     await attempt.complete();
 
-    // Still open, 1 of 3 attempts used: no reveal yet.
     expect((await attempt.review()).revealed).toBe(false);
 
-    // Close the window — no retake remains even though the cap isn't
-    // exhausted, so the gate must open exactly like an exhausted cap would.
     await teacher.setSchedule(quiz, {
       in: biology,
       availableFrom: null,
@@ -142,8 +115,6 @@ describe.skipIf(!online)("scheduling window — attempt finalization", () => {
       availableUntil: closedAt,
     });
 
-    // Nobody ever calls submit_answer or complete_attempt again — the sweep
-    // is the only thing that will ever close this attempt.
     const first = await testbed.admin.closeExpiredAttemptWindows();
     expect(first.closed).toBe(1);
 
@@ -151,7 +122,6 @@ describe.skipIf(!online)("scheduling window — attempt finalization", () => {
     expect(row!.completed_at).not.toBeNull();
     expect(new Date(row!.completed_at!).getTime()).toBe(new Date(closedAt).getTime());
 
-    // A second run must not double-process (or error on) an already-closed attempt.
     const second = await testbed.admin.closeExpiredAttemptWindows();
     expect(second.closed).toBe(0);
   });
@@ -161,7 +131,7 @@ describe.skipIf(!online)("scheduling window — attempt finalization", () => {
       baseLanguage: "he",
       questions: [trueFalse(10)],
     });
-    await teacher.assignQuiz(openQuiz, { to: biology }); // no window at all
+    await teacher.assignQuiz(openQuiz, { to: biology });
     const openAttempt = await student.startAttempt(openQuiz, { in: biology });
 
     const futureQuiz = await teacher.authorQuiz({

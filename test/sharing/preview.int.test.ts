@@ -1,12 +1,3 @@
-/**
- * Preview integration tests — `get_quiz_for_preview` (backlog 1.3 / issue
- * #13). Gated exactly like `clone_quiz` (owner, or `shared` + same school),
- * but unlike `get_quiz_for_author` it is NOT owner-only, and unlike a
- * correctness-free read it DOES return `is_correct` + `explanation` — see
- * the migration's own comment for why that's the deliberate design.
- *
- * Runs at the integration/gate step. Skipped when the local DB is unreachable.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { closePool } from "../helpers/db";
 import { QuizError } from "@/lib/quiz";
@@ -24,7 +15,6 @@ import { stackOnline } from "../helpers/stack";
 
 const online = await stackOnline();
 
-/** The raw jsonb shape `get_quiz_for_preview` returns. */
 interface PreviewRow {
   quiz_id: string;
   title: string | null;
@@ -45,7 +35,6 @@ interface PreviewRow {
   }>;
 }
 
-/** Preview as any actor, surfacing the RPC's stable rejection code. */
 async function previewAs(actor: Actor, quizId: string): Promise<PreviewRow> {
   const { data, error } = await actor.client.rpc("get_quiz_for_preview", {
     p_quiz_id: quizId,
@@ -91,9 +80,6 @@ describe.skipIf(!online)("get_quiz_for_preview", () => {
   }
 
   it("returns questions in VIDEO-TIME order, not authoring order", async () => {
-    // Authored in the "wrong" order on purpose (order_index 0 → 1:30,
-    // order_index 1 → 0:30) — matching get_quiz_for_author's own ordering
-    // (position_seconds, order_index, id) is the point of this test.
     const quiz = await teacher.authorQuiz({
       baseLanguage: "he",
       title: "Order Test",
@@ -123,7 +109,7 @@ describe.skipIf(!online)("get_quiz_for_preview", () => {
   });
 
   it("the owner can preview their own quiz (private or shared), full content included", async () => {
-    const quiz = await authorQuizWithQuestion(teacher); // stays private
+    const quiz = await authorQuizWithQuestion(teacher);
     const preview = await previewAs(teacher, quiz.id);
 
     expect(preview.quiz_id).toBe(quiz.id);
@@ -141,7 +127,6 @@ describe.skipIf(!online)("get_quiz_for_preview", () => {
 
     const preview = await previewAs(peer, quiz.id);
     expect(preview.questions[0].explanation).toBe("Because Y.");
-    // Builder order: [correct, ...distractors] → option 1 (correct) is first.
     expect(preview.questions[0].options.map((o) => o.is_correct)).toEqual([
       true,
       false,
@@ -162,7 +147,7 @@ describe.skipIf(!online)("get_quiz_for_preview", () => {
   });
 
   it("a same-school teacher CANNOT preview another teacher's private quiz", async () => {
-    const quiz = await authorQuizWithQuestion(teacher); // stays private
+    const quiz = await authorQuizWithQuestion(teacher);
     const peer = await lincoln.enrollTeacher({ name: "Grace" });
 
     await expect(previewAs(peer, quiz.id)).rejects.toThrow("not_authorized");
@@ -203,10 +188,6 @@ describe.skipIf(!online)("get_quiz_for_preview", () => {
   });
 
   it("does not leak whether a DIFFERENT school's quiz was deleted — a non-reader gets not_authorized, never quiz_deleted", async () => {
-    // The gate must run BEFORE the deleted check: otherwise a caller with no
-    // read right on this quiz at all could distinguish quiz_not_found /
-    // quiz_deleted / not_authorized and confirm a quiz exists (and was
-    // deleted) in a school they can't read from.
     const quiz = await authorQuizWithQuestion(teacher);
     await quiz.makeShared();
     await quiz.softDelete();

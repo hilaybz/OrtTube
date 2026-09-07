@@ -2,17 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { assignQuizToClass, listClassQuizzes, type TutorMode } from "@/lib/classes";
 import { err, handleError, isValidIsoOrNull, requireAuth } from "../../http";
 
-/**
- * /api/classes/[id]/quizzes  (assignment)
- *   GET  → the class's assigned (non-deleted) quizzes with delivery settings.
- *   POST → assign a quiz { quizId, tutorMode?, maxAttempts?, published?,
- *          availableFrom?, availableUntil? } and best-effort eager-translate
- *          into the class language. `published` defaults to true (unchanged
- *          instant-visibility behaviour); pass false to assign as a draft.
- *          `availableFrom`/`availableUntil` default to no window; either may
- *          be `null` explicitly or omitted.
- */
-
 const TUTOR_MODES: TutorMode[] = ["off", "hints", "full"];
 
 export async function GET(

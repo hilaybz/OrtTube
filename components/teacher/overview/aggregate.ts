@@ -2,49 +2,18 @@ import type { ClassRow, AssignedQuiz } from "@/lib/classes";
 import { allocationState, type AllocationState } from "@/lib/allocationState";
 import { formatDate, schoolDayNumber } from "@/lib/datetime";
 
-/**
- * Pure reductions behind the teacher overview. Everything here takes already
- * fetched rows and a clock, so the page stays a thin assembly layer and the
- * arithmetic is unit-testable.
- *
- * Lifecycle questions ("is this quiz still open?", "did it close recently?")
- * are answered by `allocationState` rather than by re-deriving dates here —
- * that predicate mirrors the SQL `_allocation_is_live` and is the one place
- * window semantics live.
- */
-
-/**
- * How far back "recently finished" reaches. A week is one school cycle: long
- * enough that a quiz that closed on Friday is still on the teacher's homepage
- * on Monday, short enough that the row stays a shortlist rather than an archive.
- */
 export const RECENTLY_FINISHED_LOOKBACK_DAYS = 7;
 
-/** A class paired with the quizzes currently assigned to it. */
 export interface ClassAssignments {
   klass: ClassRow;
   quizzes: readonly AssignedQuiz[];
 }
 
-/**
- * A per-class summary ready for a class card: roster size and the class's own
- * lifecycle split — how many quizzes it can answer, how many are behind it.
- * Those two are the class-scoped reading of the same question the KPI row asks
- * across all classes, so a teacher can tell at a glance which class is mid-work
- * and which is idle.
- *
- * Neither an assigned-quiz total nor a completion count is here: a raw
- * "3 quizzes" says nothing about whether any of them is running, and totals are
- * one click away in analytics. Average grade is absent for the same reason — a
- * cross-quiz mean flattens exactly the differences analytics exists to show.
- */
 export interface ClassSummary {
   id: string;
   name: string;
   memberCount: number;
-  /** Quizzes this class can answer now, plus those scheduled to open. */
   activeQuizzes: number;
-  /** Quizzes whose window has already closed for this class. */
   finishedQuizzes: number;
 }
 
@@ -60,24 +29,14 @@ function isActive(state: AllocationState): boolean {
   return state === "live" || state === "scheduled";
 }
 
-/** Cross-class totals for the KPI row. */
 export interface OverviewTotals {
   classCount: number;
   studentCount: number;
-  /** Distinct quizzes with at least one class inside its window right now. */
   openQuizzes: number;
-  /** Distinct quizzes that have run and have no class still open on them. */
   finishedQuizzes: number;
 }
 
 /**
- * Reduce one class into a `ClassSummary` from its roster size and its own
- * allocation rows.
- *
- * The two inputs are read separately and so degrade separately — a class whose
- * roster could not be read still shows a truthful quiz split, and a class whose
- * allocations could not be read still shows its roster.
- *
  * Each quiz has exactly one allocation per class, so counting allocation states
  * here is already a per-quiz count; no de-duplication is needed (unlike the
  * cross-class KPI row, where one quiz spans several classes).
@@ -134,7 +93,6 @@ export function countQuizStates(
   return { openQuizzes, finishedQuizzes };
 }
 
-/** Aggregate per-class summaries and quiz-state counts into the KPI totals. */
 export function totalsFromSummaries(
   summaries: readonly ClassSummary[],
   quizStates: Pick<OverviewTotals, "openQuizzes" | "finishedQuizzes">
@@ -146,14 +104,7 @@ export function totalsFromSummaries(
   };
 }
 
-/**
- * One quiz that closed for one class inside the lookback window. Kept per
- * (class, quiz) rather than per quiz: the class is the thing the teacher wants
- * to look at next, and the same quiz can close on different days in different
- * classes.
- */
 export interface RecentlyFinishedQuiz {
-  /** Stable React key — a quiz appears once per class. */
   key: string;
   quizId: string;
   classId: string;
@@ -162,7 +113,6 @@ export interface RecentlyFinishedQuiz {
   videoTitle: string | null;
   youtubeVideoId: string;
   questionCount: number;
-  /** When the window closed — always non-null for a `done` allocation. */
   closedAt: string;
 }
 
@@ -202,7 +152,6 @@ export function recentlyFinishedQuizzes(
   );
 }
 
-/** The heading for a quiz card: the teacher's own title, else the video's. */
 export function quizHeading(quiz: {
   title: string | null;
   videoTitle: string | null;
@@ -211,11 +160,6 @@ export function quizHeading(quiz: {
 }
 
 /**
- * How a closing time reads on a finished-quiz card. Two parts rather than one
- * sentence: a phrase the teacher can scan ("נסגר אתמול") and, next to it, the
- * date itself — because "אתמול" answers "is this still fresh?" while the date
- * answers "which lesson was that?".
- *
  * `date` is null exactly when the phrase already names the date, so the card
  * never prints the same day twice.
  */
@@ -238,4 +182,3 @@ export function closedAtMeta(iso: string, now: Date = new Date()): ClosedAtMeta 
     return { phrase: `נסגר לפני ${days} ימים`, date: formatDate(iso) };
   return { phrase: `נסגר ב־${formatDate(iso)}`, date: null };
 }
-

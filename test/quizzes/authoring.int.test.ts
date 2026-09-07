@@ -1,15 +1,3 @@
-/**
- * Authoring integration tests — quiz/question/option authoring RPCs (spec §3.4).
- *
- * Every action runs through an actor's AUTHENTICATED (RLS-subject) client via the
- * actor DSL (`test/helpers/testbed`), so each RPC's `auth.uid()` owner check is
- * real. Covers: atomic create_quiz_for_video, base translations written by
- * upsert_question, single/multi correctness guards, soft-delete prechecks,
- * ownership enforcement, and list_my_quizzes.
- *
- * Runs at the integration/gate step (owns DB application). Skipped when the local
- * DB is unreachable so unit suites still pass without Supabase running.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { getPool, closePool } from "../helpers/db";
 import {
@@ -26,15 +14,11 @@ import { stackOnline } from "../helpers/stack";
 
 const online = await stackOnline();
 
-// ── Out-of-band reads used only for assertions ────────────────────────────────
-
-/** Whether the canonical video row backing a quiz exists. */
 async function videoExists(videoId: string): Promise<boolean> {
   const res = await getPool().query("SELECT 1 FROM public.videos WHERE id=$1", [videoId]);
   return res.rowCount === 1;
 }
 
-/** Every stored translation row for a question (all languages). */
 async function questionTranslations(questionId: string) {
   const res = await getPool().query(
     "SELECT prompt, explanation, source, language FROM public.question_translations WHERE question_id=$1",
@@ -43,7 +27,6 @@ async function questionTranslations(questionId: string) {
   return res.rows;
 }
 
-/** How many option-text rows a question has in a given language. */
 async function optionTranslationCount(questionId: string, language: string): Promise<number> {
   const res = await getPool().query<{ n: number }>(
     `SELECT count(*)::int AS n FROM public.option_translations ot
@@ -54,7 +37,6 @@ async function optionTranslationCount(questionId: string, language: string): Pro
   return res.rows[0].n;
 }
 
-/** A video row's title/duration, as backfill tests need to inspect both. */
 async function videoMeta(
   youtubeId: string
 ): Promise<{ title: string | null; duration_seconds: number | null }> {
@@ -65,7 +47,6 @@ async function videoMeta(
   return res.rows[0];
 }
 
-/** The stored quiz title (null once cleared — the UI then shows the video's). */
 async function quizTitle(quizId: string): Promise<string | null> {
   const res = await getPool().query<{ title: string | null }>(
     "SELECT title FROM public.quizzes WHERE id=$1",
@@ -74,7 +55,6 @@ async function quizTitle(quizId: string): Promise<string | null> {
   return res.rows[0].title;
 }
 
-/** The soft-delete marker on an option (null while live). */
 async function optionDeletedAt(optionId: string): Promise<string | null> {
   const res = await getPool().query<{ deleted_at: string | null }>(
     "SELECT deleted_at FROM public.question_options WHERE id=$1",
@@ -83,7 +63,6 @@ async function optionDeletedAt(optionId: string): Promise<string | null> {
   return res.rows[0].deleted_at;
 }
 
-/** Attempt to author a quiz AS the given actor — used to exercise the role guard. */
 function tryCreateQuizAs(actor: Actor) {
   return actor.client.rpc("create_quiz_for_video", {
     p_youtube_id: "yt-x",
@@ -259,7 +238,6 @@ describe.skipIf(!online)("authoring RPCs", () => {
     const listed = (await teacher.myQuizzes()).find((q) => q.quiz_id === quiz.id)!;
     expect(listed.time_restricted).toBe(true);
     expect(listed.duration_minutes).toBe(7);
-    // `authorQuiz`'s fixture always sets p_duration_seconds: 600.
     expect(listed.duration_seconds).toBe(600);
   });
 
@@ -292,7 +270,6 @@ describe.skipIf(!online)("authoring RPCs", () => {
     it("leaves the title untouched when it is not part of the patch", async () => {
       const quiz = await teacher.authorQuiz({ title: "Chapter One" });
 
-      // Changing only visibility must not disturb the title.
       await teacher.client.rpc("update_quiz", {
         p_quiz_id: quiz.id,
         p_visibility: "shared",
@@ -313,7 +290,7 @@ describe.skipIf(!online)("authoring RPCs", () => {
     });
   });
 
-  // `time_restricted`/`duration_minutes` (issue #80): a teacher-stated cap,
+  // `time_restricted`/`duration_minutes`: a teacher-stated cap,
   // settable at creation and editable afterward. `duration_minutes` is only
   // ever non-null while restricted — enforced both by a DB CHECK constraint
   // and by both RPCs raising `invalid_duration` for an inconsistent pair.
@@ -373,7 +350,6 @@ describe.skipIf(!online)("authoring RPCs", () => {
       });
       expect(error?.message).toBe("invalid_duration");
 
-      // The rejected call must not have partially applied.
       const view = await teacher.editorView(quiz);
       expect(view.time_restricted).toBe(false);
     });
@@ -405,7 +381,6 @@ describe.skipIf(!online)("authoring RPCs", () => {
         p_duration_minutes: 15,
       });
 
-      // A title-only edit must not disturb the duration.
       await teacher.client.rpc("update_quiz", { p_quiz_id: quiz.id, p_title: "Renamed" });
 
       const view = await teacher.editorView(quiz);
@@ -422,7 +397,6 @@ describe.skipIf(!online)("authoring RPCs", () => {
     it("backfills a null title/duration from a later quiz on the same video", async () => {
       const youtubeId = `yt-backfill-${Math.random().toString(36).slice(2)}`;
 
-      // First quiz: simulates the metadata fetch having failed.
       const first = await teacher.client.rpc("create_quiz_for_video", {
         p_youtube_id: youtubeId,
         p_video_title: null,
@@ -433,7 +407,6 @@ describe.skipIf(!online)("authoring RPCs", () => {
       expect(first.error).toBeNull();
       expect(await videoMeta(youtubeId)).toEqual({ title: null, duration_seconds: null });
 
-      // Second quiz on the SAME video: this fetch succeeded.
       const second = await teacher.client.rpc("create_quiz_for_video", {
         p_youtube_id: youtubeId,
         p_video_title: "Real Title",
@@ -463,8 +436,6 @@ describe.skipIf(!online)("authoring RPCs", () => {
         p_quiz_title: "First",
       });
 
-      // A later quiz whose OWN metadata fetch failed must not blank out what is
-      // already stored — coalesce always prefers the existing value.
       await teacher.client.rpc("create_quiz_for_video", {
         p_youtube_id: youtubeId,
         p_video_title: null,
@@ -489,7 +460,6 @@ describe.skipIf(!online)("authoring RPCs", () => {
     const student = await school.enrollStudent({ name: "Ben" });
 
     const { data } = await student.client.from("question_options").select("id, is_correct");
-    // RLS gives students no rows on the structural answer key.
     expect(data ?? []).toHaveLength(0);
   });
 });

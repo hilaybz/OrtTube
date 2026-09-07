@@ -1,7 +1,4 @@
 /**
- * The levers a teacher can set on an AI generation run, with their allowed
- * values, defaults and type guards.
- *
  * This module is a LEAF: it imports nothing, and in particular nothing that
  * reaches the Anthropic SDK. The HTTP layer validates a request body against
  * these guards, the editor UI mirrors them in its controls, and the generator
@@ -9,7 +6,6 @@
  * what "medium" or 4 options means.
  */
 
-/** How many answer options each generated question carries. */
 export type OptionsPerQuestion = 3 | 4 | 5;
 
 export const OPTIONS_PER_QUESTION_VALUES: readonly OptionsPerQuestion[] = [3, 4, 5];
@@ -22,11 +18,6 @@ export function isOptionsPerQuestion(v: unknown): v is OptionsPerQuestion {
   );
 }
 
-/**
- * How demanding the generated questions should be. `medium` is the default and
- * deliberately contributes NO prompt instruction — only `easy` / `hard` steer
- * the model.
- */
 export type GenerationDifficulty = "easy" | "medium" | "hard";
 
 export const GENERATION_DIFFICULTIES: readonly GenerationDifficulty[] = [

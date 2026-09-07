@@ -1,15 +1,3 @@
-/**
- * Schema integration tests — schema, composite FKs, immutability, invite
- * conversion, correctness validation, GRANTs and RLS (spec §3 / §7).
- *
- * DB-level invariants (composite FKs, triggers) are exercised through the raw
- * `pg` pool (superuser: bypasses RLS but NOT FK/CHECK/triggers). RLS and GRANT
- * behaviour is exercised through real anon clients signed in as the fixture
- * users — the production path (JWT → `authenticated` role → PostgREST).
- *
- * Runs at the integration/gate step (which owns DB application). Skipped when the
- * local DB is unreachable so unit suites still pass without Supabase running.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PoolClient } from "pg";
@@ -24,13 +12,10 @@ import {
 } from "../helpers/db";
 import { stackOnline } from "../helpers/stack";
 
-
 const online = await stackOnline();
 
-/** Every profile created here shares one password so tests can sign in as them. */
 const USER_PASSWORD = "x-password-123";
 
-/** Create an auth user + profile via the service/superuser path; return its id. */
 async function signUpUser(
   role: "teacher" | "student",
   schoolId: string,
@@ -50,7 +35,6 @@ async function signUpUser(
   return userId;
 }
 
-/** Create a school by name and return its id. */
 async function createSchoolNamed(name: string): Promise<string> {
   const { rows } = await getPool().query<{ id: string }>(
     "INSERT INTO public.schools (name) VALUES ($1) RETURNING id",
@@ -59,7 +43,6 @@ async function createSchoolNamed(name: string): Promise<string> {
   return rows[0].id;
 }
 
-/** Sign a fresh anon client in as a user and return it (RLS-subject client). */
 async function signIn(email: string, password: string): Promise<SupabaseClient> {
   const client = createAnonClient();
   await signInAs(client, email, password);
@@ -80,7 +63,6 @@ async function inTransaction(
   }
 }
 
-/** A quiz with one 'single' question and 4 options (one correct). */
 async function createSingleChoiceQuiz(authorId: string, schoolId: string) {
   const pool = getPool();
   const video = await pool.query<{ id: string }>(
@@ -120,7 +102,6 @@ describe.skipIf(!online)("schema, constraints, triggers, RLS", () => {
     await closePool();
   });
 
-  // ── Composite FK integrity ─────────────────────────────────────────────────
   describe("composite FKs", () => {
     it("rejects a class owned by a student (role-checked FK)", async () => {
       await expect(
@@ -151,7 +132,6 @@ describe.skipIf(!online)("schema, constraints, triggers, RLS", () => {
     });
   });
 
-  // ── Immutability ───────────────────────────────────────────────────────────
   describe("role / school immutability", () => {
     it("blocks role changes at the DB trigger", async () => {
       await expect(
@@ -195,7 +175,6 @@ describe.skipIf(!online)("schema, constraints, triggers, RLS", () => {
     });
   });
 
-  // ── Invite conversion ──────────────────────────────────────────────────────
   describe("invite → membership conversion", () => {
     it("converts a matching invite to a membership and deletes the invite", async () => {
       const pool = getPool();
@@ -204,7 +183,6 @@ describe.skipIf(!online)("schema, constraints, triggers, RLS", () => {
         "INSERT INTO public.class_invites (class_id, email) VALUES ($1,$2)",
         [classroom.id, inviteeEmail]
       );
-      // Creating the student profile fires the AFTER INSERT trigger.
       await signUpUser("student", school.id, inviteeEmail);
 
       const membership = await pool.query(
@@ -254,7 +232,6 @@ describe.skipIf(!online)("schema, constraints, triggers, RLS", () => {
         "INSERT INTO public.class_invites (class_id, email) VALUES ($1,$2)",
         [otherSchoolClass.rows[0].id, inviteeEmail]
       );
-      // Student signs up into our school — the other-school invite must NOT convert.
       const studentId = await signUpUser("student", school.id, inviteeEmail);
       const membership = await pool.query(
         "SELECT 1 FROM public.class_members WHERE student_id=$1",
@@ -264,7 +241,6 @@ describe.skipIf(!online)("schema, constraints, triggers, RLS", () => {
     });
   });
 
-  // ── Correctness validation (deferred constraint trigger) ────────────────────
   describe("correctness validation", () => {
     it("rejects a single-choice question with two correct options at commit", async () => {
       const { quizId } = await createSingleChoiceQuiz(teacher.id, school.id);
@@ -334,7 +310,6 @@ describe.skipIf(!online)("schema, constraints, triggers, RLS", () => {
     });
   });
 
-  // ── RLS ────────────────────────────────────────────────────────────────────
   describe("RLS", () => {
     it("a student cannot read question_options (answer key hidden)", async () => {
       const { questionId } = await createSingleChoiceQuiz(teacher.id, school.id);

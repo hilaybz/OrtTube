@@ -1,8 +1,3 @@
-/**
- * Teacher actor: authors quizzes, opens classes, manages the roster, assigns
- * quizzes, and reads owner-checked analytics — each method calls the real
- * `@/lib/*` wrapper / RPC as this teacher's authenticated (RLS-subject) client.
- */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Language } from "@/lib/lang";
 import {
@@ -92,11 +87,9 @@ export class Teacher implements Actor {
     readonly name: string,
     readonly email: string,
     readonly password: string,
-    /** This teacher's authenticated (RLS-subject) client. */
     readonly client: SupabaseClient
   ) {}
 
-  /** Open (create) a class owned by this teacher, in this teacher's school. */
   async openClass(
     opts: { name?: string; language?: Language } = {}
   ): Promise<Classroom> {
@@ -107,7 +100,6 @@ export class Teacher implements Actor {
     return new Classroom(row, this);
   }
 
-  /** This teacher's own classes. */
   myClasses(): Promise<ClassRow[]> {
     return listMyClasses(this.client);
   }
@@ -121,10 +113,6 @@ export class Teacher implements Actor {
     return getQuizForAuthor(this.client, typeof quiz === "string" ? quiz : quiz.id);
   }
 
-  /**
-   * Author a quiz on a video (real `create_quiz_for_video` RPC), optionally with
-   * a full question set (structural rows + answer key + base/extra-language text).
-   */
   async authorQuiz(
     opts: {
       onVideo?: string;
@@ -272,23 +260,19 @@ export class Teacher implements Actor {
     return quiz.questions;
   }
 
-  /** Soft-delete a question (owner-scoped `soft_delete_question` RPC). */
   removeQuestion(q: AuthoredQuestion): Promise<void> {
     return softDeleteQuestion(this.client, q.id);
   }
 
-  /** Soft-delete an option (owner-scoped). Throws `cannot_remove_last_correct`. */
   removeOption(option: QuizOption | string): Promise<void> {
     const id = typeof option === "string" ? option : option.id;
     return softDeleteOption(this.client, id);
   }
 
-  /** Set a quiz's visibility (owner-scoped `update_quiz` RPC). */
   setVisibility(quiz: Quiz, visibility: "private" | "shared"): Promise<void> {
     return updateQuiz(this.client, quiz.id, { visibility });
   }
 
-  /** Set a quiz's title (owner-scoped `update_quiz` RPC); `""` clears it. */
   async writeQuizColumnDirectly(
     quiz: Quiz | string,
     patch: Record<string, unknown>
@@ -302,12 +286,10 @@ export class Teacher implements Actor {
     return updateQuiz(this.client, quiz.id, { title });
   }
 
-  /** This teacher's own-quizzes library (incl. unassigned). */
   myQuizzes(): Promise<MyQuiz[]> {
     return listMyQuizzes(this.client);
   }
 
-  /** The same-school shared-quiz catalog visible to this teacher. */
   async sharedQuizzes(): Promise<SharedQuizRow[]> {
     const { data, error } = await this.client.rpc("list_shared_quizzes", {});
     if (error) throw new QuizError(error.message);
@@ -342,58 +324,36 @@ export class Teacher implements Actor {
     return clone;
   }
 
-  // ── Analytics (owner-checked compute-on-read) ───────────────────────────────
-
-  /** Quiz-level completion/attempt/score summary (must own the quiz). */
   quizStats(quiz: Quiz): Promise<QuizStats> {
     return getQuizStats(this.client, quiz.id);
   }
 
-  /** Per-question correct% + distractor distribution (must own the quiz). */
   questionStats(quiz: Quiz): Promise<QuestionStatsResult> {
     return getQuestionStats(this.client, quiz.id);
   }
 
-  /** Per-assigned-quiz class stats (must own the class). */
   classStats(classroom: Classroom): Promise<ClassStats> {
     return getClassStats(this.client, classroom.id);
   }
 
-  /** Tutor-interaction stats for a quiz OR a class (owner-checked for the scope). */
   tutorStats(scope: { quiz: Quiz } | { class: Classroom }): Promise<TutorStats> {
     return "quiz" in scope
       ? getTutorStats(this.client, { quizId: scope.quiz.id })
       : getTutorStats(this.client, { classId: scope.class.id });
   }
 
-  /**
-   * One quiz's stats WITHIN one class (must own the class; the quiz must be
-   * currently assigned to it) — score distribution and per-question/per-option
-   * breakdown, scored from each student's latest completed attempt.
-   */
   classQuizAnalytics(classroom: Classroom, quiz: Quiz): Promise<ClassQuizAnalytics> {
     return getClassQuizAnalytics(this.client, classroom.id, quiz.id);
   }
 
-  /** Per-current-member roster progress for a class (must own the class). */
   rosterProgress(classroom: Classroom): Promise<ClassRosterProgress> {
     return getClassRosterProgress(this.client, classroom.id);
   }
 
-  /**
-   * Everything the hub's CLASS view reads in one call: header counts, the
-   * per-quiz rows (latest-attempt scored), the class score distribution and the
-   * completions-per-day series. Must own the class.
-   */
   classAnalytics(classroom: Classroom): Promise<ClassAnalyticsOverview> {
     return getClassAnalyticsOverview(this.client, classroom.id);
   }
 
-  /**
-   * One student ACROSS every class this teacher owns — the cross-class view a
-   * per-class RPC cannot give. Rejects `not_owner` unless the student is a
-   * current member of one of this teacher's classes.
-   */
   studentAnalytics(student: Student | string): Promise<StudentAnalytics> {
     return getStudentAnalytics(
       this.client,
@@ -401,10 +361,6 @@ export class Teacher implements Actor {
     );
   }
 
-  /**
-   * One quiz across every class it runs in (author-scoped): which classes have
-   * it, how each did, the pooled distribution, per-question difficulty.
-   */
   quizAnalytics(quiz: Quiz | string): Promise<QuizAnalyticsOverview> {
     return getQuizAnalyticsOverview(
       this.client,
@@ -412,10 +368,6 @@ export class Teacher implements Actor {
     );
   }
 
-  /**
-   * A page of the tutor-question log. Every scope passed must be one this
-   * teacher owns; at least one is required (`invalid_args` otherwise).
-   */
   tutorQuestions(
     scope: { student?: Student | string; quiz?: Quiz | string; classroom?: Classroom },
     window: { limit?: number; offset?: number } = {}
@@ -441,7 +393,6 @@ export class Teacher implements Actor {
     );
   }
 
-  /** Search this teacher's own entities in one scope, paged (hub search). */
   searchAnalytics(
     scope: AnalyticsScope,
     opts: { query?: string; limit?: number; offset?: number } = {}
@@ -449,7 +400,6 @@ export class Teacher implements Actor {
     return searchAnalyticsEntities(this.client, scope, opts);
   }
 
-  /** Single-student drill-down within a class (must own the class). */
   studentProgress(
     classroom: Classroom,
     student: Student
@@ -469,7 +419,6 @@ export class Teacher implements Actor {
     return addStudentToClass(this.client, classroom.id, email);
   }
 
-  /** Assign a quiz to a class with per-class tutor mode + attempt cap + published state + window. */
   assignQuiz(quiz: Quiz, opts: AssignOptions): Promise<AssignmentResult> {
     return assignQuizToClass(
       this.client,
@@ -489,12 +438,10 @@ export class Teacher implements Actor {
     );
   }
 
-  /** Remove a quiz assignment from a class. */
   unassignQuiz(quiz: Quiz, opts: { from: Classroom }): Promise<void> {
     return unassignQuizFromClass(this.client, opts.from.id, quiz.id);
   }
 
-  /** Flip an existing assignment's published state without re-assigning it. */
   setQuizPublished(
     quiz: Quiz,
     opts: { in: Classroom; published: boolean }
@@ -502,7 +449,6 @@ export class Teacher implements Actor {
     return setClassQuizPublished(this.client, opts.in.id, quiz.id, opts.published);
   }
 
-  /** Replace an existing assignment's scheduling window without touching anything else. */
   setSchedule(
     quiz: Quiz,
     opts: { in: Classroom; availableFrom: string | null; availableUntil: string | null }
@@ -513,17 +459,14 @@ export class Teacher implements Actor {
     });
   }
 
-  /** Every allocation of a quiz, any state — the editor's own view (`list_quiz_allocations`). */
   listAllocations(quiz: Quiz): Promise<QuizAllocation[]> {
     return listQuizAllocations(this.client, quiz.id);
   }
 
-  /** This teacher's quizzes with at least one allocation, bucketed live/scheduled. */
   listAllocationTags(): Promise<QuizAllocationTags[]> {
     return listMyQuizAllocationTags(this.client);
   }
 
-  /** Assign a quiz to several classes at once with one shared settings object. */
   bulkAssign(
     quiz: Quiz,
     opts: {
@@ -546,9 +489,6 @@ export class Teacher implements Actor {
     });
   }
 
-  // ── internals ───────────────────────────────────────────────────────────────
-
-  /** Read a question's structural fields + base-language text, for a partial revision. */
   private async readQuestionRow(
     questionId: string,
     baseLanguage: Language
@@ -584,7 +524,6 @@ export class Teacher implements Actor {
     };
   }
 
-  /** Read the live options of a just-authored question, in display order. */
   private async readOptions(
     questionId: string,
     baseLanguage: Language
@@ -608,7 +547,6 @@ export class Teacher implements Actor {
     );
   }
 
-  /** Write any extra-language question/option translations for a fixture. */
   private async writeExtraLanguages(
     questionId: string,
     options: QuizOption[],

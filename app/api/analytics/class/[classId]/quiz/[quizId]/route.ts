@@ -3,10 +3,6 @@ import { getClassQuizAnalytics } from "@/lib/analytics";
 import { handleError, requireAuth } from "../../../../http";
 
 /**
- * GET /api/analytics/class/[classId]/quiz/[quizId]  (teacher, per-class quiz analytics)
- *
- * The one quiz's analytics WITHIN this one class — score distribution and
- * per-question/per-option breakdown scored from each student's latest
  * completed attempt (`class_quiz_analytics`). Teacher-authed; the RPC denies
  * a non-owner (`not_owner` → 403) before checking the quiz is actually
  * assigned to the class (`not_assigned` → 404), so the two can't be told

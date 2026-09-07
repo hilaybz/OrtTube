@@ -3,8 +3,6 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { cn } from "@/components/ui/cn";
 
 /**
- * A headline metric on a glass surface. Analytics owns its own tile rather than
- * borrowing the overview's, because the two answer to different designs: this
  * one always carries a stroke icon naming the dimension, and its value uses
  * PROPORTIONAL figures — `tabular-nums` gives every digit the width of a zero,
  * which makes a large standalone number like `121` read loose. Tabular figures
@@ -45,7 +43,6 @@ export function MetricTile({
   );
 }
 
-/** The stat row every analytics view opens with. */
 export function MetricRow({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{children}</div>

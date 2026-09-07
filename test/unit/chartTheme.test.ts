@@ -1,15 +1,3 @@
-/**
- * The chart geometry every analytics chart is drawn from.
- *
- * These are the two decisions a chart cannot get wrong without being actively
- * misleading, so they are pinned here rather than left to eyeballing a rendered
- * SVG: the axis runs RIGHT to LEFT (the app is RTL-only, and `xForIndex` is the
- * single place that direction lives — a chart that silently flipped would invert
- * every trend a teacher reads), and a value maps to a y coordinate that cannot
- * escape the plot.
- *
- * Pure math, no DOM, no database.
- */
 import { describe, expect, it } from "vitest";
 import {
   BASELINE,
@@ -30,7 +18,6 @@ describe("xForIndex (RTL category axis)", () => {
     const first = xForIndex(0, 4);
     const last = xForIndex(3, 4);
     expect(first).toBeGreaterThan(last);
-    // The first band's centre sits half a band in from the right edge.
     expect(first).toBeCloseTo(PLOT_X0 + PLOT_W - bandWidth(4) / 2, 6);
   });
 

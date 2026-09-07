@@ -5,16 +5,6 @@ import {
 } from "@/lib/analyticsProgress";
 import { handleError, requireAuth } from "../../http";
 
-/**
- * GET /api/analytics/roster/[classId]            (per-student class progress)
- * GET /api/analytics/roster/[classId]?student=…  (single-student drill-down)
- *
- * Teacher-facing roster analytics: each current member's progress and scores
- * across the class's assigned, non-deleted quizzes, plus a class summary. With a
- * `student` query param it returns that one student's full per-quiz attempt list
- * instead. Teacher-authed via the caller's SSR client; the RPCs deny non-owners
- * (`not_owner` → 403).
- */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ classId: string }> }

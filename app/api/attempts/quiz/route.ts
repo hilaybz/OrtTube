@@ -4,13 +4,6 @@ import { ensureTranslation } from "@/lib/quiz";
 import type { Language } from "@/lib/lang";
 import { err, handleError, requireAuth } from "../http";
 
-/**
- * GET /api/attempts/quiz?classId=..&quizId=..  (answer-free student read)
- *
- * The only path by which a student sees a quiz. Text is resolved to the
- * student's language server-side; `is_correct` is never returned. Membership and
- * assignment are enforced inside the RPC.
- */
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if (auth.response) return auth.response;
@@ -29,7 +22,6 @@ export async function GET(req: NextRequest) {
       // Fire-and-forget: never delay or fail the student read on translation.
       onIncompleteTranslation: (qId: string, lang: Language) => {
         void ensureTranslation(qId, lang).catch(() => {
-          // best-effort: a failed re-fill just means another base fallback later.
         });
       },
     });

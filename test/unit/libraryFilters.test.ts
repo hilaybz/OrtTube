@@ -1,11 +1,3 @@
-/**
- * Unit tests for the teacher quiz library's search/filter/sort helpers — no
- * DB, no React. `sortQuizzes` never mutates its input; `matchesText`,
- * `matchesVisibility`, `matchesStatus` and `matchesClassFilter` are pure
- * predicates plugged into a `useMemo` filter chain by `QuizLibrary.tsx`, and
- * `normalizeStatusParam` turns the home page's `?status=` deep link into the
- * status filter's opening value.
- */
 import { describe, it, expect } from "vitest";
 import {
   sortQuizzes,
@@ -133,8 +125,6 @@ describe("matchesClassFilter", () => {
   });
 
   it("matches a quiz whose window in the selected class has already closed", () => {
-    // A closed window still happened in that class. Excluding it made "class +
-    // finished" — the pair a KPI-tile deep link produces — unsatisfiable.
     expect(matchesClassFilter(new Set(["c1"]), tagsWithClosed)).toBe(true);
     expect(matchesClassFilter(new Set([UNASSIGNED_CLASS]), tagsWithClosed)).toBe(false);
   });
@@ -145,8 +135,6 @@ describe("matchesClassFilter", () => {
   });
 
   it("UNASSIGNED_CLASS also matches a draft-only quiz (tags present, every bucket empty)", () => {
-    // list_my_quiz_allocation_tags still returns a row for these — a
-    // draft-only quiz must not be unreachable under every filter.
     const draftOnly = { quiz_id: "q3", live: [], scheduled: [], closed: [] };
     expect(matchesClassFilter(new Set([UNASSIGNED_CLASS]), draftOnly)).toBe(true);
     expect(matchesClassFilter(new Set(["c1"]), draftOnly)).toBe(false);
@@ -160,13 +148,6 @@ describe("matchesClassFilter", () => {
   });
 });
 
-/**
- * The status axis has to agree with the teacher home's KPI tiles exactly — the
- * tiles link INTO this filter, so a quiz counted under "חידונים פעילים" must be
- * one of the quizzes the filter then shows. Same rule as `countQuizStates`:
- * live or scheduled anywhere wins over closed elsewhere, and a quiz nobody can
- * reach yet (draft-only, or never allocated) is neither.
- */
 describe("matchesStatus", () => {
   const tags = (
     parts: Partial<Pick<QuizAllocationTags, "live" | "scheduled" | "closed">>

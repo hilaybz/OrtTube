@@ -1,25 +1,3 @@
-/**
- * Jobs integration tests — scheduled maintenance jobs (spec §6.1, §3.3).
- *
- *   • CRON_SECRET guard on every /api/jobs/* endpoint.
- *   • purge-content: hard-deletes quizzes past the retention window at QUIZ
- *     granularity (cascade removes children; a lone soft-deleted question in a
- *     live quiz survives).
- *   • gc-videos: deletes orphan videos past the grace window (no referencing
- *     quiz or tutor_questions), best-effort removes their Storage transcript.
- *   • reconcile-auth: deletes auth.users with no profile older than N minutes.
- *   • sweep-transcripts: deletes Storage transcript objects older than the TTL.
- *
- * Domain actors (school / teacher / student / classroom) are minted through the
- * actor DSL in `test/helpers/testbed` so FK owners read as who-they-are. The
- * retention arrangement itself (back-dated `deleted_at`/`created_at`, Storage
- * objects, `auth.users` timestamps) has no clean domain action, so it stays as
- * honest raw `pg`/Storage plumbing behind small, named helpers.
- *
- * Runs at the integration/gate step (which owns DB application). Auth-guard cases
- * run unconditionally; the DB-touching cases are skipped when the local DB is
- * unreachable so unit suites still pass without Supabase running.
- */
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { getPool, closePool, getServiceClient } from "../helpers/db";
 import {
@@ -42,11 +20,6 @@ beforeAll(() => {
   process.env.CRON_SECRET = CRON;
 });
 
-/**
- * Build a POST request to a job endpoint. Authorized with the valid cron secret
- * by default; pass `secret: null` to omit the header entirely, or a wrong string
- * to model an impostor.
- */
 function jobRequest(
   path: string,
   opts: { body?: Record<string, unknown>; secret?: string | null } = {}
@@ -61,13 +34,8 @@ function jobRequest(
   });
 }
 
-
 const online = await stackOnline();
 
-/**
- * A reset, empty school with one teacher, one student, and one classroom — the
- * cast that owns the rows each job operates on.
- */
 interface SchoolWorld {
   school: School;
   teacher: Teacher;
@@ -84,7 +52,6 @@ async function seedSchool(): Promise<SchoolWorld> {
   return { school, teacher, student, classroom };
 }
 
-/** Create an auth user with NO profile (an orphan reconcile-auth may reap). */
 async function createProfilelessUser(email: string): Promise<string> {
   const { data, error } = await getServiceClient().auth.admin.createUser({
     email,
@@ -109,8 +76,6 @@ async function clearTranscriptBucket(): Promise<void> {
   }
 }
 
-// ── Auth guard (DB-independent: assertSecret runs before any DB work) ─────────
-
 describe("job auth guard", () => {
   it("rejects a missing Authorization header with 401", async () => {
     const res = await purgeContent(
@@ -128,8 +93,6 @@ describe("job auth guard", () => {
     expect(res.status).toBe(401);
   });
 });
-
-// ── purge-content ─────────────────────────────────────────────────────────────
 
 describe.skipIf(!online)("purge-content", () => {
   let school: School;
@@ -159,17 +122,15 @@ describe.skipIf(!online)("purge-content", () => {
       return r.rows[0].id;
     };
 
-    const staleQuiz = await insertQuiz("40 days"); // past 30-day window → purged
-    const recentQuiz = await insertQuiz("1 day"); // inside window → kept
-    const liveQuiz = await insertQuiz(null); // not soft-deleted → kept
+    const staleQuiz = await insertQuiz("40 days");
+    const recentQuiz = await insertQuiz("1 day");
+    const liveQuiz = await insertQuiz(null);
 
-    // A soft-deleted question inside the LIVE quiz must survive (quiz granularity).
     await pool.query(
       "INSERT INTO public.questions (quiz_id, position_seconds, deleted_at) VALUES ($1, 10, now() - interval '99 days')",
       [liveQuiz]
     );
 
-    // Children under the purged quiz — must cascade away.
     const staleQuestion = await pool.query<{ id: string }>(
       "INSERT INTO public.questions (quiz_id, position_seconds) VALUES ($1, 5) RETURNING id",
       [staleQuiz]
@@ -200,14 +161,12 @@ describe.skipIf(!online)("purge-content", () => {
     const ids = survivors.rows.map((r) => r.id).sort();
     expect(ids).toEqual([recentQuiz, liveQuiz].sort());
 
-    // The live quiz's soft-deleted question is untouched.
     const liveQuestions = await pool.query(
       "SELECT 1 FROM public.questions WHERE quiz_id = $1",
       [liveQuiz]
     );
     expect(liveQuestions.rowCount).toBe(1);
 
-    // Cascade removed the purged quiz's attempts + tutor_questions.
     const orphanAttempts = await pool.query(
       "SELECT 1 FROM public.attempts WHERE quiz_id = $1",
       [staleQuiz]
@@ -220,8 +179,6 @@ describe.skipIf(!online)("purge-content", () => {
     expect(orphanTutor.rowCount).toBe(0);
   });
 });
-
-// ── gc-videos ─────────────────────────────────────────────────────────────────
 
 describe.skipIf(!online)("gc-videos", () => {
   let school: School;
@@ -246,24 +203,21 @@ describe.skipIf(!online)("gc-videos", () => {
       return r.rows[0].id;
     };
 
-    const orphanPastGrace = await insertVideo("yt-gc-orphan", "2 hours"); // orphan + old → deleted
-    const videoWithQuiz = await insertVideo("yt-gc-quiz", "2 hours"); // has quiz → kept
-    const orphanWithinGrace = await insertVideo("yt-gc-fresh", "0 minutes"); // orphan but inside grace → kept
-    const videoWithTutorRef = await insertVideo("yt-gc-tutor", "2 hours"); // referenced by tutor_questions → kept
+    const orphanPastGrace = await insertVideo("yt-gc-orphan", "2 hours");
+    const videoWithQuiz = await insertVideo("yt-gc-quiz", "2 hours");
+    const orphanWithinGrace = await insertVideo("yt-gc-fresh", "0 minutes");
+    const videoWithTutorRef = await insertVideo("yt-gc-tutor", "2 hours");
 
-    // videoWithQuiz gets a live quiz.
     const quiz = await pool.query<{ id: string }>(
       "INSERT INTO public.quizzes (author_id, video_id, school_id) VALUES ($1, $2, $3) RETURNING id",
       [teacher.id, videoWithQuiz, school.id]
     );
-    // videoWithTutorRef is referenced by a tutor_questions row whose quiz points elsewhere.
     await pool.query(
       `INSERT INTO public.tutor_questions (student_id, class_id, quiz_id, video_id, prompt)
        VALUES ($1, $2, $3, $4, 'hi')`,
       [student.id, classroom.id, quiz.rows[0].id, videoWithTutorRef]
     );
 
-    // A cached transcript object for the doomed orphan; assert GC removes it.
     const { error: upErr } = await getServiceClient()
       .storage.from(TRANSCRIPT_BUCKET)
       .upload("yt-gc-orphan.json", JSON.stringify({ segments: [] }), {
@@ -285,15 +239,12 @@ describe.skipIf(!online)("gc-videos", () => {
     expect(ids).toEqual([videoWithQuiz, orphanWithinGrace, videoWithTutorRef].sort());
     expect(ids).not.toContain(orphanPastGrace);
 
-    // Transcript object is gone.
     const { data: dl } = await getServiceClient()
       .storage.from(TRANSCRIPT_BUCKET)
       .download("yt-gc-orphan.json");
     expect(dl).toBeNull();
   });
 });
-
-// ── reconcile-auth ────────────────────────────────────────────────────────────
 
 describe.skipIf(!online)("reconcile-auth", () => {
   beforeEach(async () => {
@@ -305,7 +256,6 @@ describe.skipIf(!online)("reconcile-auth", () => {
 
     const staleOrphan = await createProfilelessUser("stale-orphan@test.orttube.local");
     const freshOrphan = await createProfilelessUser("fresh-orphan@test.orttube.local");
-    // Backdate only the stale one past the 30-minute floor.
     await pool.query("UPDATE auth.users SET created_at = now() - interval '40 minutes' WHERE id = $1", [
       staleOrphan,
     ]);
@@ -325,15 +275,13 @@ describe.skipIf(!online)("reconcile-auth", () => {
     expect(await exists(staleOrphan)).toBe(false);
     expect(await exists(freshOrphan)).toBe(true);
 
-    // Seeded users (which HAVE profiles) are never touched.
     const seeded = await pool.query("SELECT count(*)::int AS n FROM public.profiles");
     expect(seeded.rows[0].n).toBe(2);
   });
 
   it("clamps the age floor to a 5-minute minimum so an in-flight signup is not reaped", async () => {
-    const inFlightUserId = await createProfilelessUser("inflight@test.orttube.local"); // ~0 min old
+    const inFlightUserId = await createProfilelessUser("inflight@test.orttube.local");
 
-    // Even asking for olderThanMinutes: 0, the route clamps to >= 5.
     const res = await reconcileAuth(
       jobRequest("/api/jobs/reconcile-auth", { body: { olderThanMinutes: 0 } })
     );
@@ -346,8 +294,6 @@ describe.skipIf(!online)("reconcile-auth", () => {
     expect(r.rowCount).toBe(1);
   });
 });
-
-// ── sweep-transcripts ─────────────────────────────────────────────────────────
 
 describe.skipIf(!online)("sweep-transcripts", () => {
   beforeEach(async () => {
@@ -398,7 +344,6 @@ describe.skipIf(!online)("sweep-transcripts", () => {
     const { data: newDl } = await bucket.download("sweep-new.json");
     expect(newDl).not.toBeNull();
 
-    // Cleanup the surviving object so it does not leak into other suites.
     await bucket.remove(["sweep-new.json"]);
   });
 });

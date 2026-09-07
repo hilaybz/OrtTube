@@ -27,10 +27,8 @@ import {
   fromDatetimeLocalValue,
 } from "@/components/teacher/scheduleFormat";
 
-// Allocation rows are tall (name, state, settings line), so a page is short.
 const ALLOCATIONS_PAGE_SIZE = 5;
 
-/** Row order, matching `AllocationState`'s declared draft→scheduled→live→done order. */
 const STATE_ORDER: Record<AllocationState, number> = {
   draft: 0,
   scheduled: 1,
@@ -38,14 +36,6 @@ const STATE_ORDER: Record<AllocationState, number> = {
   done: 3,
 };
 
-/**
- * Sort key within a state — soonest-relevant-date first, so a teacher
- * scanning the list sees what needs attention soonest at the top of each
- * group. Mirrors `sectionSortValue` in `AssignedQuizzesSection` (same idea,
- * applied to one flat list here instead of separate section headers, since
- * this view is per-quiz across a handful of classes rather than per-class
- * across many quizzes).
- */
 function stateSortValue(state: AllocationState, a: QuizAllocation): number {
   switch (state) {
     case "live":
@@ -53,27 +43,12 @@ function stateSortValue(state: AllocationState, a: QuizAllocation): number {
     case "scheduled":
       return a.available_from ? new Date(a.available_from).getTime() : Infinity;
     case "done":
-      // Most-recently-closed first.
       return a.available_until ? -new Date(a.available_until).getTime() : Infinity;
     case "draft":
-      // Newest-assigned first.
       return -new Date(a.assigned_at).getTime();
   }
 }
 
-/**
- * Allocation management for a quiz, on the editor page (Epic 2A.3): every
- * class this quiz is allocated to, any state, with per-row publish toggle /
- * edit / unassign — plus bulk-assign to several new classes at once. The
- * quiz-side mirror of `AssignedQuizzesSection` (which does the same job from
- * a single class looking at its quizzes).
- *
- * `allocations` is a server read (`list_quiz_allocations`, fetched by the
- * edit page) rather than a client-side fetch-on-mount — same convention as
- * `AssignedQuizzesSection`'s `assigned` prop. Every mutation calls
- * `router.refresh()` so the server re-reads and hands back fresh data, rather
- * than this component owning its own copy of the list.
- */
 export function AllocationsSection({
   quizId,
   classes,
@@ -90,7 +65,6 @@ export function AllocationsSection({
   const [editing, setEditing] = useState<QuizAllocation | null>(null);
   const [unassigning, setUnassigning] = useState<QuizAllocation | null>(null);
 
-  // The row (class) awaiting "end quiz now" confirmation (null = closed).
   const [endConfirm, setEndConfirm] = useState<QuizAllocation | null>(null);
 
   async function togglePublished(classId: string, next: boolean) {
@@ -109,9 +83,6 @@ export function AllocationsSection({
     }
   }
 
-  /** Ends this allocation right now (see `EndQuizConfirmModal`'s doc comment
-   * for why this is just the existing window-close mechanism, not new
-   * grading logic). Preserves `available_from` as-is. */
   async function endQuiz(classId: string, availableFrom: string | null) {
     setPending(classId);
     setRowError("");
@@ -132,7 +103,6 @@ export function AllocationsSection({
     }
   }
 
-  /** Reopens a `done` allocation, open-ended — clears `available_until`. */
   async function reopenQuiz(classId: string, availableFrom: string | null) {
     setPending(classId);
     setRowError("");
@@ -240,8 +210,6 @@ export function AllocationsSection({
                         </span>
                         <Badge variant={STATE_VARIANT[state]}>{STATE_LABEL[state]}</Badge>
                       </div>
-                      {/* The settings behind the row, as one quiet line rather
-                          than a badge wall: they are context, not status. */}
                       <p className="text-xs text-[var(--body-subtle)]">
                         {[
                           `מורה־AI: ${TUTOR_MODE_LABELS[a.tutor_mode]}`,

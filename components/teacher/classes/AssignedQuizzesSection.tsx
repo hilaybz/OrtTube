@@ -29,25 +29,8 @@ import {
   fromDatetimeLocalValue,
 } from "@/components/teacher/scheduleFormat";
 
-/**
- * The lifecycle sections, in display order. Open work comes first and the
- * hidden ones sink to the bottom, since a quiz students can't see is the one a
- * teacher is least likely to be looking for.
- */
 const SECTION_ORDER: AllocationState[] = ["live", "scheduled", "done", "draft"];
 
-/**
- * How each section reads. A coloured rail down the inline start plus a heading
- * in the same colour groups the rows without tinting the glass. Colour follows
- * availability: open work is green (students can reach it right now), scheduled
- * is amber (it hasn't started), ended is neutral gray (it's settled and closed).
- *
- * Hidden rows share that neutral gray but draw the rail as a broken line and
- * carry an eye-off glyph in the heading, because gray alone can't tell "closed"
- * from "never shown". They also sit last and render dimmed: quizzes withdrawn
- * from students aren't a phase of the lifecycle a teacher works through, they
- * are rows parked to one side (and they get no analytics — nobody took them).
- */
 const SECTION_STYLE: Record<
   AllocationState,
   { title: string; icon?: IconName; frame: string; heading: string }
@@ -75,7 +58,6 @@ const SECTION_STYLE: Record<
   },
 };
 
-/** The things a teacher asks of this list. */
 type QuizFilter = "all" | "active" | "done" | "hidden";
 
 const FILTER_SEGMENTS = [
@@ -85,7 +67,6 @@ const FILTER_SEGMENTS = [
   { value: "hidden", label: "מוסתרים" },
 ] as const;
 
-/** Which lifecycle sections a filter admits. */
 export function sectionInFilter(state: AllocationState, filter: QuizFilter): boolean {
   switch (filter) {
     case "all":
@@ -99,11 +80,6 @@ export function sectionInFilter(state: AllocationState, filter: QuizFilter): boo
   }
 }
 
-/**
- * Sort key per section — soonest-relevant-date first, so a teacher scanning
- * the list sees what needs attention soonest at the top of each group.
- * No-date items sink to the end rather than sorting arbitrarily.
- */
 function sectionSortValue(state: AllocationState, a: AssignedQuiz): number {
   switch (state) {
     case "live":
@@ -111,20 +87,12 @@ function sectionSortValue(state: AllocationState, a: AssignedQuiz): number {
     case "scheduled":
       return a.available_from ? new Date(a.available_from).getTime() : Infinity;
     case "done":
-      // Most-recently-closed first.
       return a.available_until ? -new Date(a.available_until).getTime() : Infinity;
     case "draft":
-      // Newest-assigned first.
       return -new Date(a.assigned_at).getTime();
   }
 }
 
-/**
- * Buckets assigned quizzes into their four lifecycle sections and sorts each
- * — pure, so it's unit-testable without a DOM (mirrors
- * `sortFeed` in `lib/studentFeedFilters.ts`).
- * Does not mutate `assigned`.
- */
 export function groupAssignedByState(
   assigned: AssignedQuiz[],
   now: Date = new Date()
@@ -146,23 +114,10 @@ export function groupAssignedByState(
   return groups;
 }
 
-/** The text a row is titled by, and searched by. */
 function headingOf(a: AssignedQuiz): string {
   return a.title ?? a.video_title ?? "חידון";
 }
 
-/**
- * Assigned-quizzes management for a class: a search box and an
- * all/active/ended filter over four lifecycle sections, each paged, with
- * icon-only row actions (analytics, edit, show/hide, end now, unassign) and an
- * "assign" modal that picks from the teacher's own quizzes and sets
- * `tutorMode` + `maxAttempts` + `published` + an optional scheduling window.
- * Mutations round-trip through `apiFetch` + `router.refresh()`.
- *
- * Each row is itself a stretched link: it opens the quiz editor for a quiz
- * this teacher authored, or a read-only preview for an assigned `shared` quiz
- * someone else wrote (the editor would just reject them as `not_owner`).
- */
 export function AssignedQuizzesSection({
   classId,
   assigned,
@@ -178,7 +133,6 @@ export function AssignedQuizzesSection({
   // with each other and with the section they were sorted into.
   const [now] = useState(() => new Date());
 
-  // Only quizzes not already assigned to this class are assignable.
   const available = useMemo(() => {
     const taken = new Set(assigned.map((a) => a.quiz_id));
     return myQuizzes.filter((q) => !taken.has(q.quiz_id));
@@ -216,10 +170,8 @@ export function AssignedQuizzesSection({
   const [pending, setPending] = useState<string | null>(null);
   const [rowError, setRowError] = useState("");
 
-  // Read-only preview for an assigned shared quiz this teacher didn't author.
   const [previewQuizId, setPreviewQuizId] = useState<string | null>(null);
   const [editing, setEditing] = useState<AssignedQuiz | null>(null);
-  // The row awaiting unassign confirmation — destructive, so it asks first.
   const [unassigning, setUnassigning] = useState<AssignedQuiz | null>(null);
 
   // The row awaiting "end quiz now" confirmation (null = modal closed). Ending
@@ -283,7 +235,6 @@ export function AssignedQuizzesSection({
     }
   }
 
-  /** Runs one row mutation with that row's spinner and error surface. */
   async function rowAction(
     id: string,
     failure: string,
@@ -526,7 +477,6 @@ export function AssignedQuizzesSection({
         </div>
       </Modal>
 
-
       <Modal
         open={open}
         onClose={() => !busy && setOpen(false)}
@@ -641,11 +591,6 @@ export function AssignedQuizzesSection({
   );
 }
 
-/**
- * One lifecycle section: its heading, its rows, and its own pager — each
- * section pages independently so a long list of ended quizzes never pushes the
- * open ones off the screen.
- */
 function AllocationSection({
   classId,
   state,
@@ -721,11 +666,6 @@ function AllocationSection({
  * `allocation.is_own` decides the destination: your own quiz opens the
  * editor; an assigned shared quiz someone else authored opens the read-only
  * preview instead of dead-ending on the editor's "not yours" page.
- *
- * The row carries ONE status chip — a sentence, not a state noun, so it needs
- * no date range beside it to be understood — plus the facts a teacher chooses
- * an assignment by. Everything else about the allocation lives one click away
- * in the edit modal.
  */
 function AssignedQuizRow({
   classId,
@@ -822,8 +762,6 @@ function AssignedQuizRow({
             disabled={busy}
             onClick={onEdit}
           />
-          {/* An ended assignment has nothing to publish — reopening it is the
-              one thing a teacher wants from that row instead. */}
           {status.state === "done" ? (
             <IconButton
               name="replay"

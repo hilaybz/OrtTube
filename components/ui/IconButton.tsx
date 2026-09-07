@@ -15,12 +15,8 @@ const SIZE: Record<Size, { box: string; icon: number }> = {
 };
 
 const VARIANT: Record<Variant, string> = {
-  // Quiet by default — icon actions sit inside rows and cards, so they only
-  // gain a surface on hover.
   neutral:
     "text-[var(--body)] hover:bg-[var(--neutral-quaternary)] hover:text-[var(--heading)]",
-  // The one affirmative icon action per screen (add, assign) reads as a button:
-  // ink on mint, matching `Button variant="brand"` (white on mint fails WCAG).
   brand:
     "bg-[var(--brand)] text-[#06210f] hover:bg-[var(--brand-strong)] shadow-[var(--shadow-xs)]",
   danger: "text-[var(--fg-danger)] hover:bg-[var(--danger-soft)]",
@@ -29,16 +25,6 @@ const VARIANT: Record<Variant, string> = {
 const base =
   "inline-flex flex-none items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent";
 
-/**
- * Icon-only button. `label` is both the `aria-label` and the hover/focus
- * tooltip, so an icon action is never unlabelled: this is the component the
- * "obvious actions become icons" rule leans on (delete, edit, assign, close,
- * send, clear filters).
- *
- * `busy` swaps the glyph for a spinner and disables the button, so a pending
- * mutation cannot be fired twice. Destructive actions keep their confirmation
- * dialog — `variant="danger"` only changes the colour.
- */
 export function IconButton({
   name,
   label,
@@ -52,12 +38,10 @@ export function IconButton({
   ...props
 }: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children" | "aria-label"> & {
   name: IconName;
-  /** Accessible name and tooltip text — required; an icon alone says nothing. */
   label: string;
   variant?: Variant;
   size?: Size;
   busy?: boolean;
-  /** Preferred tooltip side; the bubble flips and clamps itself when it must. */
   tooltipPlacement?: "top" | "bottom";
 }) {
   const { box, icon } = SIZE[size];
@@ -77,11 +61,6 @@ export function IconButton({
   );
 }
 
-/**
- * The navigation twin of `IconButton` — same look and labelling, but it renders
- * a link. Use it when the action is "go somewhere" (open analytics, open a
- * class); use `IconButton` when it mutates something.
- */
 export function IconLink({
   name,
   label,
@@ -97,7 +76,6 @@ export function IconLink({
   href: string;
   variant?: Variant;
   size?: Size;
-  /** Preferred tooltip side; the bubble flips and clamps itself when it must. */
   tooltipPlacement?: "top" | "bottom";
 }) {
   const { box, icon } = SIZE[size];

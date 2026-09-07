@@ -36,11 +36,8 @@ import {
 } from "@/lib/analyticsCutoff";
 import { confirmContentEdit } from "./analyticsWarning";
 
-// How long a marker-click highlight lingers on the matching question card.
 const HIGHLIGHT_MS = 1600;
 
-// The quiz's own two states, shown as the choice itself rather than as a
-// labelled "נראות" field — the two labels say what they mean.
 const VISIBILITY_SEGMENTS: ReadonlyArray<Segment<QuizVisibility>> = [
   { value: "private", label: "פרטי" },
   { value: "shared", label: "משותף לביה\u05f4ס" },
@@ -82,10 +79,6 @@ const QUESTION_TYPE_SEGMENTS: ReadonlyArray<Segment<QuestionType>> = [
 ];
 const GEN_QUESTION_TYPE_DEFAULT: QuestionType = "allow-multi";
 
-/**
- * The "generate with AI" button — primary hero on an empty quiz, quiet "add
- * more" secondary once the quiz has questions. Opens the count chooser.
- */
 function GenerateTrigger({
   hero,
   disabled,
@@ -103,12 +96,6 @@ function GenerateTrigger({
   );
 }
 
-/**
- * Chooser dialog: pick how many questions to generate. The copy states the
- * questions are ADDED, so the number is never read as a running total, and names
- * the quiz's source language as a fact about this run — generation has no
- * language input, so the dialog must never read as a language choice.
- */
 function GenerateModal({
   open,
   hasQuestions,
@@ -219,14 +206,6 @@ function GenerateModal({
   );
 }
 
-/**
- * The teacher quiz-authoring editor. Reads its initial tree from
- * `get_quiz_for_author` (passed by the server page) and drives every edit through
- * the documented surfaces: question upsert / AI generate go through
- * `/api/quizzes/[id]/*`; quiz-meta edits and soft-deletes call the owner-checked
- * RPCs directly. After each mutation it `router.refresh()`es so the server re-reads
- * the canonical tree.
- */
 export function QuizEditor({
   initial,
   classes,
@@ -280,12 +259,6 @@ export function QuizEditor({
   const [currentTime, setCurrentTime] = useState<number | null>(null);
   // The video's length: what the database already knows, then whatever the
   // player reports once it boots.
-  //
-  // This used to start at `null` and wait for the player, because the scrape
-  // that fills `videos.duration_seconds` was blocked by YouTube and the column
-  // was empty for most quizzes. That scrape now goes out through the proxy pool
-  // and works, so ignoring the stored value just means the header reads "ייקבע
-  // עם טעינת הנגן" until someone presses play on a length we already had.
   //
   // The player still wins when it answers — `onProgress` guards on `> 0`, so it
   // can only ever replace this with a real measurement, never regress it.
@@ -341,9 +314,8 @@ export function QuizEditor({
     }
   }
 
-  /** Validates and saves the time-restriction toggle + minutes (issue #80).
-   * Turning restriction off always clears the stored number server-side
-   * (`update_quiz`'s own rule), regardless of what's left in the field. */
+  /** Turning restriction off always clears the stored number server-side,
+   * regardless of what's left in the field. */
   async function saveDuration() {
     setBanner(null);
     setDurationError(null);
@@ -371,10 +343,6 @@ export function QuizEditor({
     }
   }
 
-  /**
-   * Soft-deletes the open quiz and leaves the editor. Navigation is deliberate:
-   * staying would leave the teacher editing a quiz that no longer exists.
-   */
   async function deleteQuiz() {
     setBanner(null);
     setDeleting(true);
@@ -475,18 +443,10 @@ export function QuizEditor({
   function openEdit(q: AuthorQuestion) {
     setEditing(q);
     setModalOpen(true);
-    // Follow the preview to whatever the teacher is about to edit.
     setActiveQuestionId(q.id);
     videoPanelRef.current?.seekTo(q.position_seconds);
   }
 
-  /** A timeline marker (or a cluster popover item) was picked: point the
-   * question list at it with a transient highlight. Seeking the player
-   * itself is VideoPreviewPanel's own responsibility.
-   *
-   * The timeline always carries every marker while the list below is paged, so
-   * the picked question may live on another page — switch to it first, and let
-   * the card mount before scrolling to it. */
   function handleMarkerSelect(q: AuthorQuestion) {
     setActiveQuestionId(q.id);
     if (highlightTimeout.current) clearTimeout(highlightTimeout.current);
@@ -554,7 +514,6 @@ export function QuizEditor({
     }
   }
 
-  /** A single marker was dragged to a new position. */
   async function handleMarkerMove(questionId: string, positionSeconds: number): Promise<boolean> {
     const q = questions.find((x) => x.id === questionId);
     if (!q) return false;
@@ -562,9 +521,9 @@ export function QuizEditor({
     setBanner(null);
     const ok = await saveQuestionPosition(q, positionSeconds);
     // `refresh()` re-fetches the server-sorted tree so the timeline and the
-    // list below agree afterward (mirrors 2.11) — and, via the new
-    // `questions` it hands back down, confirms the timeline's pinned drag
-    // position so it doesn't flicker back to the old spot first.
+    // list below agree afterward — and, via the new `questions` it hands back
+    // down, confirms the timeline's pinned drag position so it doesn't flicker
+    // back to the old spot first.
     if (ok) refresh();
     return ok;
   }
@@ -610,9 +569,6 @@ export function QuizEditor({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Page header: what this quiz is, the two facts that describe its size,
-          and the one destructive action — deliberately out of the settings box
-          below, where it used to hide as a text link. */}
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-semibold text-[var(--heading)]">
@@ -661,7 +617,6 @@ export function QuizEditor({
         </Alert>
       )}
 
-      {/* 1 · Title + who can see the quiz */}
       <GlassCard className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <label htmlFor="quiz-title" className="text-sm font-medium text-[var(--heading)]">
@@ -707,12 +662,6 @@ export function QuizEditor({
           {metaBusy && <Spinner size={16} />}
         </div>
 
-        {/* Quiz length — one row of this same settings card rather than a card
-            of its own: it is a single checkbox and a single number, and a whole
-            glass block for it pushed the video and the questions off the first
-            screen. Unchecked is the default and means students see the estimate
-            derived from the video's length; checking it asks for the one number
-            that replaces that estimate. */}
         <div className="flex flex-col gap-2 border-t border-[var(--glass-border)] pt-4">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-[var(--heading)]">
@@ -767,8 +716,6 @@ export function QuizEditor({
         </div>
       </GlassCard>
 
-      {/* 2 · The video itself — the real player, with the checkpoint timeline
-          under it. No link out: the quiz is authored against this player. */}
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold text-[var(--heading)]">הסרטון</h2>
         <VideoPreviewPanel
@@ -787,7 +734,6 @@ export function QuizEditor({
         />
       </section>
 
-      {/* 3 · Questions */}
       <section className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-[var(--heading)]">
@@ -808,9 +754,6 @@ export function QuizEditor({
           </div>
         </div>
 
-        {/* Why the AI action is missing on a quiz that already has questions —
-            the transcript tag that used to carry this is gone, but the reason
-            for a hidden button still has to be legible. */}
         {questions.length > 0 && transcriptUnavailable && (
           <p className="flex items-center gap-1.5 text-sm text-[var(--body-subtle)]">
             <Icon name="info" size={14} className="flex-none" />
@@ -862,9 +805,7 @@ export function QuizEditor({
         )}
       </section>
 
-      {/* 4 · Allocations */}
       <AllocationsSection quizId={quizId} classes={classes} allocations={allocations} />
-
 
       <GenerateModal
         open={genModalOpen}

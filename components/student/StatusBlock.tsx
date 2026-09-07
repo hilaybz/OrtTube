@@ -1,17 +1,6 @@
 import { cn } from "@/components/ui/cn";
 import { Icon, type IconName } from "@/components/ui/Icon";
 
-/**
- * The panel form of a student's "where does this quiz stand": an icon chip, a
- * headline that answers the question, and a quiet meta line with the detail
- * behind it (a date, a wall-clock deadline).
- *
- * This is the shape for a screen with room for it — the page that opens a quiz,
- * where the countdown is a thing to look at. A feed card states the same fact
- * in the tighter bar along its own bottom edge (`components/student/QuizCard`),
- * and the two share their tone vocabulary so the reading carries over: green is
- * done, amber is soon, red is over, plain is "nothing pressing".
- */
 export type StatusTone = "success" | "danger" | "warning" | "brand" | "neutral";
 
 const TONE: Record<StatusTone, string> = {
@@ -32,11 +21,8 @@ export function StatusBlock({
 }: {
   icon: IconName;
   tone?: StatusTone;
-  /** The answer itself — a grade, "היום", "לא הוגש". Carries the emphasis. */
   headline: React.ReactNode;
-  /** The headline is this card's figure (a grade) rather than a phrase — size it up. */
   strong?: boolean;
-  /** The detail behind it, in the quiet register: a date, a closing time. */
   meta?: React.ReactNode;
   className?: string;
 }) {

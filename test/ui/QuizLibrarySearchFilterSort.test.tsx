@@ -1,9 +1,3 @@
-/**
- * Search/filter/sort on the teacher quiz library (backlog 1.4 / issue #14).
- * Both tabs keep independent state; "My quizzes" additionally supports a
- * class-assignment filter the catalog tab deliberately cannot have (no
- * cross-teacher allocation visibility).
- */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -71,7 +65,6 @@ const CLASSES: ClassRow[] = [
   { id: "c2", teacher_id: "t", school_id: "s", name: "כיתה ב", language: "he", created_at: "2026-01-01T00:00:00.000Z" },
 ];
 
-// q3 is deliberately absent — "not assigned to any class."
 const TAGS: Record<string, QuizAllocationTags> = {
   q1: {
     quiz_id: "q1",
@@ -87,7 +80,6 @@ const TAGS: Record<string, QuizAllocationTags> = {
   },
 };
 
-/** q1 finished (closed in כיתה א), q2 still scheduled — one quiz per status. */
 const STATUS_TAGS: Record<string, QuizAllocationTags> = {
   ...TAGS,
   q1: {
@@ -163,16 +155,10 @@ function headings(): string[] {
   return screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent ?? "");
 }
 
-/** Open a `MultiSelectDropdown` by its label (the trigger button's accessible name). */
 async function openFilter(label: string) {
   await userEvent.click(screen.getByRole("button", { name: label }));
 }
 
-/**
- * Press "clear filters". Two of them can be on screen at once — the filter
- * bar's, and the one the no-matches card offers where the reader is already
- * looking — and both do the same thing, so pressing the first is enough.
- */
 async function clearFilters() {
   await userEvent.click(screen.getAllByRole("button", { name: "נקה מסננים" })[0]);
 }
@@ -271,12 +257,6 @@ describe("QuizLibrary — My quizzes search/filter/sort", () => {
   });
 });
 
-/**
- * The status axis, and the deep link the teacher home's KPI tiles produce
- * (`/dashboard/quizzes?status=active|finished`). Semantics are pinned in
- * `test/unit/libraryFilters.test.ts`; here it is the wiring — the dropdown
- * drives the grid, and the param decides where the dropdown starts.
- */
 describe("QuizLibrary — status filter and its deep link", () => {
   it("filters to active quizzes (live or scheduled anywhere)", async () => {
     renderLibrary({ allocationTags: STATUS_TAGS });
@@ -310,7 +290,6 @@ describe("QuizLibrary — status filter and its deep link", () => {
 
 describe("QuizLibrary — paging", () => {
   it("pages the grid at 12 cards and moves to the rest on the next page", async () => {
-    // 13 quizzes, distinct titles, newest first by construction.
     const many = Array.from({ length: 13 }, (_, i) =>
       myQuiz({
         quiz_id: `p${i}`,
@@ -346,9 +325,8 @@ describe("QuizLibrary — School catalog search/filter/sort", () => {
 
   it("searches by video title, independent of the Mine tab's own search state", async () => {
     renderLibrary();
-    await userEvent.type(screen.getByLabelText("חיפוש"), "רומא"); // types into "mine"
+    await userEvent.type(screen.getByLabelText("חיפוש"), "רומא");
     await openSchoolTab();
-    // The school tab's own search box starts empty — both quizzes still show.
     expect(headings().sort()).toEqual(["חידון פיזיקה", "מבוא לכימיה"].sort());
   });
 

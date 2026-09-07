@@ -1,33 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/**
- * Content language (mirrors `@/lib/lang`'s `Language`; declared locally so this
- * module type-checks in isolation before the shared foundation is merged at the
- * gate). Structurally identical, so no collision when the branches combine.
- */
 export type Language = "he" | "ar" | "en";
 
 /**
- * Attempts service layer. Thin, typed TypeScript wrappers over
- * the server-authoritative SECURITY DEFINER RPCs:
- *
- *   get_quiz_for_student   → the ONLY student-facing quiz read (answer-free)
- *   start_or_resume_attempt→ start a new run or resume an incomplete one
- *   submit_answer          → server-side grading + was_correct snapshot
- *   complete_attempt       → finalize + score summary
- *
- * Clients are typed as the un-parameterised `SupabaseClient` on purpose (same
- * convention as lib/classes.ts / lib/quiz.ts): these functions compile
- * independently of `lib/supabase/types.ts` being regenerated for the RPCs this
- * task adds (the gate regenerates those types).
- *
  * All calls run through the caller's AUTHENTICATED (RLS-subject) client so
  * `auth.uid()` inside each SECURITY DEFINER RPC resolves to the signed-in
  * student. No answer key (`is_correct`) or per-question correctness ever crosses
  * this boundary — grading is server-side and only aggregate scores come back.
  */
 
-/** Stable error thrown when an RPC raises one of its documented codes. */
 export class AttemptError extends Error {
   code: string;
   constructor(code: string) {
@@ -42,9 +23,6 @@ function unwrap<T>(res: { data: T; error: { message: string } | null }): T {
   return res.data;
 }
 
-// ── Answer-free quiz read ─────────────────────────────────────────────────────
-
-/** A single option as shown to a student — never carries `is_correct`. */
 export interface StudentOption {
   id: string;
   order_index: number;
@@ -70,30 +48,16 @@ export interface StudentQuiz {
   class_id: string;
   title: string | null;
   base_language: Language;
-  /** The language the text was resolved to (preferred → class → base). */
   resolved_language: Language;
-  /** false → some rows fell back to base because the resolved language is missing. */
   served_complete: boolean;
   questions: StudentQuestion[];
 }
 
-/**
- * Optional best-effort hook fired when the resolved language was incomplete, so a
- * caller can enqueue `ensureTranslation` to fill it for next time. Injected
- * (not statically imported) so this module compiles without the translation lib present.
- * Any failure here is swallowed — the read already fell back to base.
- */
 export type EnqueueTranslationFn = (
   quizId: string,
   resolvedLanguage: Language
 ) => void | Promise<void>;
 
-/**
- * Fetch the answer-free quiz for the signed-in student in a class. Verifies
- * membership + assignment server-side and resolves text to the student's
- * language, falling back to base per-row. When `served_complete` is false and an
- * `onIncompleteTranslation` hook is supplied, it is invoked best-effort.
- */
 export async function getQuizForStudent(
   client: SupabaseClient,
   classId: string,
@@ -112,29 +76,19 @@ export async function getQuizForStudent(
     try {
       await opts.onIncompleteTranslation(quiz.quiz_id, quiz.resolved_language);
     } catch {
-      // best-effort: a translation enqueue failure must not fail the read.
     }
   }
   return quiz;
 }
 
-// ── Start / resume ────────────────────────────────────────────────────────────
-
 export interface StartAttemptResult {
   attempt_id: string;
   attempt_no: number;
-  /** true → an existing incomplete attempt was resumed. */
   resumed: boolean;
   started_at: string;
-  /** Questions already answered in this attempt (ids only — never correctness). */
   answered_question_ids: string[];
 }
 
-/**
- * Start a new attempt or resume the newest incomplete one for (student, class,
- * quiz). Enforces `max_attempts` (completed attempts only) and snapshots the live
- * question set at start. Raises `no_attempts_left` when exhausted.
- */
 export async function startOrResumeAttempt(
   client: SupabaseClient,
   classId: string,
@@ -150,8 +104,6 @@ export async function startOrResumeAttempt(
   return { ...result, answered_question_ids: result.answered_question_ids ?? [] };
 }
 
-// ── Submit ────────────────────────────────────────────────────────────────────
-
 export interface SubmitAnswerResult {
   attempt_id: string;
   question_id: string;
@@ -160,13 +112,9 @@ export interface SubmitAnswerResult {
 }
 
 /**
- * Submit the chosen option(s) for a question in an attempt. Grading is
- * server-side; the result is recorded with a `was_correct` snapshot and is NOT
- * returned to the client. Raises `already_answered` on a repeat submission.
  *
  * If the allocation's scheduling window has already closed, the RPC finalizes
- * the attempt right there (hard cutoff — see 129_attempt_window_finalization)
- * and returns `{ recorded: false, window_closed: true }` instead of raising —
+ * the attempt right there (a hard cutoff) and returns `{ recorded: false, window_closed: true }` instead of raising —
  * a raised exception would roll back that finalizing write. This wrapper turns
  * that flag into a thrown `AttemptError("window_closed")` so callers keep
  * handling it the same way as any other stable error code.
@@ -191,8 +139,6 @@ export async function submitAnswer(
   return result;
 }
 
-// ── Complete ──────────────────────────────────────────────────────────────────
-
 export interface AttemptSummary {
   attempt_id: string;
   attempt_no: number;
@@ -201,11 +147,6 @@ export interface AttemptSummary {
   num_correct: number;
 }
 
-/**
- * Finalize an attempt: stamps completion and returns the aggregate score
- * (num_correct / num_questions) derived from the answer + question snapshots.
- * Idempotent — a repeat call returns the stored summary unchanged.
- */
 export async function completeAttempt(
   client: SupabaseClient,
   attemptId: string
@@ -216,9 +157,6 @@ export async function completeAttempt(
   return data as unknown as AttemptSummary;
 }
 
-// ── Reveal-gated review ─────────────────────────────────────────────────────────
-
-/** One option's revealed label — always the answer-free display text. */
 export interface AttemptReviewOption {
   id: string;
   order_index: number;
@@ -256,12 +194,6 @@ export interface AttemptReview {
   questions?: AttemptReviewQuestion[];
 }
 
-/**
- * Fetch the reveal-gated review for one of the caller's own attempts. Per-question
- * correctness / correct options / explanations are returned ONLY when the student
- * has no attempts left (finite max_attempts fully used); otherwise only the
- * aggregate score is exposed. Never leaks the answer key while retakes remain.
- */
 export async function getAttemptReview(
   client: SupabaseClient,
   attemptId: string
@@ -271,8 +203,6 @@ export async function getAttemptReview(
   );
   return data as unknown as AttemptReview;
 }
-
-// ── Student attempt-state read (feed status + player deep-load + review entry) ──
 
 /**
  * Everything the student UI needs for one (class, quiz) that the other reads
@@ -291,7 +221,6 @@ export interface StudentAttemptState {
   duration_seconds: number | null;
   base_language: Language;
   tutor_mode: "off" | "hints" | "full";
-  /** null = unlimited. */
   max_attempts: number | null;
   /**
    * The allocation's close time and the server's clock at read time — null
@@ -304,9 +233,7 @@ export interface StudentAttemptState {
   server_now: string;
   attempt_count: number;
   completed_count: number;
-  /** Remaining completed-attempt allowance; null = unlimited. */
   attempts_left: number | null;
-  /** true → the newest attempt is incomplete (resumable). */
   in_progress: boolean;
   resume_attempt_id: string | null;
   last_completed_attempt_id: string | null;
@@ -314,10 +241,6 @@ export interface StudentAttemptState {
   last_num_questions: number | null;
 }
 
-/**
- * Fetch the signed-in student's attempt state for a (class, quiz). Verifies
- * membership + assignment server-side; raises not_member / not_assigned.
- */
 export async function listMyAttemptsForQuiz(
   client: SupabaseClient,
   classId: string,
@@ -336,11 +259,10 @@ export async function listMyAttemptsForQuiz(
  * The newest completed attempt for (student, class, quiz), read directly off
  * `attempts` under RLS (`attempts_student_select`: `student_id = auth.uid()`)
  * rather than through any `class_quizzes`-gated RPC. Deliberately independent
- * of whether the allocation is currently published/live/unassigned —
- * "a closed window does not unassign; attempts, grades and analytics remain
- * intact" (docs/backlog.md, Epic 2A) applies here precisely because a student
- * must always be able to see their own past results, even once the window
- * that produced them has closed. `list_my_attempts_for_quiz` and
+ * of whether the allocation is currently published/live/unassigned: a closed
+ * window does not unassign, and a student must always be able to see their own
+ * past results even once the window that produced them has closed.
+ * `list_my_attempts_for_quiz` and
  * `get_quiz_for_student`, by contrast, correctly gate on liveness because they
  * hand back *playable* content, not history — this is the fallback both the
  * player and results pages use when those raise `not_assigned` for that

@@ -1,11 +1,3 @@
-/**
- * Seeder: out-of-band fixture fabrication.
- *
- * Fabricates behavioural rows that have NO clean domain-action equivalent (e.g. a
- * logged tutor question the server writes via the service role). Kept separate
- * from actor methods so a test's narrative stays about who-does-what. Exposed to
- * tests as `testbed.seed`.
- */
 import { getServiceClient } from "../db";
 import type { Student } from "./student";
 import type { Classroom } from "./classroom";
@@ -13,7 +5,6 @@ import type { Quiz, AuthoredQuestion } from "./quiz";
 import type { Attempt } from "./attempt";
 
 export class Seeder {
-  /** Log a tutor interaction row via the service client (server-side write path). */
   async logTutorQuestion(opts: {
     student: Student | null;
     classroom: Classroom;

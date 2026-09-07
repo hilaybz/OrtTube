@@ -3,12 +3,6 @@ import { createClass, listMyClasses } from "@/lib/classes";
 import { isSupportedLanguage } from "@/lib/lang";
 import { err, handleError, requireAuth } from "./http";
 
-/**
- * /api/classes  (class CRUD)
- *   GET  → the signed-in teacher's own classes.
- *   POST → create a class { name, language? }.
- */
-
 export async function GET() {
   const auth = await requireAuth();
   if (auth.response) return auth.response;

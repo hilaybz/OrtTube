@@ -9,20 +9,11 @@ import type { StudentAnalytics } from "@/lib/analytics";
 const STUDENT_LABEL = "התלמיד/ה";
 const CLASS_LABEL = "ממוצע הכיתה";
 
-/** Shorten a quiz title to something a category label can carry. */
 function shortTitle(title: string | null, index: number): string {
   return title?.trim() || `חידון ${index + 1}`;
 }
 
 /**
- * One student's charts, as a fixed 2×2 grid: how their grades have moved, and
- * how each of those grades sits against the class that took the same quiz.
- *
- * The class average is a SERIES, not a reference line, because it moves per quiz
- * — a student can be above the class on one quiz and below on the next, and that
- * crossing is the whole point of the comparison. Slot 1 is always the student
- * and slot 2 always the class, so filtering or reordering never repaints them.
- *
  * The trend chart only plots quizzes the student actually finished: drawing an
  * unfinished quiz as a zero would read as a failed quiz, which is a different
  * fact.

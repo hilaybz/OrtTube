@@ -1,17 +1,5 @@
-/**
- * Tutor route unit tests — `POST /api/ask` (streaming tutor).
- *
- * All external dependencies (Anthropic, the Supabase user/service clients, the
- * transcript cache) are mocked, so this runs with no DB, no network, and no API
- * key — it verifies the route's control flow and the tutor acceptance criteria:
- * auth, `tutor_off`/`not_member` refusal, spoiler-bounded context, no `is_correct`
- * leak, active-question protection, correct logging FKs, and that a logging
- * failure never breaks the stream.
- */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-
-// ── Mocks (hoisted before the route import) ──────────────────────────────────
 
 const streamMock = vi.fn();
 vi.mock("@anthropic-ai/sdk", () => ({
@@ -30,14 +18,10 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const insertMock = vi.fn();
-// B3/A4: the route validates client-supplied attemptId/questionId and derives
-// active-ness from server state via the service client. These configurable mocks
-// back the validation queries so the unit test can exercise both validated and
-// rejected (spoofed) ids without a DB.
-const attemptRowMock = vi.fn(); // .from("attempts")...maybeSingle()  (validation)
-const questionRowMock = vi.fn(); // .from("questions")...maybeSingle() (validation)
-const inProgressMock = vi.fn(); // .from("attempts")...limit()        (active check)
-const budgetCountMock = vi.fn(); // .from("tutor_questions").select(count) (budget)
+const attemptRowMock = vi.fn();
+const questionRowMock = vi.fn();
+const inProgressMock = vi.fn();
+const budgetCountMock = vi.fn();
 vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => ({
     from: (table: string) => {
@@ -74,15 +58,12 @@ vi.mock("@/lib/transcriptCache", () => ({
 
 import { POST } from "@/app/api/ask/route";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 function textStream(text: string) {
   return (async function* () {
     yield { type: "content_block_delta", delta: { type: "text_delta", text } };
   })();
 }
 
-/** A student POSTs a tutor question to /api/ask with the given body. */
 function askRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest("http://localhost/api/ask", {
     method: "POST",
@@ -91,7 +72,6 @@ function askRequest(body: Record<string, unknown>): NextRequest {
   });
 }
 
-// The per-class tutor context the RPC returns for a member of an assigned class.
 const TUTOR_CONTEXT = {
   tutor_mode: "hints" as const,
   class_language: "he",
@@ -101,7 +81,6 @@ const TUTOR_CONTEXT = {
   youtube_video_id: "yt123",
 };
 
-/** The system prompt + user messages handed to the last Anthropic stream call. */
 function lastStreamArgs() {
   const call = streamMock.mock.calls.at(-1);
   return call?.[0] as { system: string; messages: { content: string }[] };
@@ -126,8 +105,6 @@ beforeEach(() => {
   currentUserId = `student-uuid-${userCounter}`;
   getUserMock.mockResolvedValue({ data: { user: { id: currentUserId } } });
   rpcMock.mockResolvedValue({ data: TUTOR_CONTEXT, error: null });
-  // Defaults: the supplied attempt/question belong to the caller + this quiz, and
-  // there is no separately-detected in-progress attempt.
   attemptRowMock.mockResolvedValue({
     data: { student_id: currentUserId, quiz_id: "quiz-uuid" },
   });
@@ -142,8 +119,6 @@ beforeEach(() => {
   insertMock.mockResolvedValue({ error: null });
   budgetCountMock.mockResolvedValue({ count: 0, error: null });
 });
-
-// ── Auth & validation ────────────────────────────────────────────────────────
 
 describe("auth & validation", () => {
   it("401 when unauthenticated", async () => {
@@ -164,8 +139,6 @@ describe("auth & validation", () => {
     expect(response.status).toBe(400);
   });
 });
-
-// ── Membership / mode gating ─────────────────────────────────────────────────
 
 describe("membership & mode gating", () => {
   it("403 tutor_off when the class has tutoring disabled", async () => {
@@ -194,8 +167,6 @@ describe("membership & mode gating", () => {
   });
 });
 
-// ── Lifetime per-quiz budget ─────────────────────────────────────────────────
-
 /**
  * The budget spans EVERY attempt on a quiz, which is the whole point: a
  * per-attempt cap would be meaningless while `max_attempts` may be null, since a
@@ -215,7 +186,6 @@ describe("per-quiz question budget", () => {
     expect(response.status).toBe(403);
     const body = await response.json();
     expect(body.error.code).toBe("question_limit_reached");
-    // No Claude call, and nothing logged — a refused question is not a question.
     expect(streamMock).not.toHaveBeenCalled();
     expect(insertMock).not.toHaveBeenCalled();
   });
@@ -246,8 +216,6 @@ describe("per-quiz question budget", () => {
   });
 });
 
-// ── Happy path: streaming + context + logging ────────────────────────────────
-
 describe("streaming, context, logging", () => {
   it("streams Claude's answer back to the client", async () => {
     const response = await POST(askRequest(BASE_BODY));
@@ -264,9 +232,6 @@ describe("streaming, context, logging", () => {
     expect(lastStreamArgs().system).toContain("Arabic");
   });
 
-  // The resolved language must reach BOTH prompt halves for every supported
-  // language and every mode — the tutor answering in the wrong language would
-  // show up here as a code that never makes it out of the RPC context.
   it.each([
     { code: "he", name: "Hebrew" },
     { code: "ar", name: "Arabic" },
@@ -290,8 +255,6 @@ describe("streaming, context, logging", () => {
     }
   );
 
-  // With no preferred_language the class language decides — a quiz authored in
-  // English must not drag a Hebrew class into English answers.
   it("falls back to the class language when the student has no preference", async () => {
     rpcMock.mockResolvedValue({
       data: {
@@ -309,7 +272,6 @@ describe("streaming, context, logging", () => {
     expect(system).not.toContain("English");
   });
 
-  // The chain's last link: nothing set anywhere but the quiz's own language.
   it("falls back to the quiz base language when nothing else is set", async () => {
     rpcMock.mockResolvedValue({
       data: {
@@ -346,7 +308,6 @@ describe("streaming, context, logging", () => {
     const { system, messages } = lastStreamArgs();
     expect(system).not.toContain("is_correct");
     expect(messages[0].content).not.toContain("is_correct");
-    // Active-question protection is present in the system prompt.
     expect(system).toContain("NEVER");
   });
 
@@ -359,14 +320,14 @@ describe("streaming, context, logging", () => {
         positionSeconds: 42,
       })
     );
-    await response.text(); // drain the stream so start()'s logging completes
+    await response.text();
     expect(insertMock).toHaveBeenCalledTimes(1);
     const loggedRow = insertMock.mock.calls[0][0];
     expect(loggedRow).toMatchObject({
       student_id: currentUserId,
       class_id: "class-uuid",
       quiz_id: "quiz-uuid",
-      video_id: "vid-uuid", // canonical video from the RPC, not the client body
+      video_id: "vid-uuid",
       attempt_id: "attempt-uuid",
       question_id: "question-uuid",
       position_seconds: 42,
@@ -377,14 +338,12 @@ describe("streaming, context, logging", () => {
 
   it("logs null attempt_id/question_id when none are supplied", async () => {
     const response = await POST(askRequest(BASE_BODY));
-    await response.text(); // drain the stream so start()'s logging completes
+    await response.text();
     const loggedRow = insertMock.mock.calls[0][0];
     expect(loggedRow.attempt_id).toBeNull();
     expect(loggedRow.question_id).toBeNull();
   });
 
-  // B3: a client can pass arbitrary attemptId/questionId; the route must null out
-  // any that do not belong to the caller / this quiz before logging.
   it("nulls out an attemptId that belongs to another student", async () => {
     attemptRowMock.mockResolvedValue({
       data: { student_id: "someone-else", quiz_id: "quiz-uuid" },
@@ -416,11 +375,9 @@ describe("streaming, context, logging", () => {
     expect(insertMock.mock.calls[0][0].question_id).toBeNull();
   });
 
-  // A4: the answer-leak guard is present even when the client sends no
-  // activeQuestionId and there is no detected in-progress attempt.
   it("keeps the answer-leak guard with no active question and no in-progress attempt", async () => {
     inProgressMock.mockResolvedValue({ data: [] });
-    await POST(askRequest(BASE_BODY)); // no activeQuestionId
+    await POST(askRequest(BASE_BODY));
     expect(lastStreamArgs().system).toContain("NEVER");
   });
 

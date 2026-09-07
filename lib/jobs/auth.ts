@@ -1,12 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 
 /**
- * Which shared secret an endpoint is guarded by.
- *
- * - `"cron"`  → scheduled jobs under `/api/jobs/*` (checked against `CRON_SECRET`).
- * - `"admin"` → destructive admin endpoints (`/api/admin/seed-teacher`,
- *               `/api/admin/delete-user`), checked against `ADMIN_SECRET`.
- *
  * Two separate secrets so a leaked cron secret cannot create teachers or delete
  * users.
  */
@@ -24,7 +18,6 @@ function jsonError(code: string, message: string, status: number): Response {
   });
 }
 
-/** Constant-time string comparison that never short-circuits on length. */
 function secretsMatch(provided: string, expected: string): boolean {
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
@@ -38,19 +31,6 @@ function secretsMatch(provided: string, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-/**
- * Verify the `Authorization: Bearer <secret>` header of an incoming request
- * against the configured secret for `which`.
- *
- * Returns `null` when the request is authorized (caller proceeds). Returns a
- * ready-to-send `Response` otherwise:
- *   - `500` `server_misconfigured` if the expected secret env var is not set.
- *   - `401` `unauthorized`         if the header is missing/malformed/mismatched.
- *
- * Usage in a Route Handler:
- *   const denied = assertSecret(req, "cron");
- *   if (denied) return denied;
- */
 export function assertSecret(req: Request, which: SecretKind): Response | null {
   const expected = process.env[ENV_VAR[which]];
   if (!expected) {
