@@ -4,7 +4,6 @@ import { useState } from "react";
 import { ChartTooltip } from "./ColumnChart";
 import { BOX, CHROME } from "./chartTheme";
 
-/** One ring segment. `values` outside 0 are ignored (an empty band draws nothing). */
 export interface DonutSlice {
   label: string;
   value: number;
@@ -22,7 +21,6 @@ function polar(angleDeg: number, r: number): { x: number; y: number } {
   return { x: CENTER + r * Math.cos(rad), y: CENTER + r * Math.sin(rad) };
 }
 
-/** SVG path for one ring segment between two angles (0° = top, clockwise). */
 function ringPath(startDeg: number, endDeg: number): string {
   const outerStart = polar(startDeg, OUTER_R);
   const outerEnd = polar(endDeg, OUTER_R);
@@ -38,16 +36,6 @@ function ringPath(startDeg: number, endDeg: number): string {
   ].join(" ");
 }
 
-/**
- * A ring chart for a total split across ordered bands — one series, drawn as
- * segments rather than columns because the whole (the center label) matters as
- * much as the parts here.
- *
- * Each segment gets a hairline gap rather than a stroke, matching how
- * `ColumnChart` separates adjacent columns with the surface showing through.
- * The same hover/focus tooltip as the linear charts (`ChartTooltip`) reads out
- * the active segment, so a value is never gated behind eyesight alone.
- */
 export function DonutChart({
   slices,
   centerLabel,
@@ -56,9 +44,7 @@ export function DonutChart({
   ariaLabel,
 }: {
   slices: DonutSlice[];
-  /** Big number in the ring's center, e.g. the total count. */
   centerLabel?: string;
-  /** Small caption under the center label. */
   centerSub?: string;
   formatValue: (value: number) => string;
   ariaLabel: string;

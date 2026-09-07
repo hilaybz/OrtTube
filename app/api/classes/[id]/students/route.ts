@@ -2,12 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { addStudentToClass } from "@/lib/classes";
 import { err, handleError, requireAuth } from "../../http";
 
-/**
- * POST /api/classes/[id]/students  (add student by email)
- * Body: { email }. Returns { status: 'added', student_id } for an existing
- * same-school student, or { status: 'invited', email } for an unknown email.
- * 403 cross_school / is_teacher per the documented codes.
- */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

@@ -3,21 +3,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { deleteUser, LifecycleError } from "@/lib/lifecycle";
 
 /**
- * `POST /api/admin/delete-user`.
- *
  * Guarded by `ADMIN_SECRET` (a separate secret from `CRON_SECRET`, so a leaked
  * cron token cannot delete users). Body: `{ "userId": "<uuid>" }`.
- *
- * Branches by role via `lib/lifecycle.deleteUser`:
- *   • student → 200 `{ status: "deleted", role, userId }` (PII removed;
- *     behavioural rows anonymised — attempts/tutor_questions.student_id → NULL).
- *   • teacher owning classes/quizzes → 409
- *     `{ error: { code: "must_reassign" }, details: { classes, quizzes } }`.
- *     Reassign (RPCs) first, then the teacher owns nothing and deletes like a
- *     student.
- *
- * Errors: 401 unauthorized, 400 invalid_request, 404 not_found, 5xx on failure.
- * Never leaks the service-role key or ADMIN_SECRET to the client.
  */
 export async function POST(req: Request): Promise<Response> {
   const denied = assertSecret(req, "admin");

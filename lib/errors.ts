@@ -1,9 +1,3 @@
-/**
- * Maps stable error-envelope codes (raised by the RPC/service layer and passed
- * through the `/api/**` handlers as `{ error: { code, message } }`) to
- * user-facing Hebrew messages. The HTTP status is already derived server-side
- * from the code; this is presentation only.
- */
 const MESSAGES: Record<string, string> = {
   unauthorized: "יש להתחבר כדי להמשיך.",
   invalid_credentials: "אימייל או סיסמה שגויים.",
@@ -36,11 +30,6 @@ const MESSAGES: Record<string, string> = {
   invalid_max_attempts: "מספר הניסיונות אינו תקין.",
   invalid_tutor_mode: "מצב OrtAI אינו תקין.",
   lookup_failed: "אירעה תקלה זמנית. נסו שוב בעוד רגע.",
-  // Three outcomes, three sentences. These used to be one: a blocked fetch and a
-  // caption-less video were treated as indistinguishable, so every failure told
-  // the teacher their video had no subtitles — which was frequently untrue and
-  // gave them nothing to act on. The server does know which happened, and now
-  // says so. Only the first is a claim about the video.
   transcript_unavailable: "לסרטון זה אין כתוביות. הוסיפו שאלות ידנית.",
   transcript_pending: "התמליל של הסרטון עדיין נטען. נסו שוב בעוד רגע.",
   transcript_fetch_failed: "לא הצלחנו לקרוא את התמליל כרגע. נסו שוב בעוד רגע.",

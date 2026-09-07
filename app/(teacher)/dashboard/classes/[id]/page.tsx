@@ -22,16 +22,6 @@ import { classAnalyticsHref } from "@/components/teacher/analyticsLinks";
 const BACK_HREF = "/dashboard/classes";
 const BACK_LABEL = "הכיתות שלי";
 
-/**
- * Class detail: header (name + language) with the owner's rename control and a
- * link into the class's analytics, then tabbed quizzes + roster.
- * `listMyClasses` doubles as the ownership/existence check (a class the caller
- * doesn't own is simply absent). Each read is isolated so a transient failure
- * degrades to a friendly Alert instead of crashing the page.
- *
- * The class list is the usual way in, but the overview's class cards open this
- * page too, so back follows the origin in the URL when there is one.
- */
 export default async function ClassDetailPage({
   params,
   searchParams,

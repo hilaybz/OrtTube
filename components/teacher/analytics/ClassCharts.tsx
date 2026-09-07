@@ -16,27 +16,20 @@ import { STATE_LABEL } from "@/components/teacher/scheduleFormat";
 import type { ClassAnalyticsOverview, ClassOverviewQuiz } from "@/lib/analytics";
 import type { ClassRosterProgress } from "@/lib/analyticsProgress";
 
-/** Oldest-assigned first, so a reader can read the bars as the term unfolded. */
 function byAssignedAt(a: ClassOverviewQuiz, b: ClassOverviewQuiz): number {
   return new Date(a.assigned_at).getTime() - new Date(b.assigned_at).getTime();
 }
 
-/** "0–20%" .. "80–100%" for a score band, isolated as an LTR run (see `ltr`). */
 function bandLabel(min: number, max: number): string {
   return ltr(`${Math.round(min * 100)}–${Math.round(max * 100)}`);
 }
 
-/** Shorten a quiz title to something a category label can carry. */
 function shortTitle(title: string | null, index: number): string {
   const name = title?.trim();
   if (!name) return `חידון ${index + 1}`;
   return name;
 }
 
-/**
- * Has anyone actually engaged with this quiz? A completion, a score, or a bare
- * attempt all count; an assignment nobody has opened does not.
- */
 function hasActivity(quiz: ClassOverviewQuiz, attempts: number): boolean {
   return (
     attempts > 0 ||
@@ -46,11 +39,6 @@ function hasActivity(quiz: ClassOverviewQuiz, attempts: number): boolean {
   );
 }
 
-/**
- * Total attempts (completed or not) logged against each quiz by CURRENT
- * roster members, keyed by quiz id. Summed from the same per-member,
- * per-quiz breakdown `RosterTable` already reads — no separate fetch.
- */
 function attemptsByQuiz(roster: ClassRosterProgress | null): Map<string, number> {
   const totals = new Map<string, number>();
   if (!roster) return totals;
@@ -62,26 +50,11 @@ function attemptsByQuiz(roster: ClassRosterProgress | null): Map<string, number>
   return totals;
 }
 
-/**
- * The class's charts, as a fixed 2×2 grid: how the class scored per quiz, how
- * the grades are spread, how much of the class finished each quiz, and how
- * many attempts it actually took to get there.
- *
- * Only quizzes the class has actually started are plotted; the table below
- * still lists every assignment, because a table is the roster of what was set
- * while these charts are about what came back.
- *
- * Every chart here reads the same `class_analytics_overview` payload the tables
- * below read, and every score in it comes from each student's latest completed
- * attempt — so a number in a chart and the same number in a table can never
- * disagree.
- */
 export function ClassCharts({
   data,
   roster,
 }: {
   data: ClassAnalyticsOverview;
-  /** For the attempts-vs-completions chart; that chart's empty when `null`. */
   roster: ClassRosterProgress | null;
 }) {
   const now = new Date();
@@ -103,7 +76,6 @@ export function ClassCharts({
   const anyScore = quizzes.some((q) => q.average_score != null);
   const attempts = quizzes.map((q) => attemptTotals.get(q.quiz_id) ?? 0);
 
-  /** Nothing to plot — and which of the two reasons it is. */
   function emptyReason(): string | undefined {
     if (data.quizzes.length === 0) return "עדיין לא הוקצו חידונים.";
     if (quizzes.length === 0) return "עדיין לא התחילו חידונים בכיתה.";
@@ -111,8 +83,6 @@ export function ClassCharts({
   }
   const maxAttempts = Math.max(1, ...attempts, ...quizzes.map((q) => q.member_count));
 
-  /** Solid once a quiz is done (the number is final); faded while it's still
-   *  live (more completions could still land and move it). */
   function byState(base: string): string[] {
     return states.map((s) => (s === "live" ? withAlpha(base, 0.45) : base));
   }

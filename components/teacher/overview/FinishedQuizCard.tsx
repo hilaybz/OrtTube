@@ -6,13 +6,6 @@ import { QuizThumb, ThumbChip } from "@/components/ui/QuizThumb";
 import { closedAtMeta, quizHeading, type RecentlyFinishedQuiz } from "./aggregate";
 
 /**
- * A quiz whose window just closed for one class. Built on the teacher quiz
- * card's frame — the same glass shell, the same flush 16:9 thumbnail band, the
- * same one-fact body — because it sits a row above those cards on the overview
- * and any difference in the frame would read as a bug. What changes is the one
- * fact it carries: a finished quiz is about which class and when it closed, and
- * the card leads into that class's results rather than into the editor.
- *
  * `now` is a prop rather than a `new Date()` inside the card so the relative
  * phrasing of the closing time is computed from the same instant the rest of
  * the page was rendered against, and stays a pure function of its inputs.
@@ -28,9 +21,6 @@ export function FinishedQuizCard({
   const closed = closedAtMeta(quiz.closedAt, now);
   return (
     <div className="glass group relative flex h-full flex-col transition-[transform,background-color] duration-200 hover:-translate-y-0.5 hover:bg-[var(--glass-bg-hover)]">
-      {/* Stretched link: the whole card opens this class's results for the quiz.
-          Those results are usually reached by drilling down through analytics,
-          so the link says it came from the overview instead. */}
       <Link
         href={withBackTarget(
           classQuizAnalyticsHref(quiz.classId, quiz.quizId),
@@ -40,8 +30,6 @@ export function FinishedQuizCard({
         className="absolute inset-0 z-10 rounded-[inherit]"
       />
       <QuizThumb youtubeVideoId={quiz.youtubeVideoId}>
-        {/* The thumbnail of a closed quiz is desaturated, so a glance at the
-            row separates "over" from "running" before any label is read. */}
         <div className="absolute inset-0 bg-white/45" />
         <ThumbChip className="bottom-2 start-2">
           <Icon name="quiz" size={12} />
@@ -60,11 +48,6 @@ export function FinishedQuizCard({
         >
           {heading}
         </h3>
-        {/* Two meta facts, each with its own glyph, rather than one sentence:
-            the class the teacher would open next, and how long ago the window
-            closed. "אתמול" answers whether the results are still fresh; the
-            date beside it answers which lesson it was, and is dropped when the
-            phrase already names the date. */}
         <div className="mt-auto flex flex-col gap-1 text-xs">
           <span className="flex min-w-0 items-center gap-1.5 font-medium text-[var(--body)]">
             <Icon name="class" size={13} className="flex-none text-[var(--body-subtle)]" />

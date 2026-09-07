@@ -3,12 +3,6 @@ import { updateClass, deleteClass } from "@/lib/classes";
 import { isSupportedLanguage } from "@/lib/lang";
 import { err, handleError, requireAuth } from "../http";
 
-/**
- * /api/classes/[id]  (class CRUD)
- *   PATCH  → update { name?, language? }.
- *   DELETE → delete the class (cascades members/invites/assignments).
- */
-
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

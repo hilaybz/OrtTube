@@ -1,14 +1,3 @@
-/**
- * Role-agnostic sign-in routing + deactivation gate.
- *
- * Sign-in itself is role-agnostic (one form). AFTER Supabase authenticates the
- * user, we read `profiles.role` (authoritative — never `user_metadata`) and:
- *   - if `deactivated_at IS NOT NULL` -> reject; the caller signs the user back out.
- *   - else -> route by role (teacher -> /dashboard, student -> /student).
- *
- * The profile read uses the service-role client (RLS-bypassing) so the decision is
- * deterministic and independent of profile RLS nuances.
- */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type Role = "teacher" | "student";
@@ -16,7 +5,6 @@ export type Role = "teacher" | "student";
 export const TEACHER_HOME = "/dashboard";
 export const STUDENT_HOME = "/student";
 
-/** Post-auth landing route for a role. Unknown roles default to the student home. */
 export function routeForRole(role: string | null | undefined): string {
   return role === "teacher" ? TEACHER_HOME : STUDENT_HOME;
 }
@@ -29,10 +17,6 @@ export type SignInEvaluation =
   // are genuine negative decisions that DO sign the user out.
   | { ok: false; code: "no_profile" | "deactivated" | "lookup_failed"; message: string };
 
-/**
- * Given an authenticated user's id, decide whether they may proceed and where to
- * route them. `service` must be a service-role client (bypasses RLS).
- */
 export async function evaluateSignIn(
   service: SupabaseClient,
   userId: string

@@ -15,9 +15,6 @@ import { grade } from "./chartTheme";
 import { CELL, HEAD_CELL, ROW_BORDER, ROW_HEAD, ROW_LINK } from "./tableStyles";
 
 /**
- * Every quiz this student is exposed to, across the teacher's classes, with the
- * grade they were shown and the grade their class averaged on the same quiz.
- *
  * The score column is the LATEST completed attempt, not the best: it is the
  * grade the student sees on their own results page, so a teacher discussing it
  * with them is looking at the same number. A row leads to that quiz's breakdown

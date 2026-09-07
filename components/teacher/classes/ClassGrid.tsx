@@ -12,14 +12,8 @@ import { matchesText } from "@/lib/libraryFilters";
 import type { ClassRow } from "@/lib/classes";
 import { LANGUAGE_LABELS } from "./labels";
 
-/** Below this a search box is more chrome than help — the grid is scannable. */
 const SEARCHABLE_FROM = 7;
 
-/**
- * The teacher's classes as a grid of cards, searchable by name once there are
- * enough of them to be worth searching, and paged so a teacher with many
- * classes gets a fixed-height page rather than an ever-growing scroll.
- */
 export function ClassGrid({ classes }: { classes: ClassRow[] }) {
   const [query, setQuery] = useState("");
 

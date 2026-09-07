@@ -1,12 +1,5 @@
 import { cn } from "@/components/ui/cn";
 
-/**
- * The shared geometry of a sidebar row, so the nav links and the pinned
- * sign-out control cannot drift apart. `collapsed` is the resting icon rail —
- * it only bites from `md` up, because the mobile drawer is always the
- * full-width, labelled version. Hovering the rail (or moving focus into it)
- * expands it, which is simply this class set with `collapsed: false`.
- */
 export function navRowClass({
   active = false,
   collapsed = false,

@@ -1,18 +1,9 @@
-// POST /api/jobs/reconcile-auth
-//
 // Orphan auth.users reconciliation. Deletes auth.users rows that have NO
 // matching public.profiles row and are older than N minutes. Student signup
 // creates the auth user first, then inserts the profile; if the process dies
 // between those two steps (a serverless timeout/crash) the auth user is stranded
 // with no profile. This job is the safety net that reaps those orphans so a
 // re-signup with the same email isn't blocked by a half-created account.
-//
-// Candidates come from the SECURITY DEFINER `list_orphan_auth_users` RPC (which
-// can read the auth schema); each is deleted via GoTrue's admin API so
-// identities/sessions tear down cleanly and per-user failures are reported
-// individually without aborting the batch.
-//
-// Guarded by CRON_SECRET. Suggested cadence: every ~15 min.
 //
 // Age floor (minutes), highest priority first: JSON body `olderThanMinutes` →
 // `?olderThanMinutes=` → env `RECONCILE_AUTH_MINUTES` → default 30. Clamped to

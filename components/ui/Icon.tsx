@@ -1,15 +1,5 @@
 import type { ReactNode } from "react";
 
-/**
- * Stroke-icon set (no emoji anywhere in the product). Filled glyphs (play,
- * pause, sparkle, the "more" dots) render with `fill`; the rest are 1.9px
- * strokes on a 24×24 viewBox. Pass `label` for a meaningful icon (renders
- * `role="img"`), omit it for decorative icons (renders `aria-hidden`).
- *
- * This is the product's only icon source, so it is deliberately broad: media,
- * status, navigation and analytics glyphs all live here rather than being
- * hand-rolled per screen.
- */
 const PATHS = {
   // ── media ────────────────────────────────────────────────────────────────
   play: <path d="M8 5v14l11-7z" />,
@@ -447,7 +437,6 @@ const PATHS = {
 
 export type IconName = keyof typeof PATHS;
 
-/** Glyphs drawn as solid shapes rather than strokes. */
 const FILLED = new Set<IconName>([
   "play",
   "pause",

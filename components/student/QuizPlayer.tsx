@@ -49,7 +49,6 @@ function byVideoTime(a: StudentQuestion, b: StudentQuestion): number {
 
 type Phase = "intro" | "playing" | "done";
 
-/** Where the back affordance goes on every screen of the player. */
 const FEED_HREF = "/student";
 const FEED_LABEL = "הפיד שלי";
 
@@ -68,9 +67,6 @@ export function QuizPlayer({
   const [phase, setPhase] = useState<Phase>("intro");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Owned here, not inside `AskAI`: on a wide screen the open chat is a column
-  // beside the video and the video column shrinks to make room, which is this
-  // layout's business rather than the panel's.
   const [chatOpen, setChatOpen] = useState(false);
 
   const [attemptId, setAttemptId] = useState<string | null>(null);
@@ -193,8 +189,8 @@ export function QuizPlayer({
   // at the student mid-video. This is the enforcement side: at the real
   // instant the window closes, pause, block further input, and finish the
   // attempt exactly the way "all answered" already does (the server backdates
-  // completed_at to the window's close, so unanswered questions count wrong —
-  // see 129_attempt_window_finalization.sql). The server is authoritative
+  // completed_at to the window's close, so unanswered questions count wrong).
+  // The server is authoritative
   // regardless (submit_answer rejects a late answer on its own), so this is
   // about giving an honest transition, not enforcing anything the client
   // could be tricked out of. Declared before `submit` — its dependency array
@@ -262,12 +258,6 @@ export function QuizPlayer({
     };
   }, [phase, attemptId, state.available_until, clockOffsetMs, handleDeadline]);
 
-  // ── INTRO ────────────────────────────────────────────────────────────────
-  // The screen that opens a quiz the student still owes: what it is, how many
-  // attempts are left, and how long they have. It is never a detour on the way
-  // to a finished quiz's results — a student with no attempt left is redirected
-  // straight to their results by the route itself, so there is no "show me my
-  // score" button here to press.
   if (phase === "intro") {
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-3 py-6">
@@ -288,9 +278,6 @@ export function QuizPlayer({
                 ? "ניסיונות ללא הגבלה"
                 : `נותרו ${state.attempts_left} מתוך ${state.max_attempts} ניסיונות`}
             </p>
-            {/* Before starting, not during: the countdown is here so the
-                student can decide whether to begin at all, while the deadline
-                itself is enforced by the cutoff timer above once they have. */}
             <DeadlineCountdown
               availableUntil={state.available_until}
               clockOffsetMs={clockOffsetMs}
@@ -305,7 +292,6 @@ export function QuizPlayer({
     );
   }
 
-  // ── DONE ─────────────────────────────────────────────────────────────────
   if (phase === "done" && summary) {
     const grade = gradeOf(summary.num_correct, summary.num_questions);
     return (
@@ -358,20 +344,11 @@ export function QuizPlayer({
     state: answered.has(q.id) ? "done" : q.id === current?.id ? "current" : "upcoming",
   }));
 
-
   function seekToCheckpoint(seconds: number) {
     stageRef.current?.seekTo(seconds);
     setPlayhead(seconds);
   }
 
-  /**
-   * The question card tightens exactly where the frame it sits in got smaller:
-   * from `xl` up with the tutor open, the video shares its width with the chat
-   * column. Below that the tutor is a sheet over a full-width video, so the
-   * card keeps its roomier proportions. Whatever is left over — a long prompt
-   * on a short screen — scrolls inside the frame rather than losing its heading
-   * and its submit button off both edges.
-   */
   const tight = (base: string, atXl: string) => (chatOpen ? `${base} ${atXl}` : base);
 
   const overlay =
@@ -446,9 +423,6 @@ export function QuizPlayer({
                       : "border-[var(--glass-border)] bg-white/50 hover:bg-white/70"
                   )}
                 >
-                  {/* Round = pick one, square = pick several: the convention
-                      students already know from paper and from web forms. This
-                      carries the meaning; the label above only reinforces it. */}
                   <span
                     data-testid={single ? "option-radio" : "option-checkbox"}
                     className={cn(
@@ -474,9 +448,6 @@ export function QuizPlayer({
     ) : null;
 
   return (
-    // The page grows wider to hold the chat column rather than taking the room
-    // out of the video: with both open the video is no smaller than it is on its
-    // own, so opening the tutor never shrinks what the student is watching.
     <div
       className={cn(
         "mx-auto flex w-full flex-col gap-3 py-4",
@@ -497,20 +468,12 @@ export function QuizPlayer({
 
       {error && <Alert variant="danger">{error}</Alert>}
 
-      {/* Video and tutor side by side once the chat is open and the viewport can
-          hold both, so watching and asking are the same activity instead of two
-          modes. The pair is centred as a unit and the two columns are the same
-          height, so neither one trails off into empty page. Narrower than that,
-          the chat is a sheet over the page and this stays a single column. */}
       <div
         className={cn(
           "flex flex-col gap-3",
           chatOpen && "xl:flex-row xl:justify-center xl:gap-4"
         )}
       >
-        {/* The video takes whatever width is left, up to the width at which it
-            would grow taller than the screen — a video worth watching is one
-            you can see all of without scrolling, so height is what bounds it. */}
         <div
           className={cn(
             "flex min-w-0 flex-col gap-3",
@@ -525,11 +488,6 @@ export function QuizPlayer({
             onProgress={onProgress}
           />
 
-          {/* Checkpoints on the video's own time axis, with the watched portion
-              filled — a question at 0:53 of a 15-minute video belongs right at
-              the start of the bar, not a fifth of the way along it. Hovering a
-              marker shows its timestamp; the ones the gate already allows are
-              also the way back to that moment. */}
           <div className="rounded-[var(--radius)] border border-[var(--glass-border)] bg-white/50 px-5 py-2">
             <CheckpointTimeline
               readOnly
@@ -555,9 +513,6 @@ export function QuizPlayer({
           )}
         </div>
 
-        {/* A fixed-width column that stretches to the video's height, so the
-            panel is as tall as what it sits beside; in sheet mode the panel is
-            `fixed` and this wrapper is just where it lives in the tree. */}
         <div className={cn(chatOpen && "xl:w-[20rem] xl:flex-none 2xl:w-[23rem]")}>
           <AskAI
             classId={classId}

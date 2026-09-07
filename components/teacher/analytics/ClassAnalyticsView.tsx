@@ -18,18 +18,12 @@ import { StudentActivityLeaderboard } from "./StudentActivityLeaderboard";
 import { grade } from "./chartTheme";
 
 /**
- * One class's analytics: the three counts a teacher opens this screen for, the
- * charts, the per-quiz table, and the per-student table.
- *
  * The open/finished counts are derived here with `allocationState` rather than
  * asked of SQL. That function is the product's single definition of an
  * allocation's lifecycle state — the student feed, the class page and the quiz
  * editor all read it — so deriving the counts from the same raw window fields
  * keeps this screen from being the one place that quietly disagrees about
  * whether a quiz is still open.
- *
- * Each read is wrapped on its own: losing the roster degrades one section to a
- * warning instead of taking the screen down with it.
  */
 export async function ClassAnalyticsView({ classId }: { classId: string }) {
   const client = (await createClient()) as unknown as SupabaseClient;

@@ -6,12 +6,6 @@ import { withBackTarget } from "@/components/ui/backTarget";
 import { classAnalyticsHref } from "@/components/teacher/analyticsLinks";
 import type { ClassSummary } from "./aggregate";
 
-/**
- * One labelled metric inside a class card. The glyph is what makes the three
- * figures readable at a glance in a narrow column, where the labels wrap: the
- * icon carries the meaning and its tone carries the state (a running quiz is
- * green, a closed one is quiet).
- */
 function Metric({
   label,
   value,
@@ -36,26 +30,9 @@ function Metric({
   );
 }
 
-/**
- * A glass card summarising one class: its name, its roster size and its own
- * split of active vs finished quizzes — the class-scoped reading of the KPI row
- * above it, so the two can be compared without translation.
- *
- * The card carries two destinations, which is why it is not one big link. The
- * body is a stretched link into the class itself (the place a teacher goes to
- * assign, end or reopen a quiz — the thing a class card is usually clicked
- * for), while the chart glyph is its own `IconLink` into that class's analytics,
- * layered above the stretched link. Two sibling anchors, never nested, so the
- * markup stays valid; the glyph's circular hover surface is what tells the
- * teacher it is a separate target rather than part of the card.
- *
- * Both destinations are also reachable from elsewhere, so each link states that
- * it was followed from the overview and the page it opens points back here.
- */
 export function ClassCard({ summary }: { summary: ClassSummary }) {
   return (
     <GlassCard interactive className="flex h-full flex-col gap-4">
-      {/* Stretched link: the card body opens the class. */}
       <Link
         href={withBackTarget(`/dashboard/classes/${summary.id}`, "overview")}
         aria-label={`כיתה ${summary.name}`}

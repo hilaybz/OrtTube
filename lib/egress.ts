@@ -6,18 +6,8 @@ import { ProxyAgent, fetch as undiciFetch } from "undici";
  *
  * YouTube bot-checks datacenter IPs, and Vercel's functions run on one: every
  * upstream request from production comes back `playabilityStatus:
- * LOGIN_REQUIRED`, which blocks transcripts AND the `duration_seconds` scrape
- * (issues #7/#8). The fix is to send those requests from an IP YouTube will
- * serve.
- *
- * Proxies are supplied by env, never hardcoded, so **changing provider is a
- * config change and not a code change** — the same pool interface holds ten
- * cheap datacenter proxies or one residential endpoint, and this module cannot
- * tell the difference.
- *
- * Only YouTube's blocked endpoints route through here. `fetchYouTubeOEmbed`
- * (titles) is deliberately left on direct egress: it is not blocked, and
- * proxying it would spend metered bandwidth to fix nothing.
+ * LOGIN_REQUIRED`, which blocks transcripts AND the `duration_seconds` scrape.
+ * The fix is to send those requests from an IP YouTube will serve.
  */
 
 /**
@@ -28,37 +18,14 @@ import { ProxyAgent, fetch as undiciFetch } from "undici";
  */
 const BOT_CHECK = /"playabilityStatus"\s*:\s*\{[^{}]*"status"\s*:\s*"LOGIN_REQUIRED"/;
 
-/**
- * Per-exit deadline. undici's own defaults are 300s for headers and body, which
- * on a sequential sweep of ten exits means a stalled proxy can hold a
- * user-facing request (a teacher submitting a video URL) open until the platform
- * kills it. A proxy that has not answered in 15s is not going to.
- */
 const EXIT_TIMEOUT_MS = 15_000;
 const CONNECT_TIMEOUT_MS = 5_000;
 
-/**
- * How many exits one call may try before giving up.
- *
- * The pool is no longer ten distinct proxies. It is N draws from ONE rotating
- * residential endpoint, and `replaceAgent` already redraws on failure — so
- * walking every slot mostly means retrying the same endpoint N times, serially,
- * at ~20s each against a 60s route budget and a metered bandwidth bill. Three
- * draws answers "is this pool usable right now" nearly as well as ten, and keeps
- * the worst case inside the request that is waiting for it.
- */
 const MAX_EXITS_PER_CALL = 3;
 
 /**
  * After a sweep in which no exit answered, stop sweeping that ENDPOINT for this
  * long and try a single exit.
- *
- * Two situations produce a fully-refused sweep, and they are indistinguishable
- * from inside: the pool is burned, or the resource is genuinely gated — an
- * age-restricted video returns LOGIN_REQUIRED from every IP on earth, and
- * YouTube walls `api/timedtext` on datacenter IPs while serving the watch page
- * and the player endpoint from the very same address. Telling them apart
- * requires sweeping, so the first sweep pays for it.
  *
  * Keyed per host+path, NOT globally: a single counter is cleared by the next
  * success anywhere, and since the endpoints that work are interleaved with the
@@ -68,39 +35,19 @@ const MAX_EXITS_PER_CALL = 3;
  */
 const SWEEP_COOLDOWN_MS = 60_000;
 
-/**
- * An exit, with the label to name it by. undici's `ProxyAgent` exposes no public
- * accessor for the URI it was built from, so the label is captured here at
- * construction — reading it back off the agent yields nothing, and a trace that
- * says "#0" instead of "31.56.127.193:7684" cannot tell an operator which proxy
- * to rotate.
- */
 interface Exit {
   agent: ProxyAgent;
-  /** `host:port` — never the credentials. */
   label: string;
-  /** Kept so a burned agent can be rebuilt; see `replaceAgent`. */
   uri: string;
 }
 
 let pool: Exit[] | null = null;
 let poolSource: string | undefined;
 
-/**
- * Where the next call starts in the pool, advanced once per call.
- *
- * This replaced a "last exit that answered" pointer. That made sense for ten
- * fixed datacenter IPs, where which ones worked was a property worth
- * remembering; it means nothing for a rotating endpoint whose exits are
- * interchangeable draws and whose agents are rebuilt on every failure. Plain
- * round-robin spreads load without pretending one slot is better than another.
- */
 let cursor = 0;
 
-/** endpoint (`host/path`) → epoch ms until which a full sweep is suppressed. */
 const sweepSuppressedUntil = new Map<string, number>();
 
-/** Cooldowns are per-endpoint, so the key ignores the query string. */
 function endpointKey(url: string): string {
   try {
     const u = new URL(url);
@@ -148,8 +95,6 @@ function newAgent(uri: string): ProxyAgent {
  * Closing and rebuilding drew a new IP (88.166.252.226). Without this a
  * "rotating" endpoint behaves as a sticky one and burns exactly the way the
  * fixed datacenter IPs did.
- *
- * Harmless for a static proxy: it just opens a new connection to the same IP.
  */
 function replaceAgent(exit: Exit): void {
   const old = exit.agent;
@@ -168,10 +113,6 @@ function proxies(): Exit[] {
   const configured = process.env.YOUTUBE_PROXY_URLS ?? "";
   if (pool !== null && poolSource === configured) return pool;
 
-  // Built into a local first, and every constructor call guarded: `new
-  // ProxyAgent` throws on a bad scheme or an unparseable URL, and a single
-  // typo'd entry must not be able to take down every YouTube fetch in the app —
-  // which is exactly what this module's contract promises it cannot.
   const built: Exit[] = [];
   for (const raw of configured.split(",")) {
     const uri = normalizeProxyUrl(raw);
@@ -185,7 +126,6 @@ function proxies(): Exit[] {
         uri,
       });
     } catch {
-      // Unusable entry; the remaining exits still stand.
     }
   }
 
@@ -200,20 +140,9 @@ function proxies(): Exit[] {
 }
 
 /**
- * Why an exit's answer doesn't count, or null if it does.
- *
- * The two are named apart for the trace: a 429 says "this IP is rate-limited"
- * and a wall says "this IP is not trusted", and an operator reading a burned
- * pool needs to tell them apart.
- *
  * A `LOGIN_REQUIRED` body is genuinely ambiguous — an age-gated or private video
  * returns it from every IP on earth, identically to a bot wall — so it is treated
- * as a refusal and the next exit decides. An earlier version short-circuited on
- * it whenever the pool had recently succeeded, reasoning that a working pool
- * makes the wall a property of the video. That is unsound here: every entry is an
- * independent draw from ONE rotating endpoint, so a burned draw can return a wall
- * while the next draw would have served the video. It traded a recoverable fetch
- * for two saved requests. `MAX_EXITS_PER_CALL` already bounds the cost.
+ * as a refusal and the next exit decides.
  *
  * Note that `UNPLAYABLE` and `ERROR` are deliberately NOT refusals: those are
  * verdicts about the video that every IP returns identically, so retrying costs
@@ -230,14 +159,6 @@ function refusal(status: number, body: string): "status" | "bot_check" | null {
   return BOT_CHECK.test(body) ? "bot_check" : null;
 }
 
-/**
- * Re-emits an undici response as a platform `Response`.
- *
- * The body has to be buffered anyway to spot a bot check, so rebuilding costs
- * nothing extra and avoids casting between undici's `Response` and the global
- * one. Content-encoding/length are dropped because undici already decoded the
- * body — forwarding them would describe bytes that no longer exist.
- */
 function rebuild(status: number, statusText: string, headers: Headers, body: string): Response {
   headers.delete("content-encoding");
   headers.delete("content-length");
@@ -247,9 +168,6 @@ function rebuild(status: number, statusText: string, headers: Headers, body: str
 }
 
 function describeCause(e: unknown): string {
-  // undici surfaces a proxy failure as `TypeError: fetch failed` and buries the
-  // real diagnosis several `.cause` levels down. Reporting only the outer
-  // message throws away the one detail worth having.
   let current: unknown = e;
   while (current instanceof Error && current.cause !== undefined) current = current.cause;
   if (!(current instanceof Error)) return String(current);
@@ -264,36 +182,16 @@ function describeCause(e: unknown): string {
   if (/Proxy response \(407\)/i.test(message)) {
     return "proxy auth rejected (407) — check YOUTUBE_PROXY_URLS credentials";
   }
-  // Code AND message: the code alone hides `Proxy response (502)` and friends,
-  // the message alone hides ECONNREFUSED vs ETIMEDOUT.
   if (code) return message && !message.includes(code) ? `${code}: ${message}` : code;
   return `${current.constructor.name}: ${message}`;
 }
 
 /**
- * Builds a `fetch` that routes through the proxy pool, falling through to the
- * next exit whenever one is refused.
- *
- * `trace`, when given, receives ONE summary line per call naming what each exit
- * did. Without it a fully-burned pool is invisible: the caller sees only a bot
- * check from the last exit and cannot tell "rotate YOUTUBE_PROXY_URLS" from
- * "YouTube walled every exit" from "no proxies configured" — which is the single
- * most operationally important distinction this system has.
- *
- * Typed as the platform `fetch` so it drops straight into `tracingFetch` and
- * `youtube-transcript`'s `config.fetch` seam with no adapter. That type is wider
- * than what is actually supported, so unsupported shapes throw rather than
- * silently sending a request with the body dropped.
- *
  * When no proxies are configured this delegates to the **global** `fetch`, not
  * undici's — local dev and `npm run smoke` then behave exactly as before, and
  * unit tests that `vi.stubGlobal("fetch", …)` keep intercepting. Calling
  * undici's directly here would silently bypass those stubs and put the suite on
  * the real network.
- *
- * If every proxy is refused, the LAST response is returned unchanged: callers
- * already classify a bot-checked response as a transient error, and inventing a
- * new failure mode here would only bypass that logic.
  */
 export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
   return async (input, init) => {
@@ -309,7 +207,6 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
     const url = String(input);
     const key = endpointKey(url);
 
-    // Cooling down after a fully-refused sweep of THIS endpoint: one exit only.
     const cooling = Date.now() < (sweepSuppressedUntil.get(key) ?? 0);
     const attempts = cooling ? 1 : Math.min(MAX_EXITS_PER_CALL, exits.length);
     const start = cursor;
@@ -320,9 +217,6 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
     let lastError: unknown = null;
 
     for (let i = 0; i < attempts; i++) {
-      // The caller's budget covers the whole fetch, not one request. Starting
-      // another exit once it has expired spends bandwidth on a response nobody
-      // is still waiting for.
       if (init?.signal?.aborted) {
         notes.push("budget exhausted");
         break;
@@ -364,21 +258,15 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
           return rebuilt;
         }
         notes.push(`${label} refused(${why === "bot_check" ? "wall" : res.status})`);
-        // This IP is walled. Retire it so the next request through this slot
-        // leaves from a different one.
         replaceAgent(exits[index]);
         lastResponse = rebuilt;
       } catch (e) {
         notes.push(`${label} ${describeCause(e)}`);
-        // Same for a transport failure: the tunnel is no good, and holding onto
-        // it would keep every later attempt on the same dead route.
         replaceAgent(exits[index]);
         lastError = e;
       }
     }
 
-    // Nothing answered. Suppress the next sweep of this endpoint so a retry
-    // costs one request instead of another full pass.
     if (!cooling) sweepSuppressedUntil.set(key, Date.now() + SWEEP_COOLDOWN_MS);
     if (trace) {
       trace.push(
@@ -391,5 +279,4 @@ export function createProxiedFetch(trace?: string[]): typeof globalThis.fetch {
   };
 }
 
-/** The pool-routed `fetch`, without tracing. */
 export const proxiedFetch: typeof globalThis.fetch = createProxiedFetch();

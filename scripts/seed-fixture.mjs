@@ -1,15 +1,8 @@
 /*
- * Seed a full, PLAYABLE assignment so the P1 student loop is testable before the
- * teacher authoring/classes UIs (P2/P3) exist.
- *
  * Requires: `supabase start` (local stack) + `npm run dev` running, and
  * `.env.local` populated (ADMIN_SECRET, NEXT_PUBLIC_SUPABASE_*). Run via:
  *     npm run seed
  * which loads .env.local through `node --env-file`.
- *
- * Drives the documented HTTP API exactly as a real client would (admin secret for
- * provisioning, then the teacher's session cookie for authoring/assignment).
- * Prints the resulting (classId, quizId) and the student login at the end.
  */
 
 const BASE = process.env.SEED_BASE_URL ?? "http://localhost:3000";
@@ -22,7 +15,6 @@ if (!ADMIN_SECRET) {
 const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
 const teacher = { email: `teacher.${stamp}@ort.test`, password: "teacher-pass-123", displayName: "מורה בדיקה" };
 const student = { email: `student.${stamp}@ort.test`, password: "student-pass-123", displayName: "תלמיד בדיקה" };
-// A short video that has captions available.
 const YOUTUBE_URL = process.env.SEED_YOUTUBE_URL ?? "https://www.youtube.com/watch?v=aircAruvnKk";
 
 let cookies = "";

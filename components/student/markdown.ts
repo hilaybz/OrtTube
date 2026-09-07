@@ -1,8 +1,4 @@
 /**
- * A deliberately tiny Markdown subset parser for the AI tutor's answers.
- *
- * The model writes light Markdown — bold, italics, inline code, bullet and
- * numbered lists, line breaks — and rendering it literally showed the student
  * raw `**asterisks**`. This produces a structure the renderer turns into React
  * elements, so model output NEVER reaches `dangerouslySetInnerHTML`: anything
  * the parser doesn't recognise stays plain text, and text is escaped by React.
@@ -33,11 +29,6 @@ function isListLine(line: string): boolean {
   return BULLET.test(line) || ORDERED.test(line);
 }
 
-/**
- * Cut the answer into block sources: paragraphs, headings, and runs of list
- * items (one block per run, so a list renders as one `<ul>`). A blank line ends
- * whatever block is open.
- */
 export function splitBlocks(text: string): string[] {
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   const blocks: string[] = [];
@@ -71,7 +62,6 @@ export function splitBlocks(text: string): string[] {
   return blocks;
 }
 
-/** Parse one block source (as returned by `splitBlocks`). */
 export function parseBlock(source: string): Block {
   const lines = source.split("\n");
   if (HEADING.test(lines[0]) && lines.length === 1) {
@@ -111,7 +101,6 @@ function pushText(out: Inline[], text: string): void {
   });
 }
 
-/** Emphasis, inline code and hard line breaks inside one block. */
 export function parseInline(source: string): Inline[] {
   const out: Inline[] = [];
   let cursor = 0;

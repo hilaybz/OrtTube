@@ -25,7 +25,6 @@ import { TutorInsights } from "./TutorInsights";
 import { grade } from "./chartTheme";
 import { analyticsCutoffNote } from "@/lib/analyticsCutoff";
 
-/** "12:34" / "1:02:03" from a video duration. */
 function duration(seconds: number | null): string | null {
   if (seconds == null || seconds <= 0) return null;
   const h = Math.floor(seconds / 3600);
@@ -36,31 +35,16 @@ function duration(seconds: number | null): string | null {
 }
 
 /**
- * One quiz's analytics — across every class it runs in, or narrowed to one of
- * them by the class filter in its header.
- *
- * ONE view for both states, so narrowing reads as a filter and not as a
- * different screen: the same header card, the same four-tile row, the same
- * chart grid and the same section order, with each section's numbers recomputed
- * for the chosen class. What changes is only what a single class cannot answer
- * — the per-class comparison charts and the "by class" table are the comparison
- * itself, so they give way to the deeper per-question breakdown that only makes
- * sense once a class is fixed.
- *
  * The two payloads have different gates: the rollup is author-only, while the
  * narrowed numbers need only that the reader teaches the class. A reader who has
  * one and not the other still gets the view — the header simply drops the parts
  * that come from the rollup.
- *
- * Narrowed numbers come from each student's LATEST completed attempt, the same
- * basis as the class view and as the grade the student was shown.
  */
 export async function QuizAnalyticsView({
   quizId,
   classId = null,
 }: {
   quizId: string;
-  /** The class the view is narrowed to, or `null` for every class. */
   classId?: string | null;
 }) {
   const client = (await createClient()) as unknown as SupabaseClient;

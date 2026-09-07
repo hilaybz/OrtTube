@@ -8,11 +8,6 @@ import type { MyQuiz } from "@/lib/quiz";
 
 type TabValue = "roster" | "quizzes";
 
-/**
- * Client tab switcher for the class detail page. The server fetches the roster,
- * assignments and the teacher's quiz library and passes them in; this component
- * only owns the active-tab UI state and delegates each panel's mutations.
- */
 export function ClassTabs({
   classId,
   roster,

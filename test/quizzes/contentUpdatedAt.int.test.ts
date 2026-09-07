@@ -1,7 +1,4 @@
 /**
- * `quizzes.content_updated_at` — the analytics cutoff the triggers in
- * `147_quiz_content_updated_at.sql` maintain.
- *
  * The stamp decides which attempts every teacher-facing analytic counts, so what
  * matters here is not only that a real edit moves it but that the things which are
  * NOT edits leave it alone. Two authoring paths in the editor resend a complete,
@@ -9,8 +6,6 @@
  * position-only endpoint) and pressing Save with nothing changed — so a stamp that
  * moved on every `upsert_question` call would silently discard a term of analytics
  * on a marker nudge. The no-op cases below are the regression guard for that.
- *
- * Skipped when the local DB is unreachable so unit suites still pass offline.
  */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { closePool } from "../helpers/db";
@@ -52,7 +47,6 @@ describe.skipIf(!online)("quizzes.content_updated_at", () => {
     await closePool();
   });
 
-  /** The stamp as of now — every assertion below is a before/after comparison. */
   function stamp(): Promise<Date | null> {
     return testbed.db.contentUpdatedAt(quiz);
   }

@@ -10,8 +10,6 @@ describe("Pager", () => {
 
   it("reads out which page the reader is on, and disables the edges", () => {
     const { rerender } = render(<Pager {...props} page={0} onPageChange={() => {}} />);
-    // A page readout, not a row range: "מציג 1–12 מתוך 13" made a reader do
-    // arithmetic to discover there was one more page.
     expect(screen.getByText(/עמוד/)).toHaveTextContent("עמוד 1 מתוך 3");
     expect(screen.getByRole("button", { name: "העמוד הקודם" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "העמוד הבא" })).toBeEnabled();
@@ -26,7 +24,6 @@ describe("Pager", () => {
     const readout = screen.getByText(/עמוד/);
     expect(readout).toHaveAttribute("aria-live", "polite");
     expect(readout.className).toContain("tabular-nums");
-    // Both numbers are bidi-isolated so they cannot be reordered into "3 מתוך 2".
     expect([...readout.querySelectorAll("bdi")].map((b) => b.textContent)).toEqual([
       "2",
       "3",
@@ -34,7 +31,6 @@ describe("Pager", () => {
   });
 
   it("still takes a spread straight from usePagedList", () => {
-    // `total` is no longer a prop; `<Pager {...paged} />` must keep working.
     const paged = { page: 0, pageCount: 2, total: 13, pageSize: 12 };
     render(<Pager {...paged} onPageChange={() => {}} />);
     expect(screen.getByText(/עמוד/)).toHaveTextContent("עמוד 1 מתוך 2");

@@ -1,13 +1,3 @@
-/**
- * `class_quiz_analytics(class_id, quiz_id)` — the per-(class, quiz) analytic
- * `class_stats`/`question_stats` don't provide alone (see `docs/data-model.md`
- * and `supabase/migrations/138_class_quiz_analytics.sql`). Scored from each
- * student's LATEST completed attempt only, never best-of and never every
- * retake, so a class's reported average always matches the sum of what each
- * student is individually shown.
- *
- * Skipped when the local DB is unreachable so unit suites still pass offline.
- */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closePool } from "../helpers/db";
 import {
@@ -94,7 +84,6 @@ describe.skipIf(!online)("class_quiz_analytics", () => {
     await secondAttempt.answerAllCorrectly();
     await secondAttempt.complete();
 
-    // perfect: single attempt, 2/2 — lands in the top score bucket.
     const perfectAttempt = await perfect.startAttempt(q, { in: classA });
     await perfectAttempt.answerAllCorrectly();
     await perfectAttempt.complete();
@@ -109,15 +98,12 @@ describe.skipIf(!online)("class_quiz_analytics", () => {
     const analytics = await t.classQuizAnalytics(classA, q);
     expect(analytics.class_id).toBe(classA.id);
     expect(analytics.quiz_id).toBe(q.id);
-    expect(analytics.member_count).toBe(2); // retaker, perfect — classA roster only
-    expect(analytics.students_completed).toBe(2); // one row per student, not per attempt
-    expect(analytics.attempt_count).toBe(3); // retaker's 2 attempts + perfect's 1, classA only
+    expect(analytics.member_count).toBe(2);
+    expect(analytics.students_completed).toBe(2);
+    expect(analytics.attempt_count).toBe(3);
     expect(analytics.completion_count).toBe(3);
-    // Both counted students' LATEST attempt is a perfect 2/2 -> average 1.0.
     expect(Number(analytics.average_score)).toBeCloseTo(1, 6);
 
-    // Distribution: both students land in the top (80-100%) bucket, all
-    // five buckets present, no phantom 6th bucket for the perfect score.
     expect(analytics.score_distribution).toHaveLength(5);
     const top = analytics.score_distribution[4];
     expect(top.bucket_min).toBeCloseTo(0.8, 6);
@@ -139,7 +125,6 @@ describe.skipIf(!online)("class_quiz_analytics", () => {
     expect(optionB.selection_count).toBe(0);
     expect(question1.correct_pct).toBeCloseTo(1, 6);
 
-    // classB's attempt must not appear anywhere in classA's analytics.
     const classBAnalytics = await t.classQuizAnalytics(classB, q);
     expect(classBAnalytics.students_completed).toBe(1);
     expect(classBAnalytics.average_score).toBeCloseTo(0, 6);
@@ -156,8 +141,6 @@ describe.skipIf(!online)("class_quiz_analytics", () => {
   });
 
   it("denies a teacher who does not own the class (not_owner), before checking assignment", async () => {
-    // peerTeacher owns neither the class nor the quiz; not_owner must fire
-    // regardless of whether the quiz id passed is even assigned anywhere.
     await expect(
       peerTeacher.classQuizAnalytics(classroom, quiz)
     ).rejects.toMatchObject({ code: "not_owner" });

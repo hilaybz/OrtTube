@@ -15,23 +15,6 @@ import {
   type TutorMode,
 } from "@/lib/tutor";
 
-/**
- * AI tutor (`POST /api/ask`), streaming.
- *
- * Flow:
- *   1. Authenticate the caller (signed-in student).
- *   2. `get_tutor_mode` SD RPC (through the user client, so auth.uid() is the
- *      student): enforces class membership + assignment and returns the per-class
- *      tutor_mode plus language/video context. `off` → 403 { code: 'tutor_off' }.
- *   3. Resolve the response language (preferred → class → quiz base).
- *   4. Build context = transcript sliced to the playhead (never beyond) via the
- *      service client (Storage read). Token-capped, most-recent verbatim.
- *   5. Stream Claude's answer, shaped by mode + active-question protection.
- *   6. After the stream, log a `tutor_questions` row via the service client
- *      (students have no direct write). A logging failure must not break the
- *      stream.
- */
-
 export const dynamic = "force-dynamic";
 // The platform duration limit covers the WHOLE streamed response, not just time
 // to first token, so a long tutor answer needs headroom past a short default.
@@ -40,21 +23,12 @@ export const maxDuration = 60;
 
 const MAX_PROMPT_CHARS = 1000;
 
-/** Per-user sliding-window rate limit, with its own buckets. */
 const isRateLimited = createRateLimiter({ windowMs: 60_000, max: 10 });
 
 /**
- * Lifetime tutor budget for one student on one assigned quiz, spanning EVERY
- * attempt.
- *
  * Deliberately not per attempt: `max_attempts` may be null, so a student who
  * exhausted a per-attempt budget could reset it by starting another attempt, and
  * the cap would bound nothing. Counting across attempts is what makes it hold.
- *
- * Complements the rate limit rather than replacing it — that one stops a script
- * hammering the endpoint, this one stops sustained grinding. Generous on purpose:
- * a backstop against runaway cost, not a limit a student doing the work should
- * ever meet.
  */
 const MAX_QUESTIONS_PER_QUIZ = 200;
 
@@ -93,14 +67,13 @@ function sanitizeHistory(raw: unknown): Turn[] {
   while (cleaned.length && cleaned[0].role !== "user") cleaned.shift();
   const out: Turn[] = [];
   for (const m of cleaned) {
-    if (out.length && out[out.length - 1].role === m.role) continue; // enforce alternation
+    if (out.length && out[out.length - 1].role === m.role) continue;
     out.push(m);
   }
   if (out.length && out[out.length - 1].role === "user") out.pop();
   return out;
 }
 
-/** Shape returned by the `get_tutor_mode` SD RPC. */
 interface TutorContext {
   tutor_mode: TutorMode;
   class_language: string | null;
@@ -179,7 +152,6 @@ export async function POST(req: NextRequest) {
     return jsonError(400, "prompt_too_long", "Your question is too long.");
   }
 
-  // ── Membership + assignment gate; load per-class mode & context ─────────────
   // Called through the user client so the RPC's auth.uid() is this student.
   const rpc = supabase.rpc.bind(supabase) as unknown as (
     fn: string,
@@ -223,7 +195,6 @@ export async function POST(req: NextRequest) {
   if (ctxData.tutor_mode === "off") {
     return jsonError(403, "tutor_off", "The tutor is disabled for this class.");
   }
-  // Narrow to the modes the prompt builder accepts (`off` handled above).
   const mode: Exclude<TutorMode, "off"> = ctxData.tutor_mode;
 
   const language = resolveLanguage(
@@ -234,11 +205,6 @@ export async function POST(req: NextRequest) {
 
   const service = createServiceClient();
 
-  // ── Everything the answer needs, fetched concurrently ──────────────────────
-  // Five independent reads that must all land before the model is called. They
-  // run after the membership/mode gate, so a caller who fails authorization
-  // never reaches them; all are side-effect-free, so a request that goes on to
-  // fail the budget check below simply discards them.
   const [budget, inProgress, attemptRow, questionRow, transcriptContext] =
     await Promise.all([
       // Lifetime per-quiz budget, scoped to the ASSIGNMENT (student + class +
@@ -339,8 +305,6 @@ export async function POST(req: NextRequest) {
     model: TUTOR_MODEL,
     max_tokens: TUTOR_MAX_TOKENS,
     system: buildTutorSystemPrompt({ language, mode, hasActiveQuestion }),
-    // Prior turns give follow-ups context; the transcript slice rides only on the
-    // latest user message (it reflects the current playhead).
     messages: [
       ...history,
       {

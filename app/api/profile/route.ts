@@ -3,19 +3,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { isSupportedLanguage } from "@/lib/lang";
 
-/**
- * /api/profile  (self-service profile settings)
- *   PATCH → update the caller's own `profiles.preferred_language`.
- *
- * The value must be one of `he`/`ar`/`en`, or `null` to clear it (fall back to
- * the class/quiz language). The write goes through the SSR (RLS-subject) client,
- * so the `profiles` self-update policy is what actually authorises it — this
- * handler only authenticates, validates, and shapes the response.
- *
- * Uniform error envelope `{ error: { code, message } }`; success returns the
- * persisted `{ preferred_language }`.
- */
-
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });
 }

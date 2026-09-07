@@ -50,8 +50,6 @@ describe("BackLink", () => {
   });
 
   it("follows the ?from= key back to where the user actually came from", () => {
-    // The motivating bug: the "+" on the teacher home opens the new-quiz page,
-    // whose own default back link points at "החידונים שלי".
     render(<BackLink href="/dashboard/quizzes" label="החידונים שלי" from="overview" />);
     const link = screen.getByRole("link", { name: "סקירה" });
     expect(link).toHaveAttribute("href", "/dashboard");

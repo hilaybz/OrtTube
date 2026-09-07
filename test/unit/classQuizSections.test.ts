@@ -1,8 +1,3 @@
-/**
- * Unit tests for the class quizzes tab's lifecycle-section grouping/sort
- * (issue #31's restructure — hidden/live/scheduled/ended sections) — no DB,
- * no React.
- */
 import { describe, it, expect } from "vitest";
 import { groupAssignedByState } from "@/components/teacher/classes/AssignedQuizzesSection";
 import type { AssignedQuiz } from "@/lib/classes";

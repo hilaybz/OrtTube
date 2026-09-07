@@ -12,8 +12,6 @@ import { grade } from "./chartTheme";
 import { CELL, HEAD_CELL, ROW_BORDER, ROW_HEAD, ROW_LINK } from "./tableStyles";
 
 /**
- * Every class this quiz is assigned to, and how each one did with it.
- *
  * A `shared` quiz can be assigned by any same-school teacher, so some rows may
  * belong to a colleague's class. Those rows are shown — the author's aggregate
  * numbers already include them, and a class the author cannot open is exactly the

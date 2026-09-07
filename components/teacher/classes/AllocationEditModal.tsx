@@ -15,11 +15,6 @@ import {
 import { TUTOR_MODE_LABELS } from "./labels";
 
 /**
- * Edit one allocation's settings from the class side: tutor mode, attempts,
- * visibility and the scheduling window — the same affordance the quiz editor's
- * הקצאות list offers from the other direction, so a teacher who found the quiz
- * through the class doesn't have to leave to change how it is assigned.
- *
  * Submits the FULL settings object through the assign upsert
  * (`assign_quiz_to_class`), because a partial call resets whatever it omits to
  * that field's default. Everything the form can change is therefore on screen
@@ -33,7 +28,6 @@ export function AllocationEditModal({
   onSaved,
 }: {
   classId: string;
-  /** `null` closes the modal; a value both opens it and seeds the form. */
   allocation: AssignedQuiz | null;
   onClose: () => void;
   onSaved: () => void;

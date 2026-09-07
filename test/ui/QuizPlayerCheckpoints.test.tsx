@@ -1,19 +1,3 @@
-/**
- * The checkpoint timeline under the player. Two things it must get right:
- *
- * 1. Position. A checkpoint sits at `videoTime / duration` along the bar —
- *    a question at 0:53 of a 15-minute video belongs at the very start, not
- *    a fifth of the way in. The display this replaced spaced markers evenly by
- *    question order, which put that question mid-bar; the assertions here fail
- *    on any such order-derived layout.
- * 2. Who may navigate. The timeline is not a free scrubber: the block-skip gate
- *    decides where a student may go, so a checkpoint they have already answered
- *    is a way back to that moment while one still locked is a status node that
- *    does nothing when pressed. The track itself never seeks at all.
- *
- * The other seek a student may trigger is the deliberate "rewatch this segment"
- * button in the question overlay, so that is pinned here too.
- */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -59,7 +43,6 @@ vi.mock("@/components/student/AskAI", () => ({
 
 import { QuizPlayer } from "@/components/student/QuizPlayer";
 
-/** A 15-minute video with an early question and a late one. */
 const DURATION = 900;
 const CHECKPOINTS = [53, 800];
 
@@ -98,7 +81,6 @@ const QUESTIONS: StudentQuestion[] = CHECKPOINTS.map((seconds, i) => ({
   ],
 }));
 
-/** Serve the reads `start()` makes plus the answer POST, keyed by URL. */
 function serveQuiz(): void {
   vi.stubGlobal(
     "fetch",
@@ -139,7 +121,6 @@ async function startQuiz(): Promise<void> {
   await screen.findByRole("list", { name: "נקודות העצירה בחידון" });
 }
 
-/** Reach a checkpoint, pick an answer and submit it, so that marker turns done. */
 async function answerCheckpoint(seconds: number): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: `advance-to-${seconds}` }));
   await userEvent.click(await screen.findByRole("radio", { name: /אלף/ }));
@@ -150,7 +131,6 @@ function markers(): HTMLElement[] {
   return screen.getAllByTestId("checkpoint-marker");
 }
 
-/** The percentage a marker is positioned at along the track. */
 function markerLeftPct(marker: HTMLElement): number {
   return Number.parseFloat((marker.parentElement as HTMLElement).style.left);
 }
@@ -173,7 +153,6 @@ describe("QuizPlayer — checkpoint timeline", () => {
     // markers evenly by question order would produce for two questions.
     expect(markerLeftPct(first)).toBeCloseTo((53 / DURATION) * 100, 4);
     expect(markerLeftPct(second)).toBeCloseTo((800 / DURATION) * 100, 4);
-    // The early question really does sit near the start of the bar.
     expect(markerLeftPct(first)).toBeLessThan(10);
   });
 
@@ -206,7 +185,6 @@ describe("QuizPlayer — checkpoint timeline", () => {
     );
     expect(markers()[0]).toHaveTextContent("שאלה 1 · 0:53 · נענתה");
     expect(markers()[1]).toHaveAttribute("data-state", "current");
-    // The progress counter above the video moves with it.
     expect(screen.getByRole("progressbar")).toHaveAttribute(
       "aria-valuetext",
       "1 מתוך 2 שאלות"
@@ -223,7 +201,6 @@ describe("QuizPlayer — checkpoint timeline", () => {
 
     const answered = markers()[0];
     expect(answered.tagName).toBe("BUTTON");
-    // The accessible name has to say what pressing it does, not only what it is.
     expect(answered.textContent).toContain("מעבר לנקודה זו");
 
     await userEvent.click(answered);
@@ -235,8 +212,6 @@ describe("QuizPlayer — checkpoint timeline", () => {
     await startQuiz();
     stage.seekTo.mockClear();
 
-    // Nothing answered yet, so the gate sits at 0:53: that checkpoint is
-    // reachable and the 13:20 one behind it is not.
     const [atGate, locked] = markers();
     expect(atGate.tagName).toBe("BUTTON");
     expect(locked).toHaveAttribute("data-state", "upcoming");
@@ -258,7 +233,6 @@ describe("QuizPlayer — checkpoint timeline", () => {
     );
     stage.seekTo.mockClear();
 
-    // No gate left, so both checkpoints are destinations.
     for (const marker of markers()) expect(marker.tagName).toBe("BUTTON");
     await userEvent.click(markers()[1]);
     expect(stage.seekTo).toHaveBeenCalledWith(800);
@@ -299,7 +273,6 @@ describe("QuizPlayer — checkpoint timeline", () => {
       await screen.findByRole("button", { name: /צפייה חוזרת בקטע/ })
     );
 
-    // Back to the previous checkpoint — the segment this question is about.
     expect(stage.seekTo).toHaveBeenCalledWith(53);
   });
 });

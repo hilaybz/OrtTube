@@ -1,15 +1,8 @@
 /**
- * Date/time formatting for the UI.
- *
  * Everything here pins an explicit timezone and locale, and that is the whole
  * point. These strings are produced during server rendering AND again when React
  * hydrates in the browser; if the two disagree by so much as a character, React
  * throws a hydration error (#418) and discards the server tree.
- *
- * They *did* disagree. Vercel's functions run with TZ=UTC while the audience is
- * in Israel, so `toLocaleString("he-IL", …)` rendered "20.8, 15:19" on the
- * server and "20.8, 18:19" in the browser — a guaranteed mismatch on every row
- * carrying a date, not an intermittent one.
  *
  * Pinning to Asia/Jerusalem rather than deferring the render to the client is
  * deliberate: this is a schools product with one timezone, so the fixed zone is
@@ -22,18 +15,10 @@ export const APP_TIME_ZONE = "Asia/Jerusalem";
 export const APP_LOCALE = "he-IL";
 
 /**
- * Calendar dates render as `dd/mm/yyyy` everywhere in the app.
- *
  * The locale is `en-GB` rather than `APP_LOCALE` purely for its separator and
  * ordering: `he-IL` numeric renders `5.8` with dots and no year, and a
  * zero-padded slashed date is what was asked for. The digits are the same either
  * way — Hebrew uses Western numerals — so nothing here is language-specific.
- *
- * Padded, not `numeric`: the dates sit in `tabular-nums` columns and rows of
- * `5/8/2026` beside `15/12/2026` do not line up.
- *
- * `formatToday` deliberately keeps its long Hebrew form; it is a greeting, not a
- * record.
  */
 const DATE_LOCALE = "en-GB";
 const DATE_PARTS = {
@@ -42,12 +27,10 @@ const DATE_PARTS = {
   year: "numeric",
 } as const;
 
-/** "dd/mm/yyyy, HH:mm" — a scheduling-window bound. */
 export function formatDateTime(iso: string): string {
   return `${formatDate(iso)}, ${formatTime(iso)}`;
 }
 
-/** "dd/mm/yyyy" — a date with no time of day. */
 export function formatDate(iso: string | Date): string {
   return new Date(iso).toLocaleDateString(DATE_LOCALE, {
     ...DATE_PARTS,
@@ -55,7 +38,6 @@ export function formatDate(iso: string | Date): string {
   });
 }
 
-/** "HH:mm" — a time with no date. */
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(APP_LOCALE, {
     hour: "2-digit",
@@ -64,7 +46,6 @@ export function formatTime(iso: string): string {
   });
 }
 
-/** A long weekday and date, e.g. `יום חמישי, 20 באוגוסט`. */
 export function formatToday(now: Date): string {
   return new Intl.DateTimeFormat(APP_LOCALE, {
     weekday: "long",
@@ -90,11 +71,6 @@ export function schoolDayNumber(date: Date): number {
   return Math.floor(Date.parse(`${ymd}T00:00:00Z`) / 86_400_000);
 }
 
-/**
- * The greeting for a moment, keyed to the local time of day: an Israeli morning
- * is the middle of the night in UTC. The small hours get a plain "שלום" —
- * every Hebrew night greeting is a farewell.
- */
 export function greetingFor(now: Date): string {
   const hour = Number(
     new Intl.DateTimeFormat("en-GB", {
@@ -112,7 +88,6 @@ export function greetingFor(now: Date): string {
   return "שלום";
 }
 
-/** The name to greet by: the first word of a display name, or nothing. */
 export function firstName(displayName: string | null): string | null {
   const first = displayName?.trim().split(/\s+/)[0];
   return first ? first : null;

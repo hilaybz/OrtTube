@@ -1,17 +1,3 @@
-/**
- * Tutor integration tests — the `get_tutor_mode` SECURITY DEFINER RPC and
- * `tutor_questions` logging (spec §5, §3.6). Every action runs through an actor's
- * AUTHENTICATED (RLS-subject) client via the actor DSL (`test/helpers/testbed`),
- * so the RPC's `auth.uid()` membership check is real.
- *
- * Covers: membership gate (member vs non-member), assignment gate, per-class
- * mode + language/video context returned, students have no direct SELECT on
- * class_quizzes, and that the service client can log a tutor_questions row with
- * the full set of FKs (and anonymises it when the student is deleted).
- *
- * Runs at the integration/gate step (owns DB application). Skipped when the local
- * DB is unreachable so unit suites still pass without Supabase running.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { getPool, closePool } from "../helpers/db";
 import {
@@ -26,7 +12,6 @@ import { stackOnline } from "../helpers/stack";
 
 const online = await stackOnline();
 
-/** A logged tutor-interaction row, read out-of-band for assertions. */
 interface TutorLogRow {
   student_id: string | null;
   class_id: string;
@@ -37,11 +22,6 @@ interface TutorLogRow {
   ai_response: string;
 }
 
-/**
- * Read the tutor_questions rows matching one FK (out-of-band assertion helper —
- * students have no direct grant on the table). `column` is a fixed union, so the
- * interpolation is safe.
- */
 async function tutorLogWhere(
   column: "student_id" | "quiz_id",
   value: string
@@ -115,7 +95,6 @@ describe.skipIf(!online)("tutor — get_tutor_mode + logging", () => {
 
   it("rejects an unassigned quiz with not_assigned", async () => {
     const quiz = await teacher.authorQuiz();
-    // Deliberately NOT assigned to the class.
     await expect(
       student.tutorContext(quiz, { in: classroom })
     ).rejects.toThrow(/not_assigned/);
@@ -125,7 +104,6 @@ describe.skipIf(!online)("tutor — get_tutor_mode + logging", () => {
     const quiz = await teacher.authorQuiz();
     await teacher.assignQuiz(quiz, { to: classroom, tutor: "hints" });
 
-    // RLS (owner-only SELECT) → the student cannot see the assignment row.
     expect(await student.canSeeAssignment(quiz, { in: classroom })).toBe(false);
   });
 
@@ -166,7 +144,6 @@ describe.skipIf(!online)("tutor — get_tutor_mode + logging", () => {
       aiResponse: "a",
     });
 
-    // Hard-delete the auth user → profiles cascades → FK sets student_id NULL.
     await testbed.admin.hardDeleteAuthUser(student);
 
     const logged = await tutorLogWhere("quiz_id", quiz.id);

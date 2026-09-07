@@ -16,18 +16,12 @@ import { studentAnalyticsHref } from "../analyticsLinks";
 const PAGE_SIZES = [10, 25, 50] as const;
 
 /**
- * The class roster, read-only: who is in the class, searchable and paged, each
- * student a link to their analytics.
- *
  * Membership is deliberately not editable here. A teacher does not enrol or
  * un-enrol anyone — the school owns the roster (the `add_student_to_class` /
  * `remove_student_from_class` RPCs and their routes still exist for that
  * path), so this screen answers "who is in my class and how are they doing"
  * and nothing else. Pending invites are shown for the same reason: they
  * explain why a student a teacher expects isn't listed yet.
- *
- * Search runs over the whole roster and paging over what survives it, so a
- * query is never hidden behind a page boundary.
  */
 export function RosterSection({ roster }: { roster: ClassRoster }) {
   const { members, invites } = roster;
@@ -130,11 +124,6 @@ export function RosterSection({ roster }: { roster: ClassRoster }) {
   );
 }
 
-/**
- * One student. The whole row is the link — a roster exists to be drilled into,
- * and there is exactly one thing to do with a student here, so a separate
- * "open analytics" control would just be a smaller target for the same action.
- */
 function MemberRow({ member }: { member: RosterMember }) {
   const name = member.display_name ?? member.email;
   return (

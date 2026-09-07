@@ -1,8 +1,3 @@
-/**
- * `MultiSelectDropdown` — the checkbox-panel multi-select, used wherever a
- * `Pill` row would otherwise wrap into several lines once the option list
- * grows (e.g. the quiz library's class filter with a large class roster).
- */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect } from "vitest";
@@ -72,7 +67,6 @@ describe("MultiSelectDropdown", () => {
     render(<Harness />);
     await userEvent.click(screen.getByRole("button", { name: "בחירה" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "אלף" }));
-    // Still open — the panel isn't dismissed by a click inside it.
     expect(screen.getByRole("checkbox", { name: "בית" })).toBeInTheDocument();
   });
 
@@ -93,9 +87,6 @@ describe("MultiSelectDropdown", () => {
     render(<Harness />);
     await userEvent.click(screen.getByRole("button", { name: "בחירה" }));
     const panel = screen.getByRole("checkbox", { name: "אלף" }).closest("div")!;
-    // A filter over short class names must not be a slab far wider than
-    // anything in it: the panel is `w-max` between a min and a max, and its
-    // inline style only ever carries the position it was measured into.
     expect(panel.className).toContain("w-max");
     expect(panel.className).not.toContain("w-56");
     expect(panel.style.width).toBe("");

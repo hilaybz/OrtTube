@@ -1,8 +1,3 @@
-/**
- * Tutor unit tests — tutor prompt construction + playhead spoiler bound (spec §5).
- *
- * Pure functions only; no DB, no Anthropic, no network — always run.
- */
 import { describe, it, expect } from "vitest";
 import {
   buildTutorSystemPrompt,
@@ -14,20 +9,15 @@ import {
 import { sliceTranscriptToPlayhead } from "@/lib/transcript";
 import { SUPPORTED_LANGUAGES, type Language } from "@/lib/lang";
 
-/** English name the prompt must use for each supported language code. */
 const EXPECTED_LANGUAGE_NAME: Record<Language, string> = {
   he: "Hebrew",
   ar: "Arabic",
   en: "English",
 };
 
-/** Every mode the prompt builders accept (`off` is refused by the route). */
 const TUTOR_MODES: ReadonlyArray<Exclude<TutorMode, "off">> = ["hints", "full"];
 
 describe("buildTutorSystemPrompt", () => {
-  // The reported "answers in English" bug would show up here as a missing or
-  // mode-dependent pin, so this covers the FULL language × mode matrix rather
-  // than one language per mode.
   it("pins the response language in every mode, for every supported language", () => {
     for (const language of SUPPORTED_LANGUAGES) {
       for (const mode of TUTOR_MODES) {
@@ -84,7 +74,6 @@ describe("buildTutorSystemPrompt", () => {
     const prompt = buildTutorSystemPrompt({ language: "en", mode: "full", hasActiveQuestion: true });
     expect(prompt).toContain("NEVER");
     expect(prompt.toLowerCase()).toContain("correct");
-    // Never leaks the answer-key column name into the prompt.
     expect(prompt).not.toContain("is_correct");
   });
 
@@ -93,9 +82,6 @@ describe("buildTutorSystemPrompt", () => {
     expect(prompt).not.toContain("quiz question on screen");
   });
 
-  // A4: the answer-leak guard is ALWAYS present and can never be gated off, even
-  // when no question is flagged active (a client omitting activeQuestionId must
-  // not be able to strip the protection).
   it("always includes the answer-leak guard, even with no active question", () => {
     for (const mode of ["hints", "full"] as const) {
       const prompt = buildTutorSystemPrompt({ language: "en", mode, hasActiveQuestion: false });
@@ -150,8 +136,6 @@ describe("buildTutorUserMessage", () => {
     expect(message.toLowerCase()).toContain("no transcript");
   });
 
-  // The transcript and the student's own wording are often in another language,
-  // so the language requirement is restated in the strongest position: last.
   it("closes with the response language for every supported language", () => {
     for (const language of SUPPORTED_LANGUAGES) {
       const message = buildTutorUserMessage({
@@ -201,7 +185,7 @@ describe("sliceTranscriptToPlayhead spoiler bound (tutor acceptance)", () => {
   ];
 
   it("never includes content past the playhead", () => {
-    const watchedContext = sliceTranscriptToPlayhead(segments, 10 /* seconds */, 2000);
+    const watchedContext = sliceTranscriptToPlayhead(segments, 10 , 2000);
     expect(watchedContext).toContain("intro watched");
     expect(watchedContext).toContain("middle watched");
     expect(watchedContext).not.toContain("future spoiler");

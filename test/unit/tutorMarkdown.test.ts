@@ -1,9 +1,3 @@
-/**
- * The tutor answer's Markdown subset. The bug this parser exists for: the model
- * writes `**חשוב**` and the student saw the asterisks. Everything here is pure
- * — no React, no DOM — and the renderer only ever places these nodes in text
- * positions, so nothing in a model's answer can become markup.
- */
 import { describe, it, expect } from "vitest";
 import { parseInline, parseBlock, splitBlocks } from "@/components/student/markdown";
 

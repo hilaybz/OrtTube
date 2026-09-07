@@ -2,13 +2,6 @@ import { type NextRequest, NextResponse } from "next/server";
 import { submitAnswer } from "@/lib/attempts";
 import { err, handleError, requireAuth } from "../../http";
 
-/**
- * POST /api/attempts/[attemptId]/answers  (submit, graded server-side)
- *
- * Body: { questionId, optionIds: string[] }. Grading happens in the RPC; the
- * response acknowledges the record without echoing correctness. One answer per
- * (attempt, question) → 409 `already_answered` on a repeat.
- */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ attemptId: string }> }

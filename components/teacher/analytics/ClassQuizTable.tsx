@@ -14,21 +14,6 @@ import type { ClassOverviewQuiz } from "@/lib/analytics";
 import { grade } from "./chartTheme";
 import { CELL, HEAD_CELL, ROW_BORDER, ROW_HEAD, ROW_LINK } from "./tableStyles";
 
-/**
- * The class's assigned quizzes, one row each, linking through to that quiz's
- * breakdown INSIDE this class — the per-(class, quiz) view, not the quiz's
- * cross-class one, because a reader who got here by picking a class is asking
- * about this class.
- *
- * Completion is a fraction of the class (`12/28`), never a bare percentage: "43%"
- * hides both how many students that is and how big the class is, which are the
- * two things a teacher acts on. The score is a grade out of 100, the same way
- * every other screen speaks about scores.
- *
- * Searched and paged in the browser: the row set is one class's assignments,
- * already fetched whole for the charts above, so a second server round trip per
- * page would buy nothing.
- */
 export function ClassQuizTable({
   classId,
   quizzes,

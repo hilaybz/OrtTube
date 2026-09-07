@@ -4,8 +4,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 
 /**
- * User-lifecycle primitives.
- *
  * Server-only helpers, always driven with the **service-role** client (they
  * hard-delete `auth.users` rows and call the privileged lifecycle RPCs, both of
  * which require elevated context). Consumed by `/api/admin/delete-user`.
@@ -39,10 +37,6 @@ export interface ReassignOwnershipResult {
   quizzesReassigned: number;
 }
 
-/**
- * A lifecycle failure with a stable `code` and an HTTP `status` the admin
- * endpoint maps directly onto its `{ error: { code, message } }` response.
- */
 export class LifecycleError extends Error {
   readonly code: string;
   readonly status: number;
@@ -55,7 +49,6 @@ export class LifecycleError extends Error {
   }
 }
 
-/** Shape of a PostgREST error as surfaced by supabase-js `.rpc()`. */
 interface PostgrestErrorLike {
   code?: string;
   message: string;
@@ -63,15 +56,11 @@ interface PostgrestErrorLike {
   hint?: string | null;
 }
 
-/** Loose `.rpc()` signature: the generated types omit these RPCs until the gate
- *  regenerates `lib/supabase/types.ts`, so we call through a narrow cast rather
- *  than editing that (gate-owned) file. */
 type RpcCaller = (
   fn: string,
   args?: Record<string, unknown>
 ) => Promise<{ data: unknown; error: PostgrestErrorLike | null }>;
 
-/** Map an RPC SQLSTATE onto a `LifecycleError`. */
 function mapRpcError(err: PostgrestErrorLike): LifecycleError {
   switch (err.code) {
     case "OT404":
@@ -87,13 +76,8 @@ function mapRpcError(err: PostgrestErrorLike): LifecycleError {
   }
 }
 
-/** Postgres RESTRICT foreign-key violation (a teacher still owns content). */
 const FK_RESTRICT_VIOLATION = "23503";
 
-/**
- * Delete a user, branching by role. Idempotent-friendly: a missing
- * profile raises `not_found`.
- */
 export async function deleteUser(
   service: SupabaseClient<Database>,
   userId: string
@@ -125,7 +109,6 @@ export async function deleteUser(
     }
   }
 
-  // Hard-delete the auth user; FK cascade/SET-NULL rules do the anonymisation.
   const { error: delErr } = await service.auth.admin.deleteUser(userId);
   if (delErr) {
     // Race fallback: if a class/quiz was assigned to this teacher between the
@@ -178,8 +161,6 @@ async function countTeacherContent(
 const BAN_DURATION = "876000h";
 
 /**
- * Deactivate a teacher (RPC `deactivate_teacher`). Idempotent.
- *
  * Stamping `profiles.deactivated_at` gates FUTURE sign-ins (the sign-in
  * evaluation rejects a deactivated profile), but an ALREADY-issued GoTrue access
  * token stays valid until it expires — so a just-deactivated teacher could keep
@@ -198,12 +179,10 @@ export async function deactivateTeacher(
   });
   if (error) throw mapRpcError(error);
 
-  // Revoke the GoTrue session so a live token can't outlive the deactivation.
   const { error: banErr } = await service.auth.admin.updateUserById(teacherId, {
     ban_duration: BAN_DURATION,
   });
   if (banErr) {
-    // Non-fatal: the authoritative profile flag is already set. Log for ops.
     console.error(
       `[lifecycle] failed to ban deactivated teacher ${teacherId}: ${banErr.message}`
     );
@@ -213,10 +192,6 @@ export async function deactivateTeacher(
   return { teacherId: row.teacher_id, deactivatedAt: row.deactivated_at };
 }
 
-/**
- * Reassign every class + quiz from one teacher to another (RPC
- * `reassign_ownership`). Target must be an active, same-school teacher.
- */
 export async function reassignOwnership(
   service: SupabaseClient<Database>,
   fromTeacher: string,

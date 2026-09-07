@@ -6,7 +6,6 @@ export default defineConfig({
     alias: {
       // Let server-only modules (e.g. lib/supabase/service.ts) import in Node.
       "server-only": resolve(__dirname, "test/stubs/server-only.ts"),
-      // Mirror the tsconfig `@/*` path alias.
       "@": resolve(__dirname),
     },
   },

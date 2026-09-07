@@ -6,27 +6,16 @@ import { DonutChart } from "./DonutChart";
 import { SCORE_BAND_COLORS, SERIES, grade, ltr, pct } from "./chartTheme";
 import type { QuizAnalyticsOverview } from "@/lib/analytics";
 
-/** "0–20" .. "80–100" for a score band, isolated as an LTR run (see `ltr`). */
 function bandLabel(min: number, max: number): string {
   return ltr(`${Math.round(min * 100)}–${Math.round(max * 100)}`);
 }
 
-/** "1:23" from a question's playhead anchor. */
 function timestamp(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/**
- * The quiz's charts, as a fixed 2×2 grid: how each class did with it, how the
- * grades are spread overall, and which questions students get wrong.
- *
- * The per-question chart is the one an author acts on. It plots correct-% in
- * question order rather than sorted by difficulty, because the order is what the
- * author edits against — the sorted "most often wrong" view is the table below,
- * where a rank is more use than a position.
- */
 export function QuizCharts({ data }: { data: QuizAnalyticsOverview }) {
   const classes = data.classes;
   const distributionLabels = data.score_distribution.map((b) =>

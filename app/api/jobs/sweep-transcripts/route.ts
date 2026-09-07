@@ -1,16 +1,9 @@
-// POST /api/jobs/sweep-transcripts — OPTIONAL
-//
 // Transcript TTL sweep. Deletes Storage transcript objects older than the TTL to
 // bound storage. This is a belt-and-braces job: the read path already re-fetches
 // on staleness and gc-videos removes objects for deleted videos, but Supabase
 // Storage has NO native object-lifecycle/expiry, so nothing else caps the storage
 // of an object whose video still exists yet is never read again. Age is read from
 // each object's own Storage metadata (updated_at), so it needs no DB coupling.
-//
-// Guarded by CRON_SECRET. Suggested cadence: weekly.
-//
-// TTL (days), highest priority first: JSON body `ttlDays` → `?ttlDays=` → env
-// `TRANSCRIPT_TTL_DAYS` → default 30. Clamped to >= 1.
 import { assertSecret } from "@/lib/jobs/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { jobError, jobOk, pickInt, readBody, TRANSCRIPT_BUCKET } from "../shared";
@@ -37,7 +30,6 @@ export async function POST(req: Request): Promise<Response> {
   const service = createServiceClient();
   const bucket = service.storage.from(TRANSCRIPT_BUCKET);
 
-  // Page through the bucket, collecting stale object names.
   const stale: string[] = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data: page, error } = await bucket.list("", {

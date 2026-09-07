@@ -15,14 +15,12 @@ import type {
   TutorQuestionQuizFilter,
 } from "@/lib/analytics";
 
-/** Which scope this log is reading, mirroring `tutor_questions_page`. */
 export interface TutorLogScope {
   studentId?: string;
   quizId?: string;
   classId?: string;
 }
 
-/** "1:23" from a playhead position, or empty when the ask had no position. */
 function timestamp(seconds: number | null): string {
   if (seconds == null || seconds < 0) return "";
   const m = Math.floor(seconds / 60);
@@ -30,20 +28,6 @@ function timestamp(seconds: number | null): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/**
- * The questions students actually asked OrtAI, in scope, newest first.
- *
- * Server-paged: this log grows for as long as a class keeps working, so the
- * window comes from `tutor_questions_page` rather than a full list sliced in the
- * browser. The quiz filter is populated from the SAME response, so it can only
- * ever offer quizzes that actually have questions in this scope — a filter that
- * lists an option leading to an empty page is worse than no filter.
- *
- * A question asked while a quiz question was on screen is flagged: that is the
- * shape of a student fishing for the answer rather than for understanding, and
- * it is the one thing in this list a teacher should be able to spot without
- * reading every row.
- */
 export function TutorQuestionLog({
   scope,
   title = "השאלות שנשאלו את OrtAI",
@@ -53,7 +37,6 @@ export function TutorQuestionLog({
 }: {
   scope: TutorLogScope;
   title?: string;
-  /** Attribute each row to a student — off inside a single student's own view. */
   showStudent?: boolean;
   showQuizFilter?: boolean;
   emptyMessage?: string;

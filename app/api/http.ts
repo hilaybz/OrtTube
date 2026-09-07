@@ -2,22 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/**
- * HTTP plumbing shared by every `/api/**` domain.
- *
- * The uniform error envelope and the authentication gate are identical across
- * domains; only the code-to-status mapping differs, so each domain's `http.ts`
- * keeps its own `statusForCode`/`handleError` and re-exports what lives here.
- */
-
 export function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });
 }
 
 /**
- * Resolve the signed-in user + RLS-subject client, or an early 401 response.
- * Returns a discriminated result so callers can `if (auth.response) return`.
- *
  * Identifies the caller with `getClaims` rather than `getUser`. `getUser` is
  * unconditionally a request to the auth server, and it sits in front of the RPC
  * on every authenticated route, so it lands one extra round trip on requests

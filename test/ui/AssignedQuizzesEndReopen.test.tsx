@@ -1,8 +1,3 @@
-/**
- * The class page's per-quiz End/Reopen actions (fixing: no way to end a
- * window-less live quiz; hiding an already-`done` quiz silently discarded
- * its "ended" status; analytics was hidden for anything not live/done).
- */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -57,14 +52,11 @@ describe("AssignedQuizzesSection — end/reopen", () => {
     );
     renderSection([quiz({ published: true, available_from: null, available_until: null })]);
 
-    // Open-endedness is still stated outright — now inside the row's status
-    // chip ("פעיל · ללא מועד סיום") rather than as a separate window line.
     expect(screen.getByText(/ללא מועד סיום/)).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "סיום השאלון עכשיו" })
     );
 
-    // The modal is open — confirming hasn't happened yet, no PATCH fired.
     expect(screen.getByText(/לסיים את/)).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
 
@@ -77,7 +69,6 @@ describe("AssignedQuizzesSection — end/reopen", () => {
     );
     const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
     expect(body.availableFrom).toBeNull();
-    // Ends "now" — assert it's a valid, recent timestamp rather than a fixed value.
     expect(Date.now() - new Date(body.availableUntil).getTime()).toBeLessThan(5000);
   });
 
@@ -90,7 +81,7 @@ describe("AssignedQuizzesSection — end/reopen", () => {
       quiz({
         published: true,
         available_from: null,
-        available_until: "2020-01-01T00:00:00.000Z", // long past → done
+        available_until: "2020-01-01T00:00:00.000Z",
       }),
     ]);
 
@@ -103,7 +94,6 @@ describe("AssignedQuizzesSection — end/reopen", () => {
 
     await userEvent.click(reopenButton);
 
-    // One click, no confirmation step.
     await vi.waitFor(() => expect(refresh).toHaveBeenCalled());
     expect(fetch).toHaveBeenCalledWith(
       "/api/classes/c1/quizzes/q1",
@@ -113,12 +103,6 @@ describe("AssignedQuizzesSection — end/reopen", () => {
     expect(body).toEqual({ availableFrom: null, availableUntil: null });
   });
 
-  /**
-   * A withdrawn (unpublished) row deliberately has NO analytics affordance: it
-   * is the one group the class screen dims rather than titles, because a quiz
-   * students cannot see has nothing to analyse yet. This reverses an earlier
-   * guard that put the link on every row regardless of state.
-   */
   it("a withdrawn row offers no analytics link", () => {
     renderSection([quiz({ published: false })]);
     expect(screen.queryByRole("link", { name: /אנליטיקה/ })).not.toBeInTheDocument();

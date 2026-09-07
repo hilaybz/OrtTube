@@ -2,10 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { removeStudentFromClass } from "@/lib/classes";
 import { handleError, requireAuth } from "../../../http";
 
-/**
- * DELETE /api/classes/[id]/students/[studentId]  (un-enroll a student).
- * Idempotent; the student's attempts/tutor_questions survive.
- */
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; studentId: string }> }

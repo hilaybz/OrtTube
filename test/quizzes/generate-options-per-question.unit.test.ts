@@ -1,12 +1,3 @@
-/**
- * options-per-question unit tests (spec §8).
- *
- * The cap is variable (3/4/5), which makes the "split correct BEFORE trimming"
- * ordering in `normalizeGeneratedQuestion` load-bearing rather than incidental:
- * at a cap of 3 the trim is far more likely to reach a correct option the model
- * placed late. These tests pin that lowering the cap trims DISTRACTORS and never
- * the answer key.
- */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const createMock = vi.fn();
@@ -31,7 +22,6 @@ const segments: TranscriptSegment[] = [
   { text: "and then a second distinct topic follows on", offset: 20_000, duration: 5000 },
 ];
 
-/** `n` options where only the one at `correctIndex` is correct. */
 function optionsWithCorrectAt(n: number, correctIndex: number) {
   return Array.from({ length: n }, (_, i) => ({
     text: `opt${i}`,
@@ -69,8 +59,6 @@ describe("normalizeGeneratedQuestion with a variable options cap", () => {
   });
 
   it("keeps a LATE correct option when trimming to 3 (the answer-key hazard)", () => {
-    // The only correct option sits at index 5 — beyond a 3-cap. Trimming first
-    // would drop it and silently re-key the question to option 0.
     const q = normalizeGeneratedQuestion(
       { kind: "single", prompt: "?", position_seconds: 0, options: optionsWithCorrectAt(6, 5) },
       segments,
@@ -117,7 +105,6 @@ describe("normalizeGeneratedQuestion with a variable options cap", () => {
           kind: "single",
           prompt: "?",
           position_seconds: 0,
-          // Several marked correct — single must coerce to exactly one.
           options: [
             { text: "a", is_correct: true },
             { text: "b", is_correct: true },
@@ -167,7 +154,6 @@ describe("options-per-question in the prompt", () => {
 
     const prompt = promptSentToModel();
     expect(prompt).toMatch(/Exactly 5 options each/);
-    // The example must not contradict the instruction above it.
     const exampleOptionLines = prompt.match(/\{ "text": "\.\.\.", "is_correct": (true|false) \}/g);
     expect(exampleOptionLines).toHaveLength(5);
     expect(exampleOptionLines!.filter((l) => l.includes("true"))).toHaveLength(1);

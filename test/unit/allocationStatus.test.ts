@@ -1,16 +1,3 @@
-/**
- * The one status treatment an allocation row wears, in every lifecycle state.
- *
- * These strings are the whole feature: a teacher should learn what happens
- * next from the chip alone, without a second date range beside it. So the test
- * pins the wording, the dual forms Hebrew actually uses ("שעתיים", not
- * "2 שעות"), and the point where a relative countdown gives way to a plain
- * date — plus the colour, which is what makes a row match its section: green
- * while students can reach the quiz, neutral once they can't.
- *
- * Every instant is built with the local-time `Date` constructor so the
- * calendar-day arithmetic ("מחר", "אתמול") holds in any timezone.
- */
 import { describe, it, expect } from "vitest";
 import {
   allocationStatus,
@@ -19,10 +6,8 @@ import {
   STATE_VARIANT,
 } from "@/components/teacher/scheduleFormat";
 
-/** Monday 15 June 2026, midday, local. */
 const NOW = new Date(2026, 5, 15, 12, 0, 0);
 
-/** A local-time instant as the ISO string the RPC would have returned. */
 function at(year: number, month: number, day: number, hour = 0, minute = 0): string {
   return new Date(year, month, day, hour, minute).toISOString();
 }
@@ -94,7 +79,6 @@ describe("allocationStatus — ended", () => {
     const status = allocationStatus(live(at(2026, 5, 14, 9)), NOW);
     expect(status.state).toBe("done");
     expect(status.label).toBe("הסתיים אתמול");
-    // Neutral, not green: a closed window is settled, not a success.
     expect(status.variant).toBe("gray");
     expect(status.icon).toBe("checkCircle");
   });
@@ -126,8 +110,6 @@ describe("allocationStatus — withdrawn from students", () => {
 
 describe("formatShortDate", () => {
   it("always carries the year, in or out of the current one", () => {
-    // It used to drop the year within the current year, which made two rows a
-    // few months apart read in different formats. One shape everywhere now.
     expect(formatShortDate(new Date(2026, 7, 26))).toBe("26/08/2026");
     expect(formatShortDate(new Date(2025, 7, 26))).toBe("26/08/2025");
   });

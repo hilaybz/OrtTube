@@ -14,27 +14,8 @@ import {
 } from "@/components/teacher/editor/VideoPreviewPanel";
 import { QuestionListItem } from "@/components/teacher/editor/QuestionListItem";
 
-// How long a marker-click highlight lingers on the matching question card —
-// mirrors QuizEditor.tsx's own HIGHLIGHT_MS exactly.
 const HIGHLIGHT_MS = 1600;
 
-/**
- * Read-only preview of a quiz before cloning it (backlog 1.3 / issue #13):
- * the same video+timeline+question-list surface `QuizEditor.tsx` renders for
- * an owner, reused component-for-component (`VideoPreviewPanel` with no
- * move handlers, `QuestionListItem` with no edit/delete callbacks) so a
- * teacher sees exactly what they'd get, correct answers and explanations
- * included, with a "שכפול" action right here instead of committing blind.
- *
- * `onClone` is optional: the class page's assigned-quiz rows reuse this same
- * surface for a shared quiz the viewing teacher didn't author, purely to look
- * at it (the editor is off-limits for a quiz they don't own) — no clone
- * button renders when it's omitted.
- *
- * `getQuizForPreview` fetched client-side (not passed down from the server
- * page) since this opens from a modal on the already-rendered library page,
- * not from a route transition.
- */
 export function QuizPreviewModal({
   open,
   quizId,
@@ -43,7 +24,6 @@ export function QuizPreviewModal({
   cloning,
 }: {
   open: boolean;
-  /** Empty string when nothing is open yet — the fetch effect no-ops on it. */
   quizId: string;
   onClose: () => void;
   onClone?: (quizId: string) => void | Promise<void>;
@@ -162,9 +142,6 @@ export function QuizPreviewModal({
           </>
         )}
 
-        {/* Modal's own header already has a close (X) button — no need to
-            duplicate it here, only the action this surface adds. Omitted
-            entirely for a read-only preview (no `onClone`). */}
         {onClone && (
           <div className="flex justify-end pt-2">
             <Button onClick={handleClone} disabled={cloning || !quiz}>

@@ -1,11 +1,3 @@
-/**
- * Unit tests for the student feed card's per-status derivations — badge, CTA,
- * attempts chip, destination and status bar — with no DB and no React.
- *
- * `missed` appears only where it can: `QuizCard` renders its own fixed "פוספס"
- * badge and no CTA or attempts chip for it (there is nothing to attempt), but it
- * does get a status bar, so `feedStatus` covers it.
- */
 import { describe, it, expect } from "vitest";
 import {
   badgeFor,
@@ -136,10 +128,6 @@ describe("hrefFor", () => {
   });
 });
 
-/**
- * The status bar's wording, at a fixed instant (11:00 Israeli time on Saturday
- * 14 March 2026) so "today" and "tomorrow" mean something stable.
- */
 describe("feedStatus", () => {
   const now = new Date("2026-03-14T09:00:00.000Z");
 

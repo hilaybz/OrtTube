@@ -1,11 +1,3 @@
-/**
- * How a score is presented to a student: a grade out of 100 (the school
- * convention here), never a raw percentage. Nothing about the stored data
- * changes — attempts still record `num_correct` / `num_questions`, and the RPCs
- * still return exactly that; this module only decides how that ratio is worded
- * on the feed, the results screen and the review.
- */
-
 export const GRADE_MAX = 100;
 
 /**
@@ -21,7 +13,6 @@ export function gradeOf(
   return Math.round(((correct ?? 0) / total) * GRADE_MAX);
 }
 
-/** "ציון 87" — the number plus the word that pins the scale it is on. */
 export function formatGrade(grade: number): string {
   return `ציון ${grade}`;
 }

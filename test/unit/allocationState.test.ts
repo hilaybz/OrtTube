@@ -1,10 +1,3 @@
-/**
- * Unit tests for `allocationState` (no DB) — the pure TypeScript mirror of
- * the SQL `_allocation_is_live` predicate (128_class_quiz_scheduling_window.sql).
- * Pinned to the exact same boundary the SQL helper uses so the two can't
- * silently drift: `available_until === now` is `done`, not `live` (`>`, not
- * `>=`), and `available_from === now` is already open (`<=`, not `<`).
- */
 import { describe, it, expect } from "vitest";
 import { allocationState } from "@/lib/allocationState";
 
@@ -80,8 +73,6 @@ describe("allocationState", () => {
   });
 
   it("defaults `now` to the current time when omitted", () => {
-    // Just a smoke check that the default parameter path doesn't throw and
-    // returns a valid state — the boundary cases above already pin the logic.
     const state = allocationState({
       published: true,
       available_from: null,

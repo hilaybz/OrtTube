@@ -13,9 +13,6 @@ import { SUPPORTED_LANGUAGES, type Language } from "@/lib/lang";
 import { LANGUAGE_LABELS } from "./labels";
 
 /**
- * Owner controls on the class header: rename / re-language (PATCH), behind a
- * pencil icon.
- *
  * Deleting a class is deliberately absent. A class is a school-level record —
  * its roster is not the teacher's to assemble or dismantle — so the destructive
  * end of its lifecycle belongs to the school/admin path (the DELETE route and

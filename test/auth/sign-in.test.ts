@@ -1,14 +1,3 @@
-/**
- * Sign-in routing + deactivation gate (spec §4).
- *
- * Three layers, three styles:
- *   1. `routeForRole` is pure — role in, landing route out. Plain unit tests.
- *   2. `evaluateSignIn` is the deactivation gate against the real profiles table.
- *      It reads through a service-role client, so the tests arrange real people
- *      via the actor DSL (`test/helpers/testbed`) and hand their id to the gate.
- *   3. The transport-error branch is exercised with a hand-rolled stub client (no
- *      DB) so it always runs, even when the local stack is offline.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { evaluateSignIn, routeForRole } from "@/lib/auth/signIn";
 import { closePool, getServiceClient } from "../helpers/db";
@@ -21,8 +10,6 @@ import {
 } from "../helpers/testbed";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { stackOnline } from "../helpers/stack";
-
-// ── 1. Pure routing ───────────────────────────────────────────────────────────
 
 describe("routeForRole (pure)", () => {
   it("routes teacher -> /dashboard and student -> /student", () => {
@@ -37,18 +24,13 @@ describe("routeForRole (pure)", () => {
   });
 });
 
-// ── 2. Deactivation gate against the real profiles table ──────────────────────
-
 const online = await stackOnline();
 
-/** An id that belongs to no profile — used for the missing-account case. */
 const UNKNOWN_USER_ID = "00000000-0000-0000-0000-000000000000";
 
 describe.skipIf(!online)("evaluateSignIn (deactivation gate + routing)", () => {
   let testbed: Testbed;
   let lincoln: School;
-  // The service-role client the sign-in gate reads profiles through. Acquired
-  // lazily (inside the guarded suite) so it never touches env when skipped.
   let asServiceRole: SupabaseClient;
 
   beforeEach(async () => {
@@ -61,7 +43,6 @@ describe.skipIf(!online)("evaluateSignIn (deactivation gate + routing)", () => {
     await closePool();
   });
 
-  /** Flip a person's account to deactivated, as an admin would. */
   async function deactivate(person: Teacher | Student): Promise<void> {
     await testbed.db
       .pool()
@@ -108,13 +89,11 @@ describe.skipIf(!online)("evaluateSignIn (deactivation gate + routing)", () => {
   });
 });
 
-// ── 3. Transport-error handling (C4) ──────────────────────────────────────────
 // A transport/query error must be distinguished from a genuine no-row so the
 // caller does NOT sign a legitimate user out over a transient blip. This runs
 // against a stub client (no DB) so it is always exercised.
 
 describe("evaluateSignIn transport-error handling (C4)", () => {
-  /** A supabase-like client whose profile lookup returns a fixed result. */
   function clientWhoseLookupReturns(lookup: {
     data: unknown;
     error: { message: string } | null;

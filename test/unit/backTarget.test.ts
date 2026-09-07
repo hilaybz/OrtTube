@@ -1,7 +1,3 @@
-/**
- * The `?from=` registry behind contextual back navigation: a short key on an
- * outgoing link, resolved on the page that link opened.
- */
 import { describe, it, expect } from "vitest";
 import {
   BACK_PARAM,
@@ -51,7 +47,6 @@ describe("resolveBackTarget", () => {
   it("ignores an unknown or hand-edited key rather than trusting the URL", () => {
     expect(resolveBackTarget("nowhere", FALLBACK)).toEqual(FALLBACK);
     expect(resolveBackTarget("https://evil.example", FALLBACK)).toEqual(FALLBACK);
-    // Not a key just because `Object` has such a property.
     expect(resolveBackTarget("toString", FALLBACK)).toEqual(FALLBACK);
   });
 
@@ -64,7 +59,6 @@ describe("resolveBackTarget", () => {
       expect(isBackTargetKey(key)).toBe(true);
       expect(target.href.startsWith("/")).toBe(true);
       expect(target.label.trim().length).toBeGreaterThan(0);
-      // The label names the place, never the action.
       expect(target.label).not.toContain("חזרה");
     }
   });

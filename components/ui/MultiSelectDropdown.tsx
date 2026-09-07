@@ -9,22 +9,8 @@ export interface MultiSelectOption<T extends string> {
   label: string;
 }
 
-/** Smallest gap the panel keeps from a viewport edge. */
 const EDGE = 8;
 
-/**
- * A labelled, glass-styled trigger that opens a checkbox panel — the
- * multi-select counterpart to `Select` (which is native/single-value). Used
- * wherever a `Pill` row would otherwise wrap into several lines once the
- * option list grows (e.g. a school's full class roster) — one compact
- * control instead of an unbounded row of chips. The option list itself caps
- * at `max-h-64` with internal scroll, so a long roster scrolls rather than
- * growing the panel unboundedly.
- *
- * The panel is as wide as its own longest option label (between a min and a max)
- * rather than a fixed width, so a filter over short class names is a short
- * dropdown instead of a slab far wider than anything in it.
- */
 export function MultiSelectDropdown<T extends string>({
   label,
   options,
@@ -37,7 +23,6 @@ export function MultiSelectDropdown<T extends string>({
   options: MultiSelectOption<T>[];
   selected: Set<T>;
   onChange: (next: Set<T>) => void;
-  /** Trigger text when nothing is selected. */
   emptyLabel?: string;
   className?: string;
 }) {
@@ -154,9 +139,6 @@ export function MultiSelectDropdown<T extends string>({
         onClick={() => (open ? close() : setOpen(true))}
         className={cn(
           "flex min-w-[10rem] items-center justify-between gap-2 rounded-[var(--radius)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--heading)]",
-          // No focus ring of its own: this is a button, so the app-wide
-          // keyboard-only `:focus-visible` outline already covers it, and a
-          // brand ring here painted a green box on a plain click.
           "border border-[var(--glass-border)] backdrop-blur-[20px] transition-colors"
         )}
       >

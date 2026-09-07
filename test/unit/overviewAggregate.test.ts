@@ -73,8 +73,6 @@ describe("summarizeClass", () => {
       id: "c1",
       name: "ט'1",
       memberCount: 28,
-      // Scheduled counts as active exactly as it does in the KPI row; the draft
-      // is neither, since nobody has been given it yet.
       activeQuizzes: 2,
       finishedQuizzes: 1,
     });
@@ -122,12 +120,11 @@ describe("countQuizStates", () => {
   it("counts distinct quizzes by lifecycle, not allocations", () => {
     const assignments: ClassAssignments[] = [
       { klass: klass("c1"), quizzes: [open, closed] },
-      // The same open quiz in a second class is still one open quiz.
       { klass: klass("c2"), quizzes: [open, scheduled, draft] },
     ];
     expect(countQuizStates(assignments, NOW)).toEqual({
-      openQuizzes: 2, // open + scheduled
-      finishedQuizzes: 1, // closed
+      openQuizzes: 2,
+      finishedQuizzes: 1,
     });
   });
 
@@ -239,12 +236,10 @@ describe("presentation helpers", () => {
   });
 
   it("formats a closing date in school-local time, not UTC", () => {
-    // 22:30 UTC is already the next day in Jerusalem.
     expect(formatDate("2026-08-25T22:30:00.000Z")).toBe("26/08/2026");
   });
 
   it("phrases a closing time by school-local calendar days", () => {
-    // NOW is 12:00 in Jerusalem on 20.8.
     expect(closedAtMeta("2026-08-20T05:00:00.000Z", NOW)).toEqual({
       phrase: "נסגר היום",
       date: "20/08/2026",
@@ -260,13 +255,10 @@ describe("presentation helpers", () => {
   });
 
   it("counts the day the teacher lived through, not elapsed hours", () => {
-    // 21:30 UTC is already the next day in Jerusalem, so this closed "today"
-    // even though it is nearly twelve hours back.
     expect(closedAtMeta("2026-08-19T21:30:00.000Z", NOW).phrase).toBe("נסגר היום");
   });
 
   it("drops the relative phrasing once it stops helping, keeping the date", () => {
-    // A week out, "לפני 7 ימים" says less than the date itself does.
     expect(closedAtMeta("2026-08-13T10:00:00.000Z", NOW)).toEqual({
       phrase: "נסגר ב־13/08/2026",
       date: null,

@@ -1,6 +1,5 @@
 import { cn } from "./cn";
 
-/** Accessible busy indicator. */
 export function Spinner({
   size = 20,
   label = "טוען…",

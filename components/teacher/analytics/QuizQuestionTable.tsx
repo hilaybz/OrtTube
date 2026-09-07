@@ -8,7 +8,6 @@ import type { QuizAnalyticsQuestion } from "@/lib/analytics";
 import { pct } from "./chartTheme";
 import { CELL, HEAD_CELL, ROW_BORDER, ROW_HEAD } from "./tableStyles";
 
-/** "1:23" from a question's playhead anchor. */
 function timestamp(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
@@ -16,16 +15,9 @@ function timestamp(seconds: number): string {
 }
 
 /**
- * The quiz's questions ranked by how often students get them WRONG — hardest
- * first. This is the author's edit list: the top of it is either a question worth
- * reteaching or a question worth rewriting.
- *
  * Never-answered questions sort last rather than first. A question with no
  * answers has a `null` correct-%, which is "unknown", not "zero" — ranking it as
  * the hardest question in the quiz would be a fabrication.
- *
- * Soft-deleted questions are kept and marked, not hidden: a since-removed
- * question's history still explains a class's past results.
  */
 export function QuizQuestionTable({
   questions,

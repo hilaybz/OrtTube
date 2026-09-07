@@ -5,8 +5,6 @@ const SUPABASE_URL = "NEXT_PUBLIC_SUPABASE_URL";
 const SERVICE_ROLE_KEY = "SUPABASE_SERVICE_ROLE_KEY";
 
 describe("createServiceClient", () => {
-  // Snapshot the two env vars the factory reads, then restore them after each
-  // test so mutating them here never leaks into other suites.
   let savedEnv: Record<string, string | undefined>;
 
   beforeEach(() => {

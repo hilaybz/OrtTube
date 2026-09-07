@@ -1,14 +1,3 @@
-/**
- * The two panels of a class page, after the revamp.
- *
- * What is asserted here is mostly what is NOT there any more: a teacher does
- * not manage membership (no add/remove student), a row does not repeat its
- * section's name as a "פעיל" tag or carry a bare attempts count, and the
- * withdrawn group offers no analytics. The rest pins the replacements — one
- * status sentence per row, a headed section per lifecycle state with open work
- * in green and the closed states neutral, icon actions with accessible names,
- * search + filter, and a student row that leads to that student's analytics.
- */
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
@@ -20,8 +9,6 @@ vi.mock("next/navigation", () => ({
 
 import { RosterSection } from "@/components/teacher/classes/RosterSection";
 import { AssignedQuizzesSection } from "@/components/teacher/classes/AssignedQuizzesSection";
-
-// ── Roster ───────────────────────────────────────────────────────────────────
 
 const ROSTER: ClassRoster = {
   members: [
@@ -81,8 +68,6 @@ describe("RosterSection", () => {
   });
 });
 
-// ── Assigned quizzes ─────────────────────────────────────────────────────────
-
 const DAY = 24 * 60 * 60 * 1000;
 
 function allocation(overrides: Partial<AssignedQuiz> = {}): AssignedQuiz {
@@ -130,7 +115,6 @@ function renderAssigned(assigned: AssignedQuiz[] = [OPEN, ENDED, HIDDEN]) {
   );
 }
 
-/** The <li> a given quiz title lives in. */
 function row(title: string): HTMLElement {
   const heading = screen.getByText(title);
   const li = heading.closest("li");
@@ -146,7 +130,6 @@ describe("AssignedQuizzesSection rows", () => {
       within(row("חידון שהסתיים")).getByText("הסתיים לפני 3 ימים")
     ).toBeInTheDocument();
     expect(within(row("חידון מוסתר")).getByText("מוסתר מתלמידים")).toBeInTheDocument();
-    // The old tags: a state noun duplicating the section, and a bare count.
     expect(screen.queryByText("פעיל")).toBeNull();
     expect(screen.queryByText("ניסיונות")).toBeNull();
     expect(screen.queryByText(/^2 ניסיונות$/)).toBeNull();
@@ -174,7 +157,6 @@ describe("AssignedQuizzesSection rows", () => {
 
   it("colours open work green and leaves ended and hidden work neutral", () => {
     renderAssigned();
-    // The inversion this pins: open used to be red and ended green.
     expect(screen.getByRole("heading", { name: "פעילים" }).className).toContain(
       "text-[var(--fg-success)]"
     );
@@ -192,7 +174,6 @@ describe("AssignedQuizzesSection rows", () => {
         name: "אנליטיקה של החידון בכיתה",
       })
     ).toBeNull();
-    // Nor can a quiz nobody can see be ended.
     expect(
       within(row("חידון מוסתר")).queryByRole("button", { name: "סיום השאלון עכשיו" })
     ).toBeNull();

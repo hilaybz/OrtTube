@@ -4,14 +4,6 @@
  * Answers one question: does any InnerTube client context get real caption data
  * from this deployment's egress IP?
  *
- * YouTube serves a datacenter IP a 200 whose `playabilityStatus` is
- * LOGIN_REQUIRED and whose caption track list is empty — indistinguishable from
- * a genuinely caption-less video unless you compare against an IP it trusts. It
- * applies that policy PER CLIENT CONTEXT, and `youtube-transcript` hardcodes
- * ANDROID, so the only way to learn whether another context is treated
- * differently is to ask each one directly, from the blocked IP. That cannot be
- * reproduced locally: from a residential IP every client answers correctly.
- *
  * Probe with a video KNOWN to have captions, or every row reads as a wall when
  * some are telling the truth. A row with tracks > 0 is a caption path that works
  * from here; all-zero rows mean the wall is on the IP regardless of context, and
@@ -49,9 +41,6 @@ interface Client {
   client: Record<string, unknown>;
   thirdParty?: Record<string, unknown>;
   /**
-   * Whether this context returns caption tracks from a TRUSTED (residential) IP,
-   * measured against a captioned video before deploying.
-   *
    * Without it the results are unreadable: most of these contexts now answer with
    * no tracks everywhere — YouTube requires proof-of-origin tokens on the browser
    * clients, and the TV/VR client versions here may already be stale — so a zero
@@ -157,7 +146,6 @@ interface ProbeRow {
   informative: boolean;
   httpStatus: number | null;
   playability: string | null;
-  /** YouTube's own explanation when it withholds playback ("Sign in to confirm…"). */
   playabilityReason: string | null;
   trackCount: number;
   languages: string[];
@@ -188,7 +176,6 @@ async function probe(client: Client, videoId: string): Promise<ProbeRow> {
           ...(client.thirdParty ? { thirdParty: client.thirdParty } : {}),
         },
         videoId,
-        // Embedded and TV contexts return a stripped response without this.
         contentCheckOk: true,
         racyCheckOk: true,
       }),
@@ -245,10 +232,7 @@ export async function GET(req: Request): Promise<Response> {
   return Response.json({
     videoId,
     region: process.env.VERCEL_REGION ?? null,
-    // Non-empty → a free fix exists; wire that context in as the caption path.
     working,
-    // Every informative context walled → impersonation cannot help from this IP,
-    // and only a different egress will.
     blocked,
     results,
   });

@@ -4,20 +4,6 @@ import { fetchVideoMetadata } from "@/lib/youtube";
 import { translateTexts, type TranslationItem } from "@/lib/ai/translate";
 import type { GeneratedQuestion } from "@/lib/ai/generate";
 
-/**
- * Quiz service layer. Thin, typed TypeScript wrappers over the
- * SECURITY DEFINER authoring RPCs plus the lazy cached
- * translation orchestration (`ensureTranslation`).
- *
- * Clients are typed as the un-parameterised `SupabaseClient` on purpose (the same
- * convention as lib/video.ts / lib/transcriptCache.ts): these functions compile
- * independently of `lib/supabase/types.ts` being regenerated for the RPCs this
- * task adds. Authoring RPCs must be called with the caller's AUTHENTICATED client
- * (server.ts) so `auth.uid()` resolves to the owner; only `ensureTranslation`
- * uses a service-role client (it fills content on behalf of any reader).
- */
-
-/** Stable error thrown when an RPC raises one of its documented codes. */
 export class QuizError extends Error {
   code: string;
   constructor(code: string) {
@@ -31,8 +17,6 @@ function unwrap<T>(res: { data: T; error: { message: string } | null }): T {
   if (res.error) throw new QuizError(res.error.message);
   return res.data;
 }
-
-// ── Authoring ─────────────────────────────────────────────────────────────────
 
 export interface CreatedQuiz {
   quiz_id: string;
@@ -48,17 +32,6 @@ export interface CreatedQuiz {
   duration_minutes: number | null;
 }
 
-/**
- * Atomically create the canonical video (deduped, never downgraded) AND the
- * first quiz on it in one transaction. YouTube metadata is fetched
- * in Node here, then handed to the `create_quiz_for_video` RPC which does the
- * video-upsert + quiz-insert together. Subsequent quizzes on the same video call
- * this too (the video upsert is a no-op then).
- *
- * `timeRestricted`/`durationMinutes` set the quiz's stated duration (issue
- * #80) at creation time; omitted, the quiz starts unrestricted (its duration
- * is estimated from the video's length instead — see `lib/quizDuration.ts`).
- */
 export async function createQuizForVideo(
   client: SupabaseClient,
   params: {
@@ -104,7 +77,6 @@ export interface UpsertQuestionInput {
   source?: "authored" | "generated";
 }
 
-/** Upsert one question + its base-language text + option set. Returns question id. */
 export async function upsertQuestion(
   client: SupabaseClient,
   input: UpsertQuestionInput
@@ -144,8 +116,8 @@ export async function softDeleteOption(
  * `title` additionally accepts an EMPTY string, which CLEARS it — a quiz with no
  * title falls back to the video's, so "no title" has to be expressible and null
  * already means "not provided". `timeRestricted: false` always clears
- * `durationMinutes` regardless of what's passed alongside it (see
- * `update_quiz`'s own comment) — going unrestricted always drops the number.
+ * `durationMinutes` regardless of what's passed alongside it — going
+ * unrestricted always drops the number.
  */
 export async function updateQuiz(
   client: SupabaseClient,
@@ -182,31 +154,20 @@ export interface MyQuiz {
   video_id: string;
   youtube_video_id: string;
   video_title: string | null;
-  /** The uploading channel's display name, or `null` if never fetched (a
-   * video added before this field existed) or the oEmbed fetch failed. */
   channel_name: string | null;
   transcript_status: "pending" | "ready" | "unavailable";
   question_count: number;
   created_at: string;
   time_restricted: boolean;
-  /** Only non-null while `time_restricted`. */
   duration_minutes: number | null;
-  /** The video's length — used to derive an estimate when unrestricted (see
-   * `lib/quizDuration.ts`). `null` if the length was never determined. */
   duration_seconds: number | null;
 }
 
-/** The signed-in teacher's own-quizzes library (incl. unassigned). */
 export async function listMyQuizzes(client: SupabaseClient): Promise<MyQuiz[]> {
   const data = unwrap(await client.rpc("list_my_quizzes", {}));
   return (data as unknown as MyQuiz[]) ?? [];
 }
 
-/**
- * Persist AI-generated questions via `upsert_question` (source='generated').
- * Returns the created question ids in order. A single failing question aborts
- * (the RPC raises); callers decide whether to surface partial success.
- */
 export async function persistGeneratedQuestions(
   client: SupabaseClient,
   quizId: string,
@@ -232,8 +193,6 @@ export async function persistGeneratedQuestions(
   }
   return ids;
 }
-
-// ── Translation (lazy, cached, single-flight) ─────────────────────────────────
 
 export type EnsureTranslationStatus =
   | "filled" // this call translated ≥0 rows and holds/held the claim
@@ -261,10 +220,6 @@ interface OTransRow {
 }
 
 /**
- * CONTRACT — publish this signature for the assignment hook.
- *
- *   ensureTranslation(quizId, language, opts?) => EnsureTranslationResult
- *
  * Ensures every non-deleted question/option of `quizId` has a
  * `question_translations` / `option_translations` row in `language`, translating
  * from the quiz's base_language rows via Claude and caching them. Idempotent
@@ -321,7 +276,6 @@ export async function ensureTranslation(
   }
 
   try {
-    // Live questions of this quiz.
     const qRes = await client
       .from("questions")
       .select("id")
@@ -355,7 +309,6 @@ export async function ensureTranslation(
       otrans.push(...((otRes.data as OTransRow[] | null) ?? []));
     }
 
-    // Index base + target presence.
     const qBase = new Map<string, QTransRow>();
     const qHasTarget = new Set<string>();
     for (const r of qtrans) {
@@ -369,7 +322,6 @@ export async function ensureTranslation(
       if (r.language === language) oHasTarget.add(r.option_id);
     }
 
-    // Collect the strings that still need a target-language row.
     const items: TranslationItem[] = [];
     const needQuestions: string[] = [];
     for (const qid of qids) {
@@ -395,7 +347,6 @@ export async function ensureTranslation(
 
     const map = await translate(items, base, language);
 
-    // Fan out. A missing translation id → skip that row (read falls back to base).
     const qRows: Array<{
       question_id: string;
       language: string;

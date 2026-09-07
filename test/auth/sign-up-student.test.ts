@@ -1,14 +1,3 @@
-/**
- * Student self-signup route (spec §4, decision 23):
- * `POST /api/auth/sign-up-student`.
- *
- * The endpoint owns a delicate ordering — GoTrue creates the auth user before app
- * logic can validate, so the route must clean up on failure and never leave an
- * orphan auth user. The tests arrange the testbed (schools, teachers, classes,
- * pending invites) through the actor DSL (`test/helpers/testbed`), then drive the
- * real route handler and assert on the resulting profile / membership / invite /
- * auth-user rows via the testbed inspector and a couple of small local reads.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { POST } from "@/app/api/auth/sign-up-student/route";
 import { closePool } from "../helpers/db";
@@ -19,7 +8,6 @@ import {
 } from "../helpers/testbed";
 import { stackOnline } from "../helpers/stack";
 
-/** Drive the real signup route with a JSON body. */
 function signUp(body: unknown): Promise<Response> {
   return POST(
     new Request("http://localhost/api/auth/sign-up-student", {
@@ -30,7 +18,6 @@ function signUp(body: unknown): Promise<Response> {
   );
 }
 
-/** A fresh, collision-free email for an invitee who has not signed up yet. */
 function newEmail(prefix: string): string {
   const rand = Math.random().toString(36).slice(2, 10);
   return `${prefix}-${Date.now()}-${rand}@test.orttube.local`;
@@ -49,7 +36,6 @@ describe.skipIf(!online)("POST /api/auth/sign-up-student", () => {
     await closePool();
   });
 
-  /** Read the just-created profile's identifying fields (RLS-bypassing). */
   async function readProfile(
     userId: string
   ): Promise<{ role: string; school_id: string; email: string } | null> {
@@ -62,7 +48,6 @@ describe.skipIf(!online)("POST /api/auth/sign-up-student", () => {
     return res.rows[0] ?? null;
   }
 
-  /** The auth user id registered under `email`, or null if none exists. */
   async function authUserIdByEmail(email: string): Promise<string | null> {
     const res = await testbed.db
       .pool()
@@ -73,7 +58,6 @@ describe.skipIf(!online)("POST /api/auth/sign-up-student", () => {
     return res.rows[0]?.id ?? null;
   }
 
-  /** A school with one teacher and one class, ready to invite students into. */
   async function schoolWithClass(): Promise<{
     schoolId: string;
     biology: Classroom;
@@ -88,7 +72,7 @@ describe.skipIf(!online)("POST /api/auth/sign-up-student", () => {
     const { schoolId, biology } = await schoolWithClass();
 
     const studentEmail = newEmail("student");
-    await biology.addByEmail(studentEmail); // pending invite
+    await biology.addByEmail(studentEmail);
 
     const res = await signUp({
       email: studentEmail,
@@ -100,17 +84,14 @@ describe.skipIf(!online)("POST /api/auth/sign-up-student", () => {
     expect(res.status).toBe(201);
     expect(typeof json.userId).toBe("string");
 
-    // Profile created with the resolved school + student role.
     const profile = await readProfile(json.userId);
     expect(profile).not.toBeNull();
     expect(profile?.role).toBe("student");
     expect(profile?.school_id).toBe(schoolId);
     expect(profile?.email.toLowerCase()).toBe(studentEmail.toLowerCase());
 
-    // Invite converted to membership by the invite-conversion trigger.
     expect(await testbed.db.hasMemberId(biology, json.userId)).toBe(true);
 
-    // Invite consumed.
     expect(await testbed.db.hasPendingInvite(biology, studentEmail)).toBe(false);
   });
 
@@ -185,16 +166,13 @@ describe.skipIf(!online)("POST /api/auth/sign-up-student", () => {
     expect(res.status).toBe(500);
     expect(json.error.code).toBe("signup_failed");
 
-    // No orphan auth user left for studentEmail.
     const orphanId = await authUserIdByEmail(studentEmail);
     if (orphanId) {
-      // Defensive: if one lingers, it must NOT still exist.
       expect(await testbed.db.authUserExists(orphanId)).toBe(false);
     } else {
       expect(orphanId).toBeNull();
     }
 
-    // Poison profile survives untouched.
     expect(await testbed.db.profileExists(poison.id)).toBe(true);
   });
 

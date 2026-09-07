@@ -6,32 +6,23 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { IconButton } from "@/components/ui/IconButton";
 import { cn } from "@/components/ui/cn";
 
-/** One entry in a chart's legend — a colour swatch plus the entity it names. */
 export interface LegendEntry {
   label: string;
   color: string;
-  /** `line` mirrors a line mark, `rect` a column or area. */
   shape?: "line" | "rect";
 }
 
-/** The chart's table twin: the same numbers, reachable without hovering. */
 export interface ChartTableData {
   head: string[];
   rows: (string | number)[][];
 }
 
 /**
- * The frame every analytics chart sits in: a glass card with a title, an
- * optional hint, a legend, and a toggle to the chart's TABLE TWIN.
- *
  * The table is not a nicety. Three of this product's series colours sit on a
  * translucent surface, and a chart that encodes a value only as a colour or a
  * bar length gates that value behind eyesight and a pointer. The toggle makes
  * every number readable as text, which is also what keeps the tooltip honestly
  * optional rather than the only way in.
- *
- * A legend renders only for two or more series: with one series the title
- * already names what is plotted, and a lone swatch would just restate it.
  */
 export function ChartCard({
   title,
@@ -46,7 +37,6 @@ export function ChartCard({
   hint?: string;
   legend?: LegendEntry[];
   table?: ChartTableData;
-  /** When set, the card shows this message instead of the chart. */
   empty?: string;
   className?: string;
   children: React.ReactNode;
@@ -110,7 +100,6 @@ export function ChartCard({
 const HEAD = "px-3 py-2 text-start text-xs font-medium text-[var(--body)]";
 const CELL = "px-3 py-2 text-start text-sm tabular-nums text-[var(--heading)]";
 
-/** A chart's numbers as a plain table — the WCAG-clean twin of every chart. */
 export function ChartTable({
   data,
   caption,

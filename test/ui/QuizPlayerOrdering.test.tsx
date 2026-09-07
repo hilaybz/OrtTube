@@ -1,15 +1,3 @@
-/**
- * Checkpoints arrive in VIDEO order, whatever order the teacher wrote them in.
- *
- * The player takes the next checkpoint to be the first unanswered question in
- * list order and gates the video at its timestamp — so if the list is in
- * authoring order, a question written late but positioned early arrives with its
- * gate BEHIND the playhead, and `gateDecision` snaps the student backwards.
- *
- * The fixture is the reported reproduction: authored at 0:30, then 1:30, then
- * 0:30. `order_index` reflects that authoring order, so a player that sorts by it
- * fails these tests and one that sorts by time passes.
- */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -90,7 +78,6 @@ function q(id: string, positionSeconds: number, orderIndex: number): StudentQues
   };
 }
 
-// Authored 0:30 → 1:30 → 0:30, so `order_index` disagrees with the timeline.
 const QUESTIONS: StudentQuestion[] = [
   q("first-at-0:30", 30, 0),
   q("at-1:30", 90, 1),
@@ -167,15 +154,12 @@ describe("QuizPlayer — checkpoint order", () => {
   it("never gates on a checkpoint the student has already passed", async () => {
     await startQuiz();
 
-    // Watch straight through to 1:30 and clear everything due by then.
     await userEvent.click(screen.getByRole("button", { name: "advance-to-30" }));
     await answerCurrent();
     await answerCurrent();
     await userEvent.click(screen.getByRole("button", { name: "advance-to-90" }));
     await answerCurrent();
 
-    // With authoring order the third question (0:30) surfaced here, a minute
-    // behind the playhead, and the gate clamped the video back to 0:30.
     expect(screen.queryByRole("radio", { name: /אלף/ })).not.toBeInTheDocument();
     expect(stage.seekTo).not.toHaveBeenCalled();
   });

@@ -2,16 +2,6 @@ import { BackLink } from "@/components/ui/BackLink";
 import { isBackTargetKey, type BackTargetKey } from "@/components/ui/backTarget";
 import { NewQuizForm } from "@/components/teacher/editor/NewQuizForm";
 
-/**
- * Create a quiz from a YouTube URL. The form upserts the canonical video and the
- * quiz, then routes to the editor; transcript fetching is asynchronous and its
- * status surfaces in the editor.
- *
- * Reachable from the quiz library and from the overview's "+", so the origin is
- * read off the URL and handed both to the back link and to the form, which
- * passes it on to the editor — creating a quiz should not lose where the
- * teacher started.
- */
 export default async function NewQuizPage({
   searchParams,
 }: {

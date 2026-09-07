@@ -35,13 +35,11 @@ const SECTION_TITLE: Record<FeedSection, string> = {
   finished: "הושלמו",
 };
 
-/** What a section says when the student has nothing in it at all (no filters involved). */
 const SECTION_EMPTY: Record<FeedSection, string> = {
   not_yet: "עדיין אין חידונים שממתינים לך. חידונים חדשים שיוקצו למקצועות שלך יופיעו כאן.",
   finished: "עדיין לא סיימת אף חידון. אחרי שתשלימו ניסיון, הוא יופיע כאן.",
 };
 
-/** Two full rows of the three-column grid before a reader has to page. */
 const CARDS_PER_PAGE = 6;
 
 function FeedSectionView({
@@ -52,12 +50,9 @@ function FeedSectionView({
   resetKey,
 }: {
   section: FeedSection;
-  /** Every item in this section, before search/filters — drives the "you have nothing here" copy. */
   items: StudentFeedItem[];
-  /** What survived search/filters, already sorted. */
   filtered: StudentFeedItem[];
   filtersActive: boolean;
-  /** Any change to search/filters/sort returns this section to its first page. */
   resetKey: string;
 }) {
   const paged = usePagedList(filtered, { pageSize: CARDS_PER_PAGE, resetKey });
@@ -88,20 +83,6 @@ function FeedSectionView({
   );
 }
 
-/**
- * The student feed: every quiz assigned to any of their classes, split into
- * "not yet attempted" and "finished" (see `lib/studentFeedFilters.ts` for the
- * bucketing and the sort).
- *
- * Search/filter/sort (backlog 4.2) mirror the teacher library's (1.4) and run
- * entirely client-side — `list_student_feed` hands over the whole feed in one
- * query. One control bar governs BOTH sections rather than a bar per section: a
- * student searching for a quiz doesn't know, or care, which section it landed
- * in. The subject filter appears only once a student is in more than one
- * subject, where it starts to mean something. Sorting is deadline-only, both
- * directions — the one ordering a student actually asks for. Each section pages
- * independently, so a long finished list never buries what is still due.
- */
 export function StudentFeed({ items }: { items: StudentFeedItem[] }) {
   const [search, setSearch] = useState("");
   const [classes, setClasses] = useState<Set<string>>(new Set());

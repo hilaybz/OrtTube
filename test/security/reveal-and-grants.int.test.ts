@@ -1,15 +1,3 @@
-/**
- * Security integration tests — answer-leak / reveal gate / privilege hardening.
- *
- * Every action runs through an actor's AUTHENTICATED (RLS-subject) client via the
- * actor DSL (`test/helpers/testbed`), so every grant / RLS / RPC check is real.
- * Covers: students cannot read answers.was_correct / answer_selections directly;
- * get_attempt_review enforces the reveal gate; a deactivated teacher cannot
- * self-reactivate; the quiz owner cannot hard-DELETE a quiz; and the anon role
- * cannot EXECUTE the SECURITY DEFINER RPCs.
- *
- * Skipped when the local DB is unreachable so unit suites still pass offline.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPool, closePool, createAnonClient } from "../helpers/db";
@@ -28,7 +16,6 @@ import { stackOnline } from "../helpers/stack";
 
 const online = await stackOnline();
 
-/** One single-choice question with a base-language prompt + explanation. */
 function oneQuestion(explanation?: string) {
   return singleChoice({
     prompt: "שאלה",
@@ -39,10 +26,6 @@ function oneQuestion(explanation?: string) {
   });
 }
 
-/**
- * Whether the student's own RLS-subject client can directly read any row from a
- * table it has no grant on (an answer-leak probe — a denial surfaces as zero rows).
- */
 async function studentCanReadTable(
   student: Student,
   table: string,
@@ -52,7 +35,6 @@ async function studentCanReadTable(
   return (data ?? []).length > 0;
 }
 
-/** Fetch an attempt's review AS a given actor — used to exercise the ownership guard. */
 function reviewAttemptAs(actor: Teacher | Student, attempt: Attempt) {
   return getAttemptReview(actor.client, attempt.id);
 }
@@ -76,7 +58,6 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     await closePool();
   });
 
-  // ── Direct answer-key reads are denied ──
   it("a student cannot read answers.was_correct or answer_selections directly", async () => {
     const quiz = await teacher.authorQuiz({ questions: [oneQuestion()] });
     const [onlyQuestion] = quiz.questions;
@@ -86,21 +67,18 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     const attempt = await student.startAttempt(quiz, { in: classroom });
     await attempt.answerCorrectly(onlyQuestion);
 
-    // Direct selects must be denied (no table grant) → the student sees no rows.
     expect(await studentCanReadTable(student, "answers", "was_correct")).toBe(false);
     expect(await studentCanReadTable(student, "answer_selections", "option_id")).toBe(false);
   });
 
-  // ── Reveal gate — per-question detail only once attempts are exhausted ──
   it("get_attempt_review reveals per-question detail only once attempts are exhausted (single-attempt)", async () => {
     const quiz = await teacher.authorQuiz({ questions: [oneQuestion("the-explanation")] });
     const [onlyQuestion] = quiz.questions;
-    await teacher.assignQuiz(quiz, { to: classroom, tutor: "hints", maxAttempts: 1 }); // single attempt → reveals on finish
+    await teacher.assignQuiz(quiz, { to: classroom, tutor: "hints", maxAttempts: 1 });
     await classroom.enroll(student);
 
     const attempt = await student.startAttempt(quiz, { in: classroom });
 
-    // Before completion → nothing revealed, not even a score.
     const pre = await attempt.review();
     expect(pre.revealed).toBe(false);
     expect(pre.completed).toBe(false);
@@ -108,7 +86,6 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     await attempt.answerCorrectly(onlyQuestion);
     await attempt.complete();
 
-    // Attempts exhausted (1 of 1) → full per-question review.
     const review = await attempt.review();
     expect(review.revealed).toBe(true);
     expect(review.num_correct).toBe(1);
@@ -122,7 +99,6 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     expect(reviewed.selected_option_ids).toEqual(onlyQuestion.correctIds);
   });
 
-  // ── A closed/unpublished assignment must not blank out a finished review ──
   it("still returns the real prompt/options after the assignment is unpublished", async () => {
     // Regression: get_attempt_review used to be joined, client-side, against a
     // SECOND read (get_quiz_for_student) that requires the assignment to still
@@ -138,11 +114,9 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     await attempt.answerCorrectly(onlyQuestion);
     await attempt.complete();
 
-    // Sanity: reveals while the assignment is still live.
     const before = await attempt.review();
     expect(before.revealed).toBe(true);
 
-    // The assignment is no longer live — same as a closed scheduling window.
     await teacher.setQuizPublished(quiz, { in: classroom, published: false });
 
     const after = await attempt.review();
@@ -157,7 +131,7 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
   it("unlimited attempts NEVER reveal per-question detail — score only", async () => {
     const quiz = await teacher.authorQuiz({ questions: [oneQuestion()] });
     const [onlyQuestion] = quiz.questions;
-    await teacher.assignQuiz(quiz, { to: classroom, tutor: "hints", maxAttempts: null }); // unlimited
+    await teacher.assignQuiz(quiz, { to: classroom, tutor: "hints", maxAttempts: null });
     await classroom.enroll(student);
 
     const attempt = await student.startAttempt(quiz, { in: classroom });
@@ -175,10 +149,9 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
   it("multi-attempt reveals only after the LAST allowed attempt", async () => {
     const quiz = await teacher.authorQuiz({ questions: [oneQuestion()] });
     const [onlyQuestion] = quiz.questions;
-    await teacher.assignQuiz(quiz, { to: classroom, tutor: "hints", maxAttempts: 2 }); // two attempts
+    await teacher.assignQuiz(quiz, { to: classroom, tutor: "hints", maxAttempts: 2 });
     await classroom.enroll(student);
 
-    // Attempt 1 → completed, but one attempt remains → score only.
     const firstAttempt = await student.startAttempt(quiz, { in: classroom });
     await firstAttempt.answer(onlyQuestion, onlyQuestion.distractorIds);
     await firstAttempt.complete();
@@ -187,14 +160,12 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     expect(midReview.completed).toBe(true);
     expect(midReview.questions).toBeUndefined();
 
-    // Attempt 2 → the last one → both attempts now reveal.
     const lastAttempt = await student.startAttempt(quiz, { in: classroom });
     await lastAttempt.answerCorrectly(onlyQuestion);
     await lastAttempt.complete();
     const lastReview = await lastAttempt.review();
     expect(lastReview.revealed).toBe(true);
     expect(lastReview.questions).toHaveLength(1);
-    // The earlier attempt is now revealable too (no attempts remain).
     const firstReviewAgain = await firstAttempt.review();
     expect(firstReviewAgain.revealed).toBe(true);
   });
@@ -209,13 +180,11 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     await attempt.answerCorrectly(onlyQuestion);
     await attempt.complete();
 
-    // The teacher (different auth.uid) may not review the student's attempt.
     await expect(reviewAttemptAs(teacher, attempt)).rejects.toMatchObject({
       code: "not_your_attempt",
     });
   });
 
-  // ── A deactivated teacher cannot self-reactivate ──
   it("a deactivated teacher cannot self-reactivate (write deactivated_at)", async () => {
     // Deactivate at the DB level (not via the ban path) so the teacher's still-valid
     // GoTrue session models a token issued before deactivation.
@@ -224,17 +193,14 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
       [teacher.id]
     );
 
-    // Token still valid: the teacher tries to clear their own deactivation.
     const selfReactivation = await teacher.client
       .from("profiles")
       .update({ deactivated_at: null })
       .eq("id", teacher.id)
       .select("id");
 
-    // The column REVOKE (012) + immutability trigger (014) reject the write.
     expect(selfReactivation.error).not.toBeNull();
 
-    // And the DB value is unchanged — the teacher stays deactivated.
     const stored = await getPool().query<{ deactivated_at: string | null }>(
       "SELECT deactivated_at FROM public.profiles WHERE id=$1",
       [teacher.id]
@@ -242,7 +208,6 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     expect(stored.rows[0].deactivated_at).not.toBeNull();
   });
 
-  // ── A quiz owner cannot hard-DELETE a quiz ──
   it("the quiz owner cannot hard-DELETE a quiz", async () => {
     const quiz = await teacher.authorQuiz({ questions: [oneQuestion()] });
 
@@ -253,14 +218,11 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
       .select("id");
     expect(deletion.error).not.toBeNull();
 
-    // The quiz (and its cascade of content) survives.
     expect(await testbed.db.quizRow(quiz)).not.toBeNull();
   });
 
-  // ── The anon role cannot EXECUTE the SECURITY DEFINER RPCs ──
   it("the anon role cannot EXECUTE the student-facing RPCs", async () => {
     const anon = createAnonClient() as unknown as SupabaseClient;
-    // Placeholder id — the point is the EXECUTE grant is denied before any lookup.
     const anyId = classroom.id;
     const securityDefinerRpcs: [string, Record<string, unknown>][] = [
       ["get_quiz_for_student", { p_class_id: anyId, p_quiz_id: anyId }],
@@ -277,14 +239,6 @@ describe.skipIf(!online)("security — answer leak, reveal gate, privileges", ()
     for (const [rpcName, args] of securityDefinerRpcs) {
       const { error } = await anon.rpc(rpcName, args);
       expect(error, `anon should not execute ${rpcName}`).not.toBeNull();
-      // `42501` (insufficient_privilege) is Postgres's OWN code for a denied
-      // EXECUTE grant — distinct from this codebase's app-raised business
-      // codes (`P0001`/`P0002`, matched via `error.message` elsewhere, e.g.
-      // `not_authorized`). Asserting just "any error" can't tell a genuinely
-      // revoked grant apart from a grant that's present but whose function
-      // body happened to reject the call for its own reason — which would
-      // silently mask a `grant execute ... to anon` typo landing in a future
-      // migration. This asserts the rejection is specifically the grant.
       expect(error?.code, `anon's ${rpcName} rejection should be a grant denial`).toBe(
         "42501"
       );

@@ -28,13 +28,6 @@ export interface VideoStageHandle {
   pause(): void;
 }
 
-/**
- * The video player: YouTube's own iframe with its native controls (like the
- * original), inside a framed stage. Block-skip is enforced by the playhead poll
- * — playback can't advance past `maxSeek` (the current unanswered checkpoint).
- * `overlay` (the question card) renders over the video. The checkpoint indicator
- * lives OUTSIDE this component (a rail below), so it doesn't fight YouTube's UI.
- */
 export const VideoStage = forwardRef<
   VideoStageHandle,
   {
@@ -134,7 +127,6 @@ export const VideoStage = forwardRef<
     return () => clearInterval(id);
   }, [maxSeek, onProgress]);
 
-  // Resume when the gate advances (a question was answered).
   useEffect(() => {
     if (prevMax.current !== undefined && maxSeek !== prevMax.current) {
       const advanced =
@@ -190,8 +182,6 @@ export const VideoStage = forwardRef<
         />
       </div>
 
-      {/* Poster + spinner while the YouTube iframe boots (~1–2s), so it doesn't
-          flash an empty black frame. */}
       {!ready && (
         <div className="absolute inset-0 z-10 grid place-items-center bg-black">
           {/* eslint-disable-next-line @next/next/no-img-element */}

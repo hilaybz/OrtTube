@@ -8,18 +8,6 @@ import { BackLink } from "@/components/ui/BackLink";
 import { QuizEditor } from "@/components/teacher/editor/QuizEditor";
 import { TranscriptWarmer } from "@/components/TranscriptWarmer";
 
-/**
- * Quiz editor: reads the full editable tree via the owner-checked
- * `get_quiz_for_author` RPC and hands it to the client `QuizEditor`. A quiz the
- * caller doesn't own surfaces as `not_owner` and degrades to a friendly notice
- * rather than crashing. Also reads the teacher's classes (isolated — a
- * failure here degrades the allocations section rather than the whole page)
- * so the allocations section can offer bulk-assign candidates.
- *
- * The library is only one of the ways in — the overview's quiz row, the
- * new-quiz flow and the analytics hub all open the editor too — so back follows
- * the origin in the URL when there is one.
- */
 export default async function EditQuizPage({
   params,
   searchParams,

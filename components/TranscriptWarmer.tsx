@@ -1,30 +1,11 @@
 "use client";
 import { useEffect, useRef } from "react";
 
-/**
- * Warms the transcript cache when a page that will later need it opens.
- *
- * Transcript fetching is lazy: nothing pulls one until a teacher presses
- * generate or a student asks the tutor. Both of those are moments when someone
- * is actively waiting, and a cold fetch is slow — proxy fallthrough, a ~1.2MB
- * watch page, then the download. Worse, a failure parks the single-flight claim
- * for ten minutes, so the person who triggered it waits and then gets nothing.
- *
- * Opening the editor or the player is the earliest reliable signal that the
- * transcript will probably be wanted, and nobody is blocked at that moment. So
- * this fires once, ignores the answer, and renders nothing.
- *
- * Rendering nothing is deliberate. There is no state worth showing: a warm hit
- * is instant and invisible, and a miss is not actionable by the person looking
- * at the page — the features that need a transcript already explain themselves
- * when it is missing.
- */
 export function TranscriptWarmer({
   quizId,
   classId,
 }: {
   quizId: string;
-  /** Students are authorized by class membership; teachers by ownership. */
   classId?: string;
 }) {
   // Effects run twice per mount under React Strict Mode in development, and a

@@ -1,19 +1,9 @@
-// POST /api/jobs/gc-videos
-//
 // Orphan-video garbage collection. Deletes canonical `videos` rows that have NO
 // referencing quiz and are older than a short grace window (videos.created_at).
 // The grace window keeps GC from racing the atomic video+first-quiz create, in
 // which a video briefly exists before its quiz. Anti-join integrity + the DELETE
 // run atomically inside the SECURITY DEFINER `gc_orphan_videos` RPC, which also
 // excludes videos still referenced by a tutor_questions row.
-//
-// After the DB delete, best-effort remove each video's Storage transcript
-// object (`<youtube_video_id>.json`) — Supabase Storage has no native expiry.
-//
-// Guarded by CRON_SECRET. Suggested cadence: hourly.
-//
-// Window (minutes), highest priority first: JSON body `graceMinutes` →
-// `?graceMinutes=` → env `GC_VIDEO_GRACE_MINUTES` → default 60. Clamped to >= 0.
 import { assertSecret } from "@/lib/jobs/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { callRpc, jobError, jobOk, pickInt, readBody, TRANSCRIPT_BUCKET } from "../shared";

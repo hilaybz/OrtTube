@@ -3,17 +3,10 @@ import { getTutorQuestionsPage } from "@/lib/analytics";
 import { err, handleError, requireAuth } from "../http";
 
 /**
- * GET /api/analytics/tutor-questions?student=&quiz=&class=&limit=&offset=
- *
- * A page of the teacher-facing tutor-question log (`tutor_questions_page`),
  * scoped by any combination of student / quiz / class. At least one scope is
  * required, and every scope supplied must be one the caller owns — the RPC
  * asserts each of them and answers `not_owner` (→ 403) otherwise, so this
  * handler only has to reject the no-scope case up front.
- *
- * The response carries the page's `rows` and `total` (what the paging hook
- * needs) plus `quiz_filters` / `class_filters` for the whole scope, so the
- * filter dropdown can only ever offer values that actually have rows.
  */
 function positiveInt(raw: string | null, fallback: number): number {
   const parsed = Number(raw);

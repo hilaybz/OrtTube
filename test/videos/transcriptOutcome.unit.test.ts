@@ -1,15 +1,3 @@
-/**
- * `getTranscript` outcomes — no DB, no Docker, no network.
- *
- * These exist because this function had no unit tests at all. Its only coverage
- * was `transcriptCache.int.test.ts`, which skips without a local Supabase stack —
- * the default state for a developer and for CI — so a normal `npm test` verified
- * none of it. That is how a change that inverted single-flight, and a route that
- * reported a confirmed verdict as "still working on it", both shipped green.
- *
- * It is a pure function of (video row, cached object, fetch outcome), so a fake
- * client pins the whole decision table.
- */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getTranscript, resetTranscriptMemoryCache } from "@/lib/transcriptCache";
 import { fetchFreshTranscript, type FetchOutcome } from "@/lib/transcript";
@@ -97,8 +85,6 @@ beforeEach(() => {
 
 describe("outcomes are never guesses", () => {
   it("reports a blocked fetch as failed, never as unavailable", async () => {
-    // The whole point of the union. These were both `null`, so `generate` told
-    // teachers a video had no captions whenever YouTube refused us.
     youtube.mockResolvedValue(BLOCKED);
     const { client, status } = fakeStack({ row: { transcript_status: "pending", fetched_at: null } });
 
@@ -106,7 +92,6 @@ describe("outcomes are never guesses", () => {
 
     expect(outcome.state).toBe("failed");
     if (outcome.state === "failed") expect(outcome.reason).toBe("player_not_loaded:http_429");
-    // And it must not be recorded as a verdict about the video.
     expect(status()).toBe("pending");
   });
 
@@ -157,7 +142,6 @@ describe("a failed refresh never loses what we already had", () => {
     const outcome = await getTranscript(client, "vid");
 
     expect(outcome.state).toBe("ready");
-    // Status must not be downgraded by a fetch that never reached YouTube.
     expect(status()).toBe("ready");
   });
 
@@ -176,8 +160,6 @@ describe("a failed refresh never loses what we already had", () => {
 
 describe("force", () => {
   it("re-checks a video whose unavailable verdict is still fresh", async () => {
-    // A teacher pressing "generate" is an explicit retry. If it does nothing the
-    // button looks broken, and one bad fetch becomes permanent for two days.
     youtube.mockResolvedValue(CAPTIONS_FOUND);
     const { client } = fakeStack({
       row: { transcript_status: "unavailable", fetched_at: ago(1000) },
@@ -190,8 +172,6 @@ describe("force", () => {
   });
 
   it("leaves the verdict standing for automatic callers", async () => {
-    // The tutor runs this per student question; without the throttle a
-    // caption-less video costs one upstream request per question.
     const { client } = fakeStack({
       row: { transcript_status: "unavailable", fetched_at: ago(1000) },
     });
@@ -205,9 +185,6 @@ describe("force", () => {
 
 describe("concurrent callers share one fetch", () => {
   it("does not fetch twice when a second caller arrives mid-flight", async () => {
-    // This replaced a DB claim marker whose loser gave up — which is how a
-    // teacher pressing "generate" seconds after the editor warmed the cache was
-    // told the video had no captions, while the captions were downloading.
     youtube.mockImplementation(async () => {
       await new Promise((r) => setTimeout(r, 50));
       return CAPTIONS_FOUND;
@@ -220,7 +197,6 @@ describe("concurrent callers share one fetch", () => {
     ]);
 
     expect(youtube).toHaveBeenCalledTimes(1);
-    // The joiner WAITS for the real answer rather than being told there is none.
     expect(first.state).toBe("ready");
     expect(second.state).toBe("ready");
   });

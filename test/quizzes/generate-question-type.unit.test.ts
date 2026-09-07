@@ -1,6 +1,4 @@
 /**
- * questionType unit tests (spec §8).
- *
  * The lever is deliberately ASYMMETRIC and these tests pin that asymmetry so it
  * reads as intentional rather than as a half-finished feature:
  *   • `single-only` is enforceable and lossless — coercion always yields exactly
@@ -30,7 +28,6 @@ const segments: TranscriptSegment[] = [
   { text: "and then a second distinct topic follows on", offset: 20_000, duration: 5000 },
 ];
 
-/** A question the model returned as multi, with two genuinely correct options. */
 const rawMulti = {
   kind: "multi",
   prompt: "?",
@@ -43,7 +40,6 @@ const rawMulti = {
   ],
 };
 
-/** A question the model returned as single, with one correct option. */
 const rawSingle = {
   kind: "single",
   prompt: "?",
@@ -87,9 +83,9 @@ describe("single-only coercion", () => {
     const q = normalizeGeneratedQuestion(rawMulti, segments, 0, 4, "single-only");
 
     const texts = q!.options.map((o) => o.base_text);
-    expect(texts).toContain("a"); // the kept correct answer
-    expect(texts).not.toContain("b"); // the surplus correct answer is gone
-    expect(texts).toEqual(expect.arrayContaining(["c", "d"])); // real distractors stay
+    expect(texts).toContain("a");
+    expect(texts).not.toContain("b");
+    expect(texts).toEqual(expect.arrayContaining(["c", "d"]));
   });
 
   it("discards a question whose surplus-correct removal leaves too few options", () => {
@@ -198,7 +194,6 @@ describe("questionType in the prompt", () => {
 
     const prompt = promptSentToModel();
     expect(prompt).toMatch(/ALWAYS "multi"/);
-    // The ≥2 request is what keeps relabelling a fallback rather than the norm.
     expect(prompt).toMatch(/TWO OR MORE correct answers/);
   });
 

@@ -10,7 +10,6 @@ const SIZE: Record<Size, string> = {
   lg: "text-base px-5 py-3",
 };
 
-// The design system's "glint": base shadow + inset top-edge highlight + soft glow.
 const glint =
   "shadow-[var(--shadow-xs),inset_var(--color-1-400)_0_6px_0px_-5px,var(--color-1-700)_0_4px_10px_-5px]";
 

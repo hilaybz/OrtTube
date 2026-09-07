@@ -1,17 +1,3 @@
-/**
- * POST /api/quizzes/[id]/transcript — cache warming on page open.
- *
- * The route exists to move a slow fetch off the moment someone is waiting, so
- * what matters is that it cannot be used to reach a quiz the caller has no
- * business touching, and that it cannot be used to spend proxy bandwidth. No
- * network, no DB.
- *
- * It deliberately does NOT report what the fetch concluded. An earlier version
- * returned `{ status: "ready" | "unavailable" | "pending" }`, and the value both
- * callers passed to `.catch(() => {})` turned out to be unreachable in one case
- * and inverted in another — a body nobody reads is a body nobody notices is
- * wrong. The verdict lives on the video row and in the logs.
- */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const getTranscript = vi.hoisted(() => vi.fn());
@@ -44,7 +30,6 @@ const TEACHER = "teacher-1";
 const VIDEO_ROW = { youtube_video_id: "yt-abc" };
 const READY = { state: "ready", segments: [{ text: "hi" }], language: "he" };
 
-/** A `.from(...).select(...).eq(...).maybeSingle()` chain resolving to `data`. */
 function table(data: unknown) {
   return {
     select: () => ({ eq: () => ({ maybeSingle: async () => ({ data }) }) }),
@@ -60,7 +45,6 @@ function call(body: unknown = {}, userId = `${TEACHER}-${seq++}`) {
   return POST(req, { params: Promise.resolve({ id: "quiz-1" }) });
 }
 
-/** The owner-RLS read succeeds, then the video row resolves. */
 function ownsQuiz(userId: string) {
   from
     .mockReturnValueOnce(
@@ -96,8 +80,6 @@ describe("authorization", () => {
   });
 
   it("refuses a signed-in stranger with no classId", async () => {
-    // Owner-RLS returns nothing for a quiz that isn't theirs, and without a
-    // classId there is no membership to fall back on.
     from.mockReturnValueOnce(table(null));
     const res = await call();
     expect(res.status).toBe(403);
@@ -117,7 +99,6 @@ describe("authorization", () => {
 
 describe("student path", () => {
   beforeEach(() => {
-    // Not the author, so the membership gate decides.
     from.mockReturnValue(table(null));
   });
 
@@ -215,8 +196,6 @@ describe("cost control", () => {
   });
 
   it("answers 202 whatever the fetch concluded", async () => {
-    // ready / unavailable / throttled / failed all mean the same thing to a
-    // caller that fired this and moved on: the work was accepted.
     for (const outcome of [
       READY,
       { state: "unavailable" },

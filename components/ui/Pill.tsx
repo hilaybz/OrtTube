@@ -1,7 +1,6 @@
 "use client";
 import { cn } from "./cn";
 
-/** A rounded-full toggle chip. `active` → solid brand; else glass. */
 export function Pill({
   active = false,
   className,

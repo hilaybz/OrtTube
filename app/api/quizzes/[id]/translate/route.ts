@@ -3,18 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupportedLanguage } from "@/lib/lang";
 import { ensureTranslation, QuizError } from "@/lib/quiz";
 
-/**
- * POST /api/quizzes/[id]/translate  — eager per-language fill.
- *
- * Owner-only. Fills `question_translations` / `option_translations` for the
- * requested language by translating from the quiz's base_language rows (lazy,
- * cached, single-flight). Body: `{ language }`. This is the eager entry point
- * (e.g. a teacher pre-filling a class language); class assignment and the attempt read
- * path call `ensureTranslation` directly for the same effect.
- *
- * Errors: `{ error: { code, message } }` with codes:
- *   unauthorized(401), invalid_request(400), not_found(404), forbidden(403).
- */
 // Translates every question and option in the quiz through Claude, so duration
 // scales with quiz length and needs more than a short platform default.
 export const runtime = "nodejs";
@@ -45,7 +33,6 @@ export async function POST(
     return err("invalid_request", "language must be one of he, ar, en", 400);
   }
 
-  // Owner check via the authenticated client.
   const { data: quiz } = await supabase
     .from("quizzes")
     .select("author_id, deleted_at")

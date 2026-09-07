@@ -13,9 +13,6 @@ import type { QuizVisibility } from "@/lib/quizAuthor";
  * SECURITY DEFINER RPCs through the browser Supabase client, so `auth.uid()`
  * resolves to the signed-in teacher and RLS/ownership are enforced exactly as
  * they are for the routed mutations.
- *
- * (`upsert_question`, `generate`, and `translate` DO have routes and go through
- * `apiFetch` instead — see the editor components.)
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,7 +22,6 @@ type RpcInvoker = (
   args?: Record<string, unknown>
 ) => Promise<{ data: unknown; error: { message: string } | null }>;
 
-/** Thrown when a direct authoring RPC raises a stable code. `.message` is Hebrew. */
 export class MutationError extends Error {
   readonly code: string;
   constructor(code: string) {
@@ -54,7 +50,7 @@ async function call(fn: string, args: Record<string, unknown>): Promise<void> {
  *
  * `timeRestricted: false` always clears `durationMinutes` server-side
  * regardless of what's passed alongside it — going unrestricted always drops
- * the stated number (see `update_quiz`'s own comment).
+ * the stated number.
  */
 export function updateQuizMeta(
   quizId: string,
@@ -76,12 +72,10 @@ export function updateQuizMeta(
   });
 }
 
-/** Soft-delete a question (answer history preserved). */
 export function deleteQuestion(questionId: string): Promise<void> {
   return call("soft_delete_question", { p_question_id: questionId });
 }
 
-/** Soft-delete a single option (backstopped by the last-correct constraint). */
 export function deleteOption(optionId: string): Promise<void> {
   return call("soft_delete_option", { p_option_id: optionId });
 }

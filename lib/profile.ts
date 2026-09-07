@@ -1,11 +1,6 @@
 import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/**
- * The signed-in user's own profile. Read server-side via the SSR client, which
- * carries the caller's session so RLS (`profiles` self-select) applies. Used by
- * the role-guarded layouts and settings.
- */
 export interface MyProfile {
   id: string;
   role: "teacher" | "student";
@@ -17,14 +12,6 @@ export interface MyProfile {
 }
 
 /**
- * Resolve the caller's profile, or null when signed out / no profile row.
- *
- * Memoized per request: the role-guarded layout reads this on every page, and
- * the pages inside it want the same row again — for the greeting name, for the
- * settings form. Repeating it is the most expensive way to learn something
- * already known. Callers pass the request's shared client, which is what makes
- * the memo key stable.
- *
  * Identifies the caller with `getClaims` rather than `getUser`: the project
  * signs its tokens with an asymmetric key, so the signature is verified locally
  * against a cached JWKS instead of by a round trip to the auth server on every

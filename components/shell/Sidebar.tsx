@@ -26,14 +26,8 @@ export interface NavItem {
 export const RAIL_WIDTH_CLASS = "w-[5.25rem]";
 const RAIL_WIDTH_MD = "md:w-[5.25rem]";
 
-/** The labelled width: the mobile drawer, and the rail while it is open. */
 const OPEN_WIDTH_CLASS = "w-64";
 
-/**
- * The single active nav href for a path: the longest item href that equals the
- * path or is a parent segment of it. Picking the longest match means a nested
- * route (`/dashboard/classes`) activates "כיתות", not the "/dashboard" index.
- */
 function activeHrefFor(
   pathname: string,
   hrefs: ReadonlyArray<string>
@@ -43,25 +37,6 @@ function activeHrefFor(
     .sort((a, b) => b.length - a.length)[0];
 }
 
-/**
- * Role-agnostic app navigation: the brand lockup, the nav rows, and sign-out
- * pinned to the bottom.
- *
- * From `md` up the rail rests at icon width and opens to its labelled width
- * while the pointer is over it or focus is inside it. It is `fixed`, so opening
- * floats it *above* the page instead of reflowing the main column, and the page
- * scrolling underneath cannot move it. Focus keeps it open on its own so a
- * keyboard user can tab from the brand down to sign-out without the labels
- * disappearing under them.
- *
- * Its own content scrolls independently (`overflow-y-auto` on the inner column,
- * `overscroll-contain` so a rail-local scroll never chains out to the page), and
- * only when a long nav genuinely overflows the viewport — sign-out is always
- * reachable without scrolling the page.
- *
- * The mobile drawer (hamburger + scrim) ignores all of that: it is always the
- * labelled, full-width version, and `open` slides it in.
- */
 export function Sidebar({
   items,
   brand,
@@ -100,7 +75,6 @@ export function Sidebar({
 
   return (
     <>
-      {/* mobile scrim */}
       {open && (
         <div
           className="fixed inset-0 z-30 bg-black/30 md:hidden"
@@ -129,7 +103,6 @@ export function Sidebar({
         }}
         className={cn(
           "fixed inset-y-0 start-0 z-40 flex flex-col border-e border-white/60 bg-white/35 backdrop-blur-[24px]",
-          // Mobile: a drawer that slides in from the inline start (the right).
           OPEN_WIDTH_CLASS,
           "max-md:transition-transform",
           open ? "max-md:translate-x-0" : "max-md:translate-x-full",
@@ -143,9 +116,6 @@ export function Sidebar({
           "md:transition-[width] md:duration-200"
         )}
       >
-        {/* The rail's own scroll container: full height, independent of the
-            page, and only scrollable when the nav really is taller than the
-            viewport. */}
         <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain p-4">
           <div
             className={cn(
@@ -186,8 +156,6 @@ export function Sidebar({
                 >
                   <Icon name={item.icon} size={20} className="flex-none" />
                   <span className={navLabelClass(!expanded)}>{item.label}</span>
-                  {/* No room for a count on the resting rail — hidden with the
-                      labels, and always shown in the mobile drawer. */}
                   {item.count ? (
                     <span className={cn("ms-auto inline-flex", !expanded && "md:hidden")}>
                       <CountBadge count={item.count} />

@@ -1,27 +1,12 @@
 import { cn } from "./cn";
 import { Icon } from "./Icon";
 
-/**
- * The media band every quiz card in the app is built on — teacher library,
- * teacher overview, student feed. It lives here rather than in any one of them
- * because a quiz looks like a quiz on all three screens, and the frame drifting
- * between them would read as a bug.
- *
- * YouTube's `mqdefault` is the only 16:9 still every video has, so it never
- * letterboxes and nothing is cropped away to fill the band.
- *
- * Hover is a *lift*, not a dim: the still scales up a touch inside its own
- * clipped band (the frame stays as bright as it was — nothing is greyed out to
- * make room for text), and on a card that opens somewhere a light play disc
- * fades in to say so.
- */
 export function QuizThumb({
   youtubeVideoId,
   playAffordance,
   children,
 }: {
   youtubeVideoId: string;
-  /** Show the hover play disc — only on a card that actually navigates. */
   playAffordance?: boolean;
   children?: React.ReactNode;
 }) {
@@ -48,10 +33,6 @@ export function QuizThumb({
   );
 }
 
-/**
- * Dark pill sitting on the thumbnail — legible over any frame of any video.
- * Position it with the caller's own `absolute` corner classes.
- */
 export function ThumbChip({
   className,
   children,

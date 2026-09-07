@@ -14,8 +14,6 @@ import { getClassName } from "@/lib/classes";
 import type { AnalyticsScope } from "@/lib/analytics";
 
 /**
- * The analytics hub.
- *
  * ONE route renders every analytics view, selected by the URL:
  * `/dashboard/analytics?scope=student|class|quiz&id=<uuid>`. That contract is
  * what the rest of the app links into — `components/teacher/analyticsLinks.ts`
@@ -25,19 +23,8 @@ import type { AnalyticsScope } from "@/lib/analytics";
  * client state, because turning every keystroke into a server navigation would
  * be the wrong trade for something nobody bookmarks.
  *
- * The quiz scope takes one optional narrowing, `&class=<uuid>`, for that quiz's
- * numbers inside a single class. It reads as a filter on the quiz — pick a class
- * from the dropdown, pick "all classes" to come back — though it swaps the
- * dataset rather than subsetting one, since per-question correctness in the
- * rollup has no class dimension to filter on.
- *
  * `scope` is validated and both ids must look like a uuid, so a hand-edited URL
  * lands on the search screen (or the unfiltered quiz) rather than a failed read.
- *
- * Back normally goes up one level: to the whole quiz when a class is selected,
- * and otherwise to the search screen for the same scope. A link from outside
- * analytics (the overview's class cards) names its own origin instead, so it
- * does not strand the reader on a search box.
  */
 
 const SCOPES: AnalyticsScope[] = ["student", "class", "quiz"];
@@ -87,10 +74,6 @@ export default async function AnalyticsHubPage({
     );
   }
 
-  // The class's own name, when it's the selected entity — read separately
-  // from (and ahead of) the heavier `ClassAnalyticsView` fetch below, so the
-  // header can name the class instantly instead of waiting on the Suspense
-  // boundary. Falls back to the generic title if the lookup fails.
   let title = SCOPE_TITLE[scope];
   if (scope === "class") {
     const client = (await createClient()) as unknown as SupabaseClient;
@@ -145,7 +128,6 @@ export default async function AnalyticsHubPage({
   );
 }
 
-/** Held-frame loading state: the page chrome stays, the data area says so. */
 function ViewSkeleton() {
   return (
     <div className="glass flex items-center justify-center gap-2 p-12 text-sm text-[var(--body-subtle)]">

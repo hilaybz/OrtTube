@@ -12,19 +12,10 @@ import {
 } from "@/lib/quiz";
 import type { TranslationItem } from "@/lib/ai/translate";
 
-/**
- * Quiz-side allocation reads + bulk-assign. Companion to `lib/classes.ts`,
- * which owns the class-side (single-class) reads/writes — this file is the
- * mirror direction (per-quiz) plus the one operation that's genuinely
- * quiz-side-only: assigning to several classes in one action.
- */
-
 function unwrap<T>(res: { data: T; error: { message: string } | null }): T {
   if (res.error) throw new ClassError(res.error.message);
   return res.data;
 }
-
-// ── Editor's own allocation list (every state) ────────────────────────────────
 
 export interface QuizAllocation {
   class_id: string;
@@ -38,7 +29,6 @@ export interface QuizAllocation {
   assigned_at: string;
 }
 
-/** Owner-facing: every allocation of a quiz, any state (draft/scheduled/live/done). */
 export async function listQuizAllocations(
   client: SupabaseClient,
   quizId: string
@@ -49,8 +39,6 @@ export async function listQuizAllocations(
   return (data as unknown as QuizAllocation[]) ?? [];
 }
 
-// ── Card tags (library + dashboard landing page) ──────────────────────────────
-
 export interface ClassTag {
   class_id: string;
   class_name: string;
@@ -58,11 +46,8 @@ export interface ClassTag {
 
 export interface QuizAllocationTags {
   quiz_id: string;
-  /** Classes whose students can see the quiz right now. */
   live: ClassTag[];
-  /** Classes published but not yet inside their window. */
   scheduled: ClassTag[];
-  /** Classes whose window has already closed (`allocationState`'s `done`). */
   closed: ClassTag[];
 }
 
@@ -76,9 +61,6 @@ export interface QuizAllocationTags {
  * A quiz whose allocations are all drafts still appears with all three arrays
  * empty (that's the `טיוטה` line, not a disappearing card); a quiz with no
  * allocation at all is absent entirely.
- *
- * Hand-typed against the RPC's `jsonb`, like the rest of `@/lib` —
- * `146_quiz_allocation_tags_closed.sql` is the shape's source of truth.
  */
 export async function listMyQuizAllocationTags(
   client: SupabaseClient
@@ -86,8 +68,6 @@ export async function listMyQuizAllocationTags(
   const data = unwrap(await client.rpc("list_my_quiz_allocation_tags", {}));
   return (data as unknown as QuizAllocationTags[]) ?? [];
 }
-
-// ── Bulk-assign ────────────────────────────────────────────────────────────────
 
 export interface BulkAssignResult {
   assigned: AssignmentResult[];
@@ -140,8 +120,6 @@ export async function bulkAssignQuizToClasses(
           availableFrom: params.availableFrom,
           availableUntil: params.availableUntil,
         },
-        // Suppress the per-call hook; translation is fired once per distinct
-        // language below instead.
         { awaitTranslation: false, ensureTranslation: async () => noopTranslation }
       )
     )
@@ -179,7 +157,6 @@ export async function bulkAssignQuizToClasses(
       try {
         await ensure(params.quizId, language, { translate: opts?.translate });
       } catch {
-        // best-effort: a translation failure must not fail the bulk assign.
       }
     })
   );

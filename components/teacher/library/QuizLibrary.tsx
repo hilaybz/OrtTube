@@ -40,15 +40,10 @@ import { QuizPreviewModal } from "@/components/teacher/library/QuizPreviewModal"
 
 type TabKey = "mine" | "school";
 
-/** A 3-column grid, so a page is a whole number of rows. */
 const PAGE_SIZE = 12;
 const PAGE_SIZE_OPTIONS = [12, 24, 48] as const;
 
 /**
- * The teacher quiz library: their own quizzes plus the same-school shared
- * catalog they can clone. Reads are done server-side (RLS) and handed in;
- * this component owns tab state and the clone mutation (POST /api/quizzes/share).
- *
  * Search/filter/sort live entirely client-side — neither `list_my_quizzes` nor
  * `list_shared_quizzes` paginates, so the full list is already here, and the
  * grid pages over the FILTERED result. Each tab keeps its OWN state (search
@@ -64,9 +59,7 @@ export function QuizLibrary({
 }: {
   myQuizzes: MyQuiz[];
   sharedQuizzes: SharedQuiz[];
-  /** quiz_id → allocation tags, keyed for O(1) lookup per card. */
   allocationTags: Record<string, QuizAllocationTags>;
-  /** The teacher's full class roster — options for the "My quizzes" class filter. */
   classes?: ClassRow[];
   /**
    * Where the status filter starts, read from the page's `?status=` param —
@@ -104,17 +97,10 @@ export function QuizLibrary({
   );
 }
 
-// ── Shared filter-bar pieces (both tabs) ────────────────────────────────────
-
 const LANGUAGE_OPTIONS = (["he", "ar", "en"] as const satisfies readonly Language[]).map(
   (l) => ({ value: l, label: LANG_LABEL[l] })
 );
 
-/**
- * One glass strip: a wide search box, then the narrow filters, then the sort,
- * then a clear-filters icon that only exists while something is filtered — so
- * the bar's default state is a search box and nothing to dismiss.
- */
 function FilterBar({
   children,
   dirty,
@@ -139,7 +125,6 @@ function FilterBar({
   );
 }
 
-/** The search box: a magnifier inside a label-less input, so the bar stays low. */
 function SearchBox({
   value,
   onChange,
@@ -186,11 +171,6 @@ function LanguageFilter({
   );
 }
 
-/**
- * A single-value filter as a labelled dropdown — the same control the sort uses,
- * so "נראות" and "מצב" sit in the bar as peers of it rather than as a third
- * kind of widget (they were a `SegmentedToggle` and nothing, respectively).
- */
 function FilterSelect<T extends string>({
   label,
   name,
@@ -245,7 +225,6 @@ function SortSelect({
   );
 }
 
-/** Shown instead of the grid when filters/search narrow a non-empty list to zero. */
 function NoMatches({ onClear }: { onClear: () => void }) {
   return (
     <GlassCard className="flex flex-col items-center gap-3 py-10 text-center">
@@ -256,7 +235,6 @@ function NoMatches({ onClear }: { onClear: () => void }) {
   );
 }
 
-/** The grid + its pager — one layout for both tabs. */
 function QuizGrid({
   children,
   paged,
@@ -277,8 +255,6 @@ function QuizGrid({
     </div>
   );
 }
-
-// ── Mine ─────────────────────────────────────────────────────────────────────
 
 function MineTab({
   quizzes,
@@ -344,7 +320,6 @@ function MineTab({
         method: "DELETE",
       });
       setPendingDelete(null);
-      // The list is a server read, so re-render it rather than mutating local state.
       router.refresh();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "אירעה שגיאה. נסו שוב.");
@@ -451,8 +426,6 @@ function MineTab({
     </div>
   );
 }
-
-// ── School catalog ───────────────────────────────────────────────────────────
 
 function SchoolTab({ quizzes }: { quizzes: SharedQuiz[] }) {
   const router = useRouter();

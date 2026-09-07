@@ -1,18 +1,8 @@
 import { QuizError } from "@/lib/quiz";
 import { err, requireAuth } from "../http";
 
-/**
- * Shared HTTP plumbing for the `/api/quizzes/*` authoring route handlers.
- *
- * Uniform error envelope `{ error: { code, message } }` and a single
- * mapping from the stable RPC/service error codes to HTTP status, so every route
- * reports the same code the DB raised. The authoring RPCs run through the
- * caller's AUTHENTICATED client so `auth.uid()` resolves to the owner.
- */
-
 export { err, requireAuth };
 
-/** Map a stable QuizError code to an HTTP status. */
 export function statusForCode(code: string): number {
   switch (code) {
     case "unauthorized":
@@ -40,7 +30,6 @@ export function statusForCode(code: string): number {
   }
 }
 
-/** Translate a thrown QuizError into the uniform JSON response. */
 export function handleError(e: unknown) {
   if (e instanceof QuizError) {
     return err(e.code, e.message, statusForCode(e.code));

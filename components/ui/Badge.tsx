@@ -35,7 +35,6 @@ export function Badge({
   );
 }
 
-/** Small red notification count for nav items. */
 export function CountBadge({ count }: { count: number }) {
   return (
     <span className="ms-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-[var(--fg-danger)] px-2 py-0.5 text-[11px] font-semibold text-white">

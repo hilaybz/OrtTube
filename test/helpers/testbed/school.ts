@@ -1,8 +1,3 @@
-/**
- * School: the tenant boundary. Enrolls teachers and students — each gets an auth
- * user, a role-stamped profile, and a signed-in (RLS-subject) client. Enrolling a
- * student fires the invite-conversion trigger.
- */
 import { getPool } from "../db";
 import {
   DEFAULT_PASSWORD,
@@ -19,7 +14,6 @@ export class School {
     readonly name: string
   ) {}
 
-  /** Enroll a teacher: auth user + `teacher` profile + signed-in client. */
   async enrollTeacher(opts: { name: string; email?: string }): Promise<Teacher> {
     const email = opts.email ?? emailFor(opts.name);
     const id = await createAuthUser(email, DEFAULT_PASSWORD, opts.name);
@@ -32,11 +26,6 @@ export class School {
     return new Teacher(id, opts.name, email, DEFAULT_PASSWORD, client);
   }
 
-  /**
-   * Enroll a student: auth user + `student` profile + signed-in client. Creating
-   * the profile fires the invite-conversion trigger (converts any pending invite
-   * for this email into a class membership).
-   */
   async enrollStudent(opts: { name: string; email?: string }): Promise<Student> {
     const email = opts.email ?? emailFor(opts.name);
     const id = await createAuthUser(email, DEFAULT_PASSWORD, opts.name);

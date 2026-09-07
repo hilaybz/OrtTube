@@ -4,16 +4,6 @@ import { cn } from "@/components/ui/cn";
 import { Sidebar, RAIL_WIDTH_CLASS, type NavItem } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
-/**
- * Role app chrome: glass sidebar (inline-start / right in RTL) + main column
- * with a Topbar and the page content. Server layouts pass a serializable `nav`
- * and the server-rendered page as `children`.
- *
- * From `md` up the sidebar is a fixed icon rail that expands over the page on
- * hover, so the only thing it occupies in the flow is the narrow spacer below —
- * the main column keeps its width whether the rail is expanded or not. Below
- * `md` the sidebar is a drawer and the spacer collapses to nothing.
- */
 export function AppShell({
   nav,
   brand = "OrtTube",

@@ -2,23 +2,12 @@ import "server-only";
 import { createProxiedFetch } from "./egress";
 
 /**
- * YouTube's InnerTube player endpoint — the one request that answers everything
- * we need to know about a video.
- *
- * This replaced a watch-page scrape, and the numbers are why: the watch page is
- * ~1,197 KB of which we read 10.4 KB, it is served by only 3 of 5 residential
- * exits, and it was fetched TWICE per video (once for captions, once for
- * duration). The player endpoint returns the same three fields in ~156 KB and
- * answered 8 of 8 attempts. On metered proxy egress that is the difference
- * between ~1.25 GB and ~101 MB a month.
- *
  * The client fingerprint deliberately matches `youtube-transcript`'s own
  * (ANDROID 20.10.38, its Android-app User-Agent, no hl/gl). Both this call and
  * the package's download go out back-to-back through the same proxy pool, so
  * they should look like one client rather than two.
  */
 
-/** A caption track as YouTube lists it. `kind === "asr"` means auto-generated. */
 export interface CaptionTrack {
   baseUrl: string;
   languageCode: string;
@@ -54,7 +43,6 @@ interface RawPlayerResponse {
   videoDetails?: { lengthSeconds?: string };
 }
 
-/** Names an error by class as well as message, matching the transcript trace. */
 function describe(e: unknown): string {
   if (!(e instanceof Error)) return String(e);
   const cause = e.cause;
@@ -65,17 +53,6 @@ function describe(e: unknown): string {
   return `${e.constructor.name}: ${e.message}${suffix}`;
 }
 
-/**
- * Fetches the player response for `videoId` through the proxy pool.
- *
- * `trace`, when given, records this request and whatever the pool's exits did,
- * so a failure names the endpoint and status rather than reporting only that
- * nothing was found.
- *
- * Failure reasons reuse the vocabulary the transcript classifier already
- * speaks (`http_<status>`, `no_player_json`, or a described throw), so a caller
- * can keep reporting `page_not_loaded:<reason>` unchanged.
- */
 export async function fetchPlayerResponse(
   videoId: string,
   trace?: string[],
@@ -94,20 +71,15 @@ export async function fetchPlayerResponse(
       signal,
     });
     trace?.push(`POST www.youtube.com/youtubei/v1/player → ${res.status}`);
-    // Covers rate limiting (429) and bot walls (403) as well as outright
-    // errors — all of them mean we learned nothing about this video.
     if (!res.ok) return { ok: false, failure: `http_${res.status}` };
 
     let data: RawPlayerResponse;
     try {
       data = (await res.json()) as RawPlayerResponse;
     } catch {
-      // A 200 that isn't JSON is a bot wall or an interstitial, not an answer.
       return { ok: false, failure: "no_player_json" };
     }
 
-    // `playabilityStatus` is the one field every real response carries; without
-    // it we were not talking to the player API.
     if (!data.playabilityStatus) return { ok: false, failure: "no_player_json" };
 
     const tracks = data.captions?.playerCaptionsTracklistRenderer?.captionTracks;

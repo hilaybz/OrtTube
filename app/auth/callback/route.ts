@@ -4,15 +4,6 @@ import { createServiceClient } from "@/lib/auth/serviceClient";
 import { evaluateSignIn } from "@/lib/auth/signIn";
 
 /**
- * Email-confirmation / OAuth callback (v2).
- *
- * Exchanges the `code` for a session, then routes by the authoritative
- * `profiles.role` via the same evaluation the sign-in endpoint uses (never
- * `user_metadata`). Deactivated / profile-less users are signed back out.
- * All failures land on the home page ("/") — the dedicated auth screens are
- * rebuilt in the frontend pass.
- */
-/**
  * Only honor `next` when it is a SAFE same-origin relative path: it must start
  * with a single "/" and not "//" (protocol-relative) and carry no scheme — this
  * blocks open redirects like `//evil.com` or `https://evil.com`. Anything else

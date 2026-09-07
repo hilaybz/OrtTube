@@ -3,29 +3,15 @@
  * `lib/allocationState.ts`: it must be safely importable from client
  * components without dragging in server-only code via `@/lib/quiz` or
  * `@/lib/classes`'s value exports).
- *
- * A quiz is either `time_restricted` (the teacher stated an exact minute
- * count) or not (the UI estimates one from the video's length). The estimate
- * is deliberately never stored — it's cheap to recompute and this way it can
- * never drift from the video it's derived from.
  */
 
-/**
- * Round a video's length up to the next 5-minute increment. `null` in,
- * `null` out — `videos.duration_seconds` is nullable in practice (the
- * YouTube watch-page scrape that populates it can fail; see
- * `lib/youtube.ts`), and callers must tolerate that rather than showing a
- * bogus estimate.
- */
 export function estimateQuizMinutes(durationSeconds: number | null): number | null {
   if (durationSeconds == null || durationSeconds <= 0) return null;
   return Math.ceil(durationSeconds / 300) * 5;
 }
 
-/** The minute count to show for a quiz, and whether it's an estimate. */
 export interface QuizDuration {
   minutes: number;
-  /** `true` when derived from video length (no `~`-free stored number). */
   estimated: boolean;
 }
 
@@ -49,10 +35,6 @@ export function quizDurationMinutes(quiz: {
   return est != null ? { minutes: est, estimated: true } : null;
 }
 
-/** `"~12 דקות"` or `"12 דקות"` — the plain-text form for contexts (like a
- * form's read-only preview line) that don't need the number split out for
- * `tabular-nums` styling. Card renderers should use `quizDurationMinutes`
- * directly so the digits can be wrapped separately. */
 export function formatQuizDuration(quiz: {
   time_restricted: boolean;
   duration_minutes: number | null;
@@ -64,21 +46,9 @@ export function formatQuizDuration(quiz: {
 }
 
 /**
- * A video's own length, in words — `"13 דקות"`, `"שעה ו-3 דקות"`.
- *
- * Distinct from everything above, which is about how long a quiz TAKES. This is
- * how long the video RUNS, and it is shown as a sentence rather than as `10:00`
- * because a bare `mm:ss` beside the words "אורך הסרטון" reads as ambiguous —
- * ten minutes or ten hours — and `1:02:34` is worse.
- *
  * Rounded UP to the next whole minute: a 12:01 video is "13 דקות", not "12".
  * Seconds are noise at this scale, and rounding down would understate a length
  * a teacher is judging a lesson against.
- *
- * `formatTime` in `components/teacher/editor/format.ts` is deliberately NOT
- * changed to do this. Its other callers seed a text input that `parseTime` reads
- * back, and the question-checkpoint chips show a POSITION in the video, where
- * `mm:ss` is the correct and expected form.
  */
 export function formatVideoLength(totalSeconds: number): string {
   const minutes = Math.max(1, Math.ceil(totalSeconds / 60));
@@ -104,11 +74,6 @@ function minutePart(n: number): string {
   return n === 1 ? "דקה" : `${n} דקות`;
 }
 
-/**
- * The same length in the words a card chip has room for — `"~12 דק׳"`. `null`
- * when nothing is known, so a caller can skip the chip rather than render an
- * empty one.
- */
 export function durationChipText(quiz: {
   time_restricted: boolean;
   duration_minutes: number | null;

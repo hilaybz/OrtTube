@@ -1,7 +1,3 @@
-/**
- * Small JSON response helpers so every auth endpoint returns the stable
- * `{ error: { code, message } }` shape.
- */
 import { NextResponse } from "next/server";
 
 export type ApiErrorCode =

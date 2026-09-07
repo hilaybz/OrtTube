@@ -1,20 +1,3 @@
-/**
- * Question ordering — questions are sequenced by VIDEO TIME, not by the order the
- * teacher happened to write them in.
- *
- * `questions.order_index` is assigned `max + 1` on insert, so it records authoring
- * order. Every read used to sort by it first, which put a question authored late
- * but positioned early AFTER a later one. For a teacher that was an unsorted
- * list; for a student the player gates the video at the next unanswered
- * question's timestamp, so the gate landed behind the playhead and snapped the
- * video backwards.
- *
- * The reproduction is deliberately the reported one: author at 0:30, then 1:30,
- * then 0:30 again. Each case asserts through the real RPC, because the RPC — not
- * the table — is what decides order.
- *
- * Runs at the integration/gate step. Skipped when the local stack is unreachable.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { getPool, closePool } from "../helpers/db";
 import {
@@ -31,7 +14,6 @@ import { stackOnline } from "../helpers/stack";
 
 const online = await stackOnline();
 
-/** Authored at 0:30, then 1:30, then 0:30 — the sequence that surfaced the bug. */
 const AUTHORED_OUT_OF_TIME_ORDER = [
   singleChoice({ prompt: "first-at-0:30", at: 30, correct: "a", distractors: ["b"] }),
   singleChoice({ prompt: "at-1:30", at: 90, correct: "a", distractors: ["b"] }),
@@ -78,8 +60,6 @@ describe.skipIf(!online)("question ordering follows video time", () => {
 
     const positions = view.questions.map((q) => q.position_seconds);
     const ascending = [...positions].sort((a, b) => a - b);
-    // The player gates the video at each checkpoint in turn, so a position that
-    // decreased would seek a student backwards mid-quiz.
     expect(positions).toEqual(ascending);
   });
 
@@ -106,7 +86,6 @@ describe.skipIf(!online)("question ordering follows video time", () => {
     const view = await teacher.editorView(quiz);
     const sameSecond = view.questions.filter((q) => q.position_seconds === 30);
 
-    // Both sit at 0:30; the one written first stays first.
     expect(sameSecond.map((q) => q.prompt)).toEqual(["first-at-0:30", "second-at-0:30"]);
   });
 });

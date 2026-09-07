@@ -1,18 +1,3 @@
-/**
- * Sharing integration tests — the shared catalog (`list_shared_quizzes`) and
- * deep-copy cloning (`clone_quiz`) (spec §3.4, decision 13).
- *
- * Every action runs through an actor's AUTHENTICATED (RLS-subject) client via the
- * actor DSL (`test/helpers/testbed.ts`), so each RPC's `auth.uid()` gate is real.
- * Covers: the same-school shared browse surface, teacher-only visibility, deep-copy
- * clone (questions/options/translations, cloned_from_id, reused video, private
- * visibility), soft-deleted rows excluded, attempts/answers not copied,
- * owner-clones-own-private, clone/source independence in both directions, and
- * cross-school denial.
- *
- * Runs at the integration/gate step (owns DB application). Skipped when the local
- * DB is unreachable so unit suites still pass without Supabase running.
- */
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { getPool, closePool } from "../helpers/db";
 import { QuizError } from "@/lib/quiz";
@@ -33,29 +18,18 @@ import { stackOnline } from "../helpers/stack";
 
 const online = await stackOnline();
 
-// ── Actor-agnostic RPC helpers ────────────────────────────────────────────────
-// The DSL exposes `sharedQuizzes()` / `clone()` only on Teacher (the only role
-// allowed to use them). These thin helpers run the same RPCs as ANY actor so the
-// teacher-only visibility and student-denial paths stay expressible as a story.
-
-/** Read the shared catalog as any actor (students must get an empty list). */
 async function sharedListAs(actor: Actor): Promise<SharedQuizRow[]> {
   const { data, error } = await actor.client.rpc("list_shared_quizzes", {});
   if (error) throw new QuizError(error.message);
   return (data as unknown as SharedQuizRow[]) ?? [];
 }
 
-/** Attempt to clone as any actor, surfacing the RPC's stable rejection code. */
 async function cloneAs(actor: Actor, source: Quiz): Promise<void> {
   const { error } = await actor.client.rpc("clone_quiz", {
     p_source_quiz_id: source.id,
   });
   if (error) throw new QuizError(error.message);
 }
-
-// ── Out-of-band structural reads (assert the deep copy) ───────────────────────
-// The DSL cannot surface a freshly-cloned quiz's raw structure, so these read it
-// directly for assertions only — never to drive the system under test.
 
 async function videoCount(videoId: string): Promise<number> {
   const res = await getPool().query<{ n: number }>(
@@ -177,7 +151,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     await closePool();
   });
 
-  /** Author a quiz owned by `author` with one single-choice question. */
   function authorQuizWithQuestion(
     author: Teacher,
     opts: { title?: string; baseLanguage?: "he" | "en" } = {}
@@ -197,12 +170,10 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     });
   }
 
-  // ── list_shared_quizzes ─────────────────────────────────────────────────────
-
   it("list_shared_quizzes returns same-school shared quizzes; excludes private", async () => {
     const shared = await authorQuizWithQuestion(teacher, { title: "Public One" });
     await shared.makeShared();
-    await authorQuizWithQuestion(teacher, { title: "Private One" }); // stays private
+    await authorQuizWithQuestion(teacher, { title: "Private One" });
 
     const peerTeacher = await lincoln.enrollTeacher({ name: "Grace" });
 
@@ -210,7 +181,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     const ids = catalog.map((row) => row.quiz_id);
     expect(ids).toContain(shared.id);
     expect(catalog.every((row) => row.visibility === "shared")).toBe(true);
-    // A peer teacher sees it as not-own.
     expect(catalog.find((row) => row.quiz_id === shared.id)!.is_own).toBe(false);
   });
 
@@ -261,12 +231,7 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     expect(catalog.map((row) => row.quiz_id)).not.toContain(shared.id);
   });
 
-  // ── clone_quiz ──────────────────────────────────────────────────────────────
-
   it("a same-school teacher deep-clones a shared quiz into a private copy", async () => {
-    // Author the source with a question carrying both base (he) and an extra
-    // target-language (en) translation on the prompt and every option, so we can
-    // assert the clone copies the full translation set.
     const source = await teacher.authorQuiz({
       baseLanguage: "he",
       title: "Original",
@@ -299,7 +264,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     const clone = await cloner.clone(source);
     expect(clone.id).not.toBe(source.id);
 
-    // New quiz: owned by the cloner, private, cloned_from_id set, SAME video reused.
     expect(await testbed.db.quizRow(clone)).toMatchObject({
       author_id: cloner.id,
       video_id: source.videoId,
@@ -310,31 +274,26 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
       school_id: lincoln.id,
     });
 
-    // Video reused, not duplicated.
     expect(await videoCount(source.videoId!)).toBe(1);
 
-    // One question copied, with a NEW id.
     const clonedQuestions = await questionsOf(clone.id);
     expect(clonedQuestions).toHaveLength(1);
     const clonedQuestion = clonedQuestions[0];
     expect(clonedQuestion.id).not.toBe(sourceQuestion.id);
     expect(clonedQuestion).toMatchObject({ kind: "single", position_seconds: 42 });
 
-    // Question translations copied for BOTH languages.
     const clonedTranslations = await questionTranslationsOf(clonedQuestion.id);
     expect(clonedTranslations.map((t) => t.language)).toEqual(["en", "he"]);
     expect(clonedTranslations.find((t) => t.language === "en")!.prompt).toBe(
       "What is X? (en)"
     );
 
-    // Options copied (4), exactly one correct, with NEW ids + their translations.
     const clonedOptions = await liveOptionsOf(clonedQuestion.id);
     expect(clonedOptions).toHaveLength(4);
     expect(clonedOptions.filter((o) => o.is_correct)).toHaveLength(1);
     const sourceOptionIds = new Set(sourceQuestion.options.map((o) => o.id));
     expect(clonedOptions.every((o) => !sourceOptionIds.has(o.id))).toBe(true);
 
-    // 4 options × 2 languages (he + en).
     expect(await optionTranslationCountOf(clonedQuestion.id)).toBe(8);
   });
 
@@ -343,7 +302,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     await source.makeShared();
     const [mainQuestion] = source.questions;
 
-    // Add a second question then soft-delete it → must not be cloned.
     const doomedQuestion = await teacher.addQuestion(
       source,
       singleChoice({
@@ -356,7 +314,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     );
     await doomedQuestion.softDelete();
 
-    // Add a 5th option to the FIRST question then soft-delete it (a wrong one).
     const doomedOptionId = await appendExtraOption(teacher, source, mainQuestion, {
       kind: "single",
       positionSeconds: 42,
@@ -369,10 +326,8 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
 
     const clone = await teacher.clone(source);
 
-    // Only the one live question is cloned.
     const clonedQuestions = await questionsOf(clone.id);
     expect(clonedQuestions).toHaveLength(1);
-    // Only 4 live options cloned (the soft-deleted 5th is dropped).
     expect(await liveOptionsOf(clonedQuestions[0].id)).toHaveLength(4);
   });
 
@@ -380,7 +335,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     const source = await authorQuizWithQuestion(teacher);
     await source.makeShared();
 
-    // Give the source a real attempt: assign it to a class the student is in.
     const biology = await teacher.openClass({ name: "Biology", language: "he" });
     await biology.enroll(student);
     await teacher.assignQuiz(source, { to: biology });
@@ -392,18 +346,13 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
   });
 
   it("an owner can clone their OWN private quiz", async () => {
-    const source = await authorQuizWithQuestion(teacher); // stays private
+    const source = await authorQuizWithQuestion(teacher);
     const clone = await teacher.clone(source);
     expect(await testbed.db.quizRow(clone)).toMatchObject({
       cloned_from_id: source.id,
       visibility: "private",
     });
   });
-
-  // ── clone independence ──────────────────────────────────────────────────────
-  // A clone is an eager deep copy with no runtime coupling: each side is an
-  // ordinary quiz owned by its own teacher, so editing either one must never be
-  // visible in the other.
 
   it("editing a clone leaves the source quiz untouched", async () => {
     const source = await teacher.authorQuiz({
@@ -428,7 +377,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     const cloner = await lincoln.enrollTeacher({ name: "Grace" });
     const clone = await cloner.clone(source);
 
-    // The clone's questions and options are its OWN rows, not the source's.
     const [sourceQuestion] = source.questions;
     const [clonedQuestion] = clone.questions;
     expect(clonedQuestion.id).not.toBe(sourceQuestion.id);
@@ -437,8 +385,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
       []
     );
 
-    // The cloner reworks their copy: new prompt/explanation, new option text, the
-    // answer key moved to a different option, an extra question, a new title.
     await cloner.reviseQuestion(clonedQuestion, {
       prompt: "What is X, really?",
       explanation: "Because Z.",
@@ -460,7 +406,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     );
     await clone.rename("Grace's Adaptation");
 
-    // The clone really did change …
     const cloneAfter = await testbed.db.structureOf(clone);
     expect(cloneAfter.map((q) => q.prompt)).toEqual([
       "What is X, really?",
@@ -475,7 +420,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
       cloneAfter[0].options.filter((o) => o.isCorrect).map((o) => o.text)
     ).toEqual(["clone option 2"]);
 
-    // … and the source's prompts, options and answer key are exactly as authored.
     expect(await testbed.db.structureOf(source)).toEqual(sourceBefore);
     expect(await testbed.db.quizRow(source)).toMatchObject({
       title: "Original",
@@ -515,9 +459,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     const cloneBefore = await testbed.db.structureOf(clone);
     expect(cloneBefore).toHaveLength(2);
 
-    // The author reworks the original: new prompt/explanation, new option text,
-    // the answer key moved, the second question dropped, a third added, retitled
-    // and pulled back out of the shared catalog.
     const [firstQuestion, secondQuestion] = source.questions;
     await teacher.reviseQuestion(firstQuestion, {
       prompt: "Reworked prompt",
@@ -542,7 +483,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
     await source.rename("Reworked Original");
     await source.makePrivate();
 
-    // The source really did change …
     const sourceAfter = await testbed.db.structureOf(source);
     expect(sourceAfter.map((q) => q.prompt)).toEqual([
       "Reworked prompt",
@@ -552,7 +492,6 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
       sourceAfter[0].options.filter((o) => o.isCorrect).map((o) => o.text)
     ).toEqual(["source option 0"]);
 
-    // … and the clone is exactly what was copied, lineage pointer included.
     expect(await testbed.db.structureOf(clone)).toEqual(cloneBefore);
     expect(await testbed.db.quizRow(clone)).toMatchObject({
       title: "Original",
@@ -573,7 +512,7 @@ describe.skipIf(!online)("sharing & clone RPCs", () => {
   });
 
   it("a same-school teacher cannot clone another teacher's PRIVATE quiz", async () => {
-    const source = await authorQuizWithQuestion(teacher); // stays private
+    const source = await authorQuizWithQuestion(teacher);
     const peerTeacher = await lincoln.enrollTeacher({ name: "Grace" });
 
     await expect(peerTeacher.clone(source)).rejects.toThrow("not_authorized");

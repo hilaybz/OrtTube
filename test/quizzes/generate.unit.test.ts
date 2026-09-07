@@ -1,9 +1,3 @@
-/**
- * Generation unit tests — pure generation helpers (no DB, no network).
- *
- * Covers segment-boundary snapping and answer-key coercion so persistence never
- * trips the correctness invariant (spec §3.4).
- */
 import { describe, it, expect } from "vitest";
 import {
   snapToSegmentBoundary,
@@ -11,15 +5,12 @@ import {
 } from "@/lib/ai/generate";
 import type { TranscriptSegment } from "@/lib/transcript";
 
-// A three-segment transcript whose spoken parts start at 0s, 10s and 30s
-// (offsets are in milliseconds).
 const transcriptSegments: TranscriptSegment[] = [
   { text: "a", offset: 0, duration: 5000 },
   { text: "b", offset: 10_000, duration: 5000 },
   { text: "c", offset: 30_000, duration: 5000 },
 ];
 
-/** Build one choice per flag, marking each as correct / incorrect in order. */
 function choicesWithCorrectness(correctnessFlags: boolean[]) {
   return correctnessFlags.map((is_correct, i) => ({ text: `opt${i}`, is_correct }));
 }
@@ -48,12 +39,10 @@ describe("normalizeGeneratedQuestion", () => {
     expect(question!.kind).toBe("single");
     expect(question!.options.filter((o) => o.is_correct)).toHaveLength(1);
     expect(question!.options[0].is_correct).toBe(true);
-    expect(question!.position_seconds).toBe(10); // snapped
+    expect(question!.position_seconds).toBe(10);
     expect(question!.order_index).toBe(0);
   });
 
-  // UPDATED (C3): a question with ZERO correct options is now REJECTED rather than
-  // silently defaulting option 0 to correct — we never fabricate an answer key.
   it("rejects a single-choice question with zero correct options", () => {
     const rejected = normalizeGeneratedQuestion(
       { kind: "single", prompt: "?", options: choicesWithCorrectness([false, false, false, false]) },
@@ -72,7 +61,6 @@ describe("normalizeGeneratedQuestion", () => {
     expect(multiQuestion!.options.filter((o) => o.is_correct)).toHaveLength(2);
   });
 
-  // UPDATED (C3): multi with zero correct is likewise rejected, not coerced.
   it("rejects a multi-select question with zero correct options", () => {
     const rejected = normalizeGeneratedQuestion(
       { kind: "multi", prompt: "?", options: choicesWithCorrectness([false, false, false]) },
@@ -82,9 +70,6 @@ describe("normalizeGeneratedQuestion", () => {
     expect(rejected).toBeNull();
   });
 
-  // t8 (C3): when the model returns MORE than four options and the correct one
-  // sits beyond the first four, it must be KEPT — not dropped by the 4-cap and the
-  // key silently reassigned to option 0.
   it("keeps the correct option when more than four options are returned", () => {
     const question = normalizeGeneratedQuestion(
       {
@@ -95,7 +80,7 @@ describe("normalizeGeneratedQuestion", () => {
           { text: "d1", is_correct: false },
           { text: "d2", is_correct: false },
           { text: "d3", is_correct: false },
-          { text: "the-correct-one", is_correct: true }, // index 4, beyond the cap
+          { text: "the-correct-one", is_correct: true },
           { text: "d5", is_correct: false },
         ],
       },
@@ -119,7 +104,7 @@ describe("normalizeGeneratedQuestion", () => {
           { text: "d1", is_correct: false },
           { text: "d2", is_correct: false },
           { text: "c3", is_correct: true },
-          { text: "c4", is_correct: true }, // both correct beyond first four
+          { text: "c4", is_correct: true },
         ],
       },
       transcriptSegments,

@@ -25,9 +25,6 @@ function post(body: unknown, opts?: { secret?: string | null }): Promise<Respons
   );
 }
 
-// Requires a reachable local stack (not merely the env vars naming one) plus a
-// configured ADMIN_SECRET. Gating on env alone let this file run with nothing
-// behind it, turning an absent stack into failures that read as product bugs.
 const d = (await stackOnline()) && ADMIN_SECRET ? describe : describe.skip;
 
 d("POST /api/admin/seed-teacher", () => {
@@ -82,7 +79,6 @@ d("POST /api/admin/seed-teacher", () => {
   });
 
   it("reuses an existing school when given an explicit schoolId", async () => {
-    // Seed one teacher (creates a school), then seed a second into the same school.
     const first = await post({
       email: uniqueEmail("teacher"),
       password: "password123",

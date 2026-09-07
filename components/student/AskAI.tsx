@@ -20,17 +20,10 @@ interface Msg {
   text: string;
 }
 
-/** The AI tutor's product name, everywhere the student sees it. */
 const TUTOR_NAME = "OrtAI";
 
-/** How often streamed text is committed to the transcript (~25fps). */
 const FLUSH_MS = 40;
 
-/**
- * "OrtAI is writing" — the assistant's own message slot while the first token
- * is still on its way, so the wait happens where the answer will appear rather
- * than on the send button.
- */
 function TypingDots() {
   return (
     <span
@@ -50,13 +43,6 @@ function TypingDots() {
   );
 }
 
-/**
- * The button that opens the tutor. Separate from the panel because the panel is
- * laid out by the quiz page (beside the video, not over it), while the trigger
- * belongs in the player's own header row — but the tutor's name, glyph and
- * "off" rule stay here, in one file, rather than being restated at the call
- * site.
- */
 export function AskAITrigger({
   tutorMode,
   open,
@@ -81,17 +67,6 @@ export function AskAITrigger({
  * far — it never sees the answer key. The answer is rendered through
  * `MarkdownText`, which turns the model's light Markdown into elements rather
  * than showing raw `**asterisks**` (and never into HTML).
- *
- * Two shapes, one element. From `xl` up (the width where two columns still
- * leave the video worth watching — the same breakpoint drives `QuizPlayer`'s
- * row, and the two have to agree) the panel is a real column in the page's
- * flow, as tall as the video beside it: nothing overlaps, nothing is dimmed,
- * and the student can watch and ask at the same time — which is the entire
- * point of a tutor grounded in the part of the video they have seen. Narrower
- * than that there is no room for two columns, so it slides in as a sheet over
- * the page from the physical left (the nav rail is on the right in this RTL
- * app) with a scrim behind it.
- *
  * `open` is owned by the caller for the same reason: the video column's width
  * depends on it, and a component cannot resize its sibling. The panel stays
  * mounted while closed so the conversation is still there when it reopens.
@@ -141,14 +116,13 @@ export function AskAI({
     e.preventDefault();
     const q = prompt.trim();
     if (!q || busy) return;
-    const prior = messages; // completed turns so far → sent as context
+    const prior = messages;
     setError(null);
     setBusy(true);
     setPrompt("");
     setMessages((m) => [...m, { role: "user", text: q }, { role: "assistant", text: "" }]);
     scrollToLatest();
 
-    // Streamed text waits here until the next flush tick.
     let pending = "";
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     function flushPending() {
@@ -199,7 +173,7 @@ export function AskAI({
       }
       flushPending();
     } catch (err) {
-      setMessages((m) => m.slice(0, -1)); // drop the empty assistant bubble
+      setMessages((m) => m.slice(0, -1));
       setError(err instanceof ApiError ? err.message : messageForCode("internal_error"));
     } finally {
       if (flushTimer != null) clearTimeout(flushTimer);
@@ -209,8 +183,6 @@ export function AskAI({
 
   return (
     <>
-      {/* Scrim: only ever behind the sheet. In the column layout the page is
-          fully usable while the chat is open, so there is nothing to dim. */}
       <div
         className={cn(
           "fixed inset-0 z-40 bg-black/30 transition-opacity xl:hidden",
@@ -227,12 +199,8 @@ export function AskAI({
         inert={!open}
         className={cn(
           "glass flex flex-col p-0",
-          // Sheet: over the page, sliding in from the physical left.
           "fixed bottom-0 left-0 top-0 z-50 w-[min(420px,92vw)] rounded-none transition-transform duration-300",
           open ? "translate-x-0" : "-translate-x-full",
-          // Column: in the flow beside the video, filling the height of the
-          // column the quiz page gives it — the conversation ends where the
-          // video does — and never off-screen or taller than the viewport.
           "xl:relative xl:bottom-auto xl:left-auto xl:top-auto xl:z-auto xl:h-full xl:min-h-[24rem] xl:max-h-[calc(100dvh-7rem)] xl:w-full xl:translate-x-0 xl:rounded-[var(--radius)] xl:transition-none",
           !open && "xl:hidden"
         )}
@@ -261,9 +229,6 @@ export function AskAI({
           ref={scrollRef}
           className={cn(
             "flex flex-1 flex-col gap-3 overflow-y-auto p-4",
-            // Scrolling works; the bar itself is hidden in all three engines —
-            // a transcript with a track down its side reads as a widget, and
-            // this one is a conversation.
             "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           )}
         >

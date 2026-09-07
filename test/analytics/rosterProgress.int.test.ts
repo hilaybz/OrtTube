@@ -1,22 +1,3 @@
-/**
- * Roster (per-student) analytics integration tests — the owner-checked
- * compute-on-read RPCs `class_roster_progress` and `student_quiz_progress`,
- * end-to-end against a live local Supabase with the v2 schema applied.
- *
- * Told through the actor DSL: a teacher authors two quizzes, assigns both to a
- * class of three students, and the students attempt with hand-picked outcomes so
- * every asserted number below is hand-computable:
- *
- *   - Alice completes Quiz A once, 2/2  (best score 1.0).
- *   - Bob attempts Quiz A twice — 0/2 then 1/2 — so his BEST is 0.5 over 2 attempts.
- *   - Carol never attempts anything.
- *   - Quiz B is assigned but nobody attempts it.
- *
- * Unlike `class_stats`, these RPCs are intentionally per-person (privacy is not a
- * concern for teacher-facing roster analytics), so we assert individual scores.
- *
- * Skipped when the local DB is unreachable so unit suites still pass offline.
- */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { closePool } from "../helpers/db";
 import {
@@ -35,16 +16,16 @@ import { stackOnline } from "../helpers/stack";
 const online = await stackOnline();
 
 describe.skipIf(!online)("roster analytics (per-student progress)", () => {
-  let teacher: Teacher; // owns the class + quizzes
-  let peerTeacher: Teacher; // same school, NOT the owner
+  let teacher: Teacher;
+  let peerTeacher: Teacher;
   let alice: Student;
   let bob: Student;
   let carol: Student;
   let classroom: Classroom;
   let quizA: Quiz;
   let quizB: Quiz;
-  let a1: AuthoredQuestion; // Quiz A, Q1 (correct "A1a")
-  let a2: AuthoredQuestion; // Quiz A, Q2 (correct "A2a")
+  let a1: AuthoredQuestion;
+  let a2: AuthoredQuestion;
 
   beforeEach(async () => {
     const testbed: Testbed = await freshTestbed();
@@ -56,7 +37,6 @@ describe.skipIf(!online)("roster analytics (per-student progress)", () => {
     bob = await school.enrollStudent({ name: "Bob" });
     carol = await school.enrollStudent({ name: "Carol" });
 
-    // Quiz A: two single-choice questions, one correct option each.
     quizA = await teacher.authorQuiz({
       baseLanguage: "he",
       title: "Quiz A",
@@ -68,7 +48,6 @@ describe.skipIf(!online)("roster analytics (per-student progress)", () => {
     a1 = quizA.questions[0];
     a2 = quizA.questions[1];
 
-    // Quiz B: assigned but never attempted.
     quizB = await teacher.authorQuiz({
       baseLanguage: "he",
       title: "Quiz B",
@@ -84,24 +63,20 @@ describe.skipIf(!online)("roster analytics (per-student progress)", () => {
     await teacher.assignQuiz(quizA, { to: classroom, tutor: "hints", maxAttempts: null });
     await teacher.assignQuiz(quizB, { to: classroom, tutor: "hints", maxAttempts: null });
 
-    // Alice: one attempt, both correct → 2/2.
     const aliceAttempt = await alice.startAttempt(quizA, { in: classroom });
     await aliceAttempt.answerCorrectly(a1);
     await aliceAttempt.answerCorrectly(a2);
     await aliceAttempt.complete();
 
-    // Bob: attempt 1 — both wrong → 0/2.
     const bob1 = await bob.startAttempt(quizA, { in: classroom });
     await bob1.answer(a1, [a1.optionByText("A1b").id]);
     await bob1.answer(a2, [a2.optionByText("A2b").id]);
     await bob1.complete();
-    // Bob: attempt 2 — Q1 right, Q2 wrong → 1/2 (his BEST).
     const bob2 = await bob.startAttempt(quizA, { in: classroom });
     await bob2.answerCorrectly(a1);
     await bob2.answer(a2, [a2.optionByText("A2b").id]);
     await bob2.complete();
 
-    // Carol: never attempts.
   }, 60_000);
 
   afterAll(async () => {
@@ -113,12 +88,10 @@ describe.skipIf(!online)("roster analytics (per-student progress)", () => {
       const report = await teacher.rosterProgress(classroom);
       expect(report.class_id).toBe(classroom.id);
 
-      // Class summary.
       expect(report.summary.member_count).toBe(3);
-      expect(report.summary.total_assigned).toBe(2); // Quiz A + Quiz B
-      expect(report.summary.possible_completions).toBe(6); // 3 × 2
-      expect(report.summary.quizzes_completed_total).toBe(2); // Alice(A) + Bob(A)
-      // Mean best score over completed pairs: (1.0 + 0.5) / 2 = 0.75.
+      expect(report.summary.total_assigned).toBe(2);
+      expect(report.summary.possible_completions).toBe(6);
+      expect(report.summary.quizzes_completed_total).toBe(2);
       expect(Number(report.summary.average_best_score)).toBeCloseTo(0.75, 6);
 
       expect(report.members).toHaveLength(3);
@@ -127,7 +100,6 @@ describe.skipIf(!online)("roster analytics (per-student progress)", () => {
       const quizOf = (m: (typeof report.members)[number], q: Quiz) =>
         m.quizzes.find((x) => x.quiz_id === q.id)!;
 
-      // Alice — completed Quiz A perfectly, never touched Quiz B.
       const aliceRow = memberOf(alice);
       expect(aliceRow.display_name).toBe("Alice");
       expect(aliceRow.email).toBe(alice.email);
@@ -146,7 +118,6 @@ describe.skipIf(!online)("roster analytics (per-student progress)", () => {
       expect(aliceB.attempt_count).toBe(0);
       expect(aliceB.best_score).toBeNull();
 
-      // Bob — two attempts on Quiz A; BEST (0.5) is reported, not the last/first.
       const bobRow = memberOf(bob);
       expect(bobRow.quizzes_completed).toBe(1);
       expect(Number(bobRow.average_best_score)).toBeCloseTo(0.5, 6);
@@ -156,7 +127,6 @@ describe.skipIf(!online)("roster analytics (per-student progress)", () => {
       expect(bobA.best_num_correct).toBe(1);
       expect(Number(bobA.best_score)).toBeCloseTo(0.5, 6);
 
-      // Carol — enrolled, nothing attempted.
       const carolRow = memberOf(carol);
       expect(carolRow.quizzes_completed).toBe(0);
       expect(carolRow.average_best_score).toBeNull();
@@ -188,7 +158,6 @@ describe.skipIf(!online)("roster analytics (per-student progress)", () => {
       expect(qA.attempt_count).toBe(2);
       expect(Number(qA.best_score)).toBeCloseTo(0.5, 6);
       expect(qA.attempts).toHaveLength(2);
-      // Attempts are ordered by attempt_no: 0/2 then 1/2.
       expect(qA.attempts[0].attempt_no).toBe(1);
       expect(Number(qA.attempts[0].score)).toBeCloseTo(0, 6);
       expect(qA.attempts[1].attempt_no).toBe(2);

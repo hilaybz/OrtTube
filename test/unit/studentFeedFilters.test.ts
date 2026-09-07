@@ -1,7 +1,3 @@
-/**
- * Unit tests for the student feed's search/filter/sort helpers (backlog 4.2)
- * — no DB, no React.
- */
 import { describe, it, expect } from "vitest";
 import {
   sortFeed,
@@ -224,7 +220,6 @@ describe("feedOutlook", () => {
     const outlook = feedOutlook([
       item({ quiz_id: "far", available_until: "2026-03-20T18:00:00.000Z" }),
       item({ quiz_id: "near", available_until: "2026-03-15T18:00:00.000Z" }),
-      // Sooner than either, but already settled — not something to greet with.
       item({
         quiz_id: "done",
         status: "completed",

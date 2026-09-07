@@ -1,10 +1,3 @@
-/**
- * The wording of a submission deadline, on both sides of it. Pure — no DB, no
- * React — and pinned at a fixed instant, 11:00 Israeli time on Saturday 14
- * March 2026, so "today" and "tomorrow" mean the same thing on every machine
- * that runs this (the helpers answer calendar questions in the school's zone,
- * which is exactly the part a UTC-machine test would otherwise get wrong).
- */
 import { describe, it, expect } from "vitest";
 import { formatDate, formatTime } from "@/lib/datetime";
 import {
@@ -52,10 +45,8 @@ describe("countdownTickMs", () => {
 
 describe("school-zone formatting", () => {
   it("reads a UTC instant as the school's own wall clock and date", () => {
-    // 18:00 UTC is 20:00 in Jerusalem, still the same calendar day there.
     expect(formatTime("2026-03-10T18:00:00.000Z")).toBe("20:00");
     expect(formatDate("2026-03-10T18:00:00.000Z")).toBe("10/03/2026");
-    // 22:30 UTC has already become the next day in Jerusalem.
     expect(formatDate("2026-03-10T22:30:00.000Z")).toBe("11/03/2026");
   });
 });
@@ -67,14 +58,12 @@ describe("deadlineView", () => {
     expect(view.day).toBe("היום");
     expect(view.exact).toBe("עד 22:00");
     expect(view.when).toBe("היום · עד 22:00");
-    // Nine hours out is not yet urgent, but it is not calm either.
     expect(view.urgency).toBe("soon");
   });
 
   it("switches to the ticking figure inside the last hour, and turns urgent", () => {
     const view = deadlineView("2026-03-14T09:30:00.000Z", NOW);
     expect(view.lead).toBe("נותרו 30:00");
-    // The day is still available separately, for a countdown that needs it.
     expect(view.day).toBe("היום");
     expect(view.urgency).toBe("urgent");
   });
@@ -99,9 +88,7 @@ describe("deadlineView", () => {
   });
 
   it("counts calendar days, not 24-hour blocks — late tonight is still today", () => {
-    // 23:30 Israeli time on the same day: barely half a day away, but "היום".
     expect(deadlineView("2026-03-14T21:30:00.000Z", NOW).day).toBe("היום");
-    // 00:30 the next morning is barely later, and is "מחר".
     expect(deadlineView("2026-03-14T22:30:00.000Z", NOW).day).toBe("מחר");
   });
 

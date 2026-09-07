@@ -6,10 +6,6 @@ import {
 } from "@/lib/classes";
 import { err, handleError, isValidIsoOrNull, requireAuth } from "../../../http";
 
-/**
- * DELETE /api/classes/[id]/quizzes/[quizId]  (unassign a quiz from a class).
- * Idempotent; past attempts in the class survive.
- */
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; quizId: string }> }
@@ -26,15 +22,6 @@ export async function DELETE(
 }
 
 /**
- * PATCH /api/classes/[id]/quizzes/[quizId]
- *   { published?: boolean; availableFrom?: string | null; availableUntil?: string | null }
- *
- * Flip an existing assignment's published state and/or replace its
- * scheduling window, independent of re-assigning (tutor_mode / max_attempts
- * are untouched by either). Both may be present in one request — each
- * dispatches to its own single-purpose RPC (`set_class_quiz_published`,
- * `set_class_quiz_schedule`).
- *
  * `set_class_quiz_schedule` REPLACES the whole window, not a partial update —
  * same convention as tutor_mode/max_attempts always being resent in full on
  * edit — so `availableFrom` and `availableUntil` must be supplied TOGETHER

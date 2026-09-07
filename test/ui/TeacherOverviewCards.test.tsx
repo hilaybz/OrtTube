@@ -26,16 +26,9 @@ describe("ClassCard", () => {
     expect(screen.getByText("5")).toBeInTheDocument();
   });
 
-  /**
-   * The card carries two destinations, and the analytics glyph must stay a
-   * sibling of the card link rather than a nested anchor — invalid markup that
-   * browsers silently "repair" by dropping one of the two.
-   */
   it("offers the class and its analytics as two separate, un-nested links", () => {
     const { container } = render(<ClassCard summary={summary} />);
     const links = Array.from(container.querySelectorAll("a"));
-    // Both pages are reachable from elsewhere, so each link names the overview
-    // as its origin — appended to whatever query the href already carries.
     expect(links.map((a) => a.getAttribute("href"))).toEqual([
       "/dashboard/classes/c1?from=overview",
       "/dashboard/analytics?scope=class&id=c1&from=overview",
@@ -61,8 +54,6 @@ describe("FinishedQuizCard", () => {
   };
 
   it("reads the closing time as a relative phrase beside its date", () => {
-    // 12:00 in Jerusalem on 20.8, so a window that closed at 23:00 the night
-    // before closed "yesterday".
     render(<FinishedQuizCard quiz={quiz} now={new Date("2026-08-20T09:00:00.000Z")} />);
     expect(screen.getByText("נסגר אתמול")).toBeInTheDocument();
     expect(screen.getByText("· 19/08/2026")).toBeInTheDocument();
@@ -81,11 +72,6 @@ describe("FinishedQuizCard", () => {
 });
 
 describe("WelcomeHeader", () => {
-  /**
-   * The motivating bug for contextual back navigation: authoring a quiz from
-   * the overview used to end on a page whose back link pointed at the quiz
-   * library, a screen the teacher had never opened.
-   */
   it("sends the \"+\" to the new-quiz page with the overview as its origin", () => {
     render(<WelcomeHeader name="דנה" subtitle="הכול רגוע." now={new Date("2026-08-20T09:00:00.000Z")} />);
     expect(screen.getByRole("link", { name: "חידון חדש" })).toHaveAttribute(

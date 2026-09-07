@@ -9,7 +9,6 @@ const VARIANT: Record<Variant, string> = {
   warning: "bg-[var(--warning-soft)] text-[var(--fg-warning)] border-[var(--warning-soft)]",
 };
 
-/** Inline status message. danger/warning get `role="alert"` for assertive SR. */
 export function Alert({
   variant = "brand",
   title,
