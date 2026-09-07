@@ -1,31 +1,17 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/server";
-import { getClassQuizAnalytics, type ClassQuizAnalytics } from "@/lib/analytics";
-import { analyticsCutoffNote } from "@/lib/analyticsCutoff";
-import { Alert } from "@/components/ui/Alert";
-import { BackLink } from "@/components/ui/BackLink";
-import { MetricRow, MetricTile } from "@/components/teacher/analytics/MetricTile";
-import { ClassQuizCharts } from "@/components/teacher/analytics/ClassQuizCharts";
-import { QuestionBreakdown } from "@/components/teacher/analytics/QuestionBreakdown";
-import { grade } from "@/components/teacher/analytics/chartTheme";
+import { permanentRedirect } from "next/navigation";
+import { classQuizAnalyticsHref } from "@/components/teacher/analyticsLinks";
 
 /**
- * One quiz's analytics WITHIN one class — the per-(class, quiz) view the hub's
- * class table and the student table both link into, and the deepest analytics
- * screen in the product.
+ * Legacy per-(class, quiz) analytics URL.
  *
- * Everything here is scored from each student's LATEST completed attempt
- * (`class_quiz_analytics`), never best-of and never every retake, so it always
- * agrees with the grade a student is shown on their own results page — and with
- * the class view one level up, which uses the same basis.
- *
- * By default the back affordance names the class's analytics view rather than
- * the class page: this is an analytics screen, and a reader who drilled in
- * through analytics is looking for the level above THIS number. The overview
- * also links straight here, and such a link says so in the URL, which takes
- * precedence — that reader was never in analytics at all.
+ * This breakdown used to be a route of its own, nested under the class — the
+ * one analytics screen living outside the hub's `?scope=…&id=…` contract. It is
+ * now the quiz view narrowed to a class, so this segment exists only to keep old
+ * links working, including any a teacher bookmarked. It redirects permanently
+ * rather than rendering, so nothing has to be maintained twice — the same shape
+ * as the legacy `analytics/[classId]` segment.
  */
-export default async function ClassQuizAnalyticsPage({
+export default async function LegacyClassQuizAnalyticsPage({
   params,
   searchParams,
 }: {
@@ -34,94 +20,9 @@ export default async function ClassQuizAnalyticsPage({
 }) {
   const { id: classId, quizId } = await params;
   const { from } = await searchParams;
-  const client = (await createClient()) as unknown as SupabaseClient;
-
-  let analytics: ClassQuizAnalytics | null = null;
-  try {
-    analytics = await getClassQuizAnalytics(client, classId, quizId);
-  } catch {
-    analytics = null;
-  }
-
-  const back = (
-    <BackLink
-      href={`/dashboard/analytics?scope=class&id=${classId}`}
-      label="אנליטיקה של הכיתה"
-      from={from}
-    />
-  );
-
-  if (!analytics) {
-    return (
-      <div className="mx-auto max-w-4xl py-2">
-        <header className="mb-4 flex flex-col gap-2">
-          {back}
-          <h1 className="text-3xl font-bold tracking-tight">אנליטיקת חידון</h1>
-        </header>
-        <Alert variant="danger" title="לא ניתן לטעון את נתוני החידון">
-          ייתכן שהחידון אינו מוקצה לכיתה זו או שאין לך הרשאה לצפות בו.
-        </Alert>
-      </div>
-    );
-  }
-
-  const cutoffNote = analyticsCutoffNote(
-    analytics.content_updated_at,
-    analytics.excluded_attempt_count
-  );
-
-  return (
-    <div className="mx-auto max-w-4xl py-2">
-      <header className="mb-6 flex flex-col gap-2">
-        {back}
-        <h1 className="text-3xl font-bold tracking-tight">
-          {analytics.title ?? "אנליטיקת חידון"}
-        </h1>
-        <p className="text-[var(--body)]">ביצועי הכיתה בחידון זה.</p>
-      </header>
-
-      {cutoffNote && (
-        <Alert variant="warning" className="mb-6">
-          {cutoffNote}
-        </Alert>
-      )}
-
-      <div className="flex flex-col gap-8">
-        <MetricRow>
-          <MetricTile
-            label="תלמידים שסיימו"
-            value={analytics.students_completed}
-            hint={`מתוך ${analytics.member_count} בכיתה`}
-            icon="checkCircle"
-          />
-          <MetricTile
-            label="ציון ממוצע"
-            value={grade(analytics.average_score)}
-            hint="מתוך 100"
-            icon="percent"
-          />
-          <MetricTile
-            label="שאלות"
-            value={analytics.question_count}
-            icon="quiz"
-          />
-          <MetricTile
-            label="הגשות"
-            value={analytics.completion_count}
-            hint="כולל ניסיונות חוזרים"
-            icon="checkCircle"
-          />
-        </MetricRow>
-
-        <ClassQuizCharts data={analytics} />
-
-        <section className="flex flex-col gap-3">
-          <h2 className="text-xl font-semibold text-[var(--heading)]">
-            לפי שאלה
-          </h2>
-          <QuestionBreakdown questions={analytics.questions} />
-        </section>
-      </div>
-    </div>
-  );
+  const href = classQuizAnalyticsHref(classId, quizId);
+  const key = Array.isArray(from) ? from[0] : from;
+  // The origin travels on, so a bookmark-era link and a live one both land with
+  // the back affordance the destination expects.
+  permanentRedirect(key ? `${href}&from=${encodeURIComponent(key)}` : href);
 }

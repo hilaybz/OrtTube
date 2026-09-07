@@ -9,27 +9,35 @@ import { AnalyticsSearch } from "@/components/teacher/analytics/AnalyticsSearch"
 import { ClassAnalyticsView } from "@/components/teacher/analytics/ClassAnalyticsView";
 import { StudentAnalyticsView } from "@/components/teacher/analytics/StudentAnalyticsView";
 import { QuizAnalyticsView } from "@/components/teacher/analytics/QuizAnalyticsView";
+import { quizAnalyticsHref } from "@/components/teacher/analyticsLinks";
 import { getClassName } from "@/lib/classes";
 import type { AnalyticsScope } from "@/lib/analytics";
 
 /**
  * The analytics hub.
  *
- * ONE route renders all three entity views, selected by the URL:
+ * ONE route renders every analytics view, selected by the URL:
  * `/dashboard/analytics?scope=student|class|quiz&id=<uuid>`. That contract is
- * what the rest of the app links into — `components/teacher/classes/
- * analyticsLinks.ts` builds every such href — so it is deliberately narrow and
- * deliberately stable: a scope plus an id, nothing positional, nothing nested.
- * A view is therefore linkable, refresh-safe, and shareable, while the search
- * QUERY stays client state, because turning every keystroke into a server
- * navigation would be the wrong trade for something nobody bookmarks.
+ * what the rest of the app links into — `components/teacher/analyticsLinks.ts`
+ * builds every such href — so it is deliberately narrow and deliberately
+ * stable: a scope plus an id, nothing positional, nothing nested. A view is
+ * therefore linkable, refresh-safe, and shareable, while the search QUERY stays
+ * client state, because turning every keystroke into a server navigation would
+ * be the wrong trade for something nobody bookmarks.
  *
- * `scope` is validated and `id` must look like a uuid, so a hand-edited URL
- * lands on the search screen rather than a failed read.
+ * The quiz scope takes one optional narrowing, `&class=<uuid>`, for that quiz's
+ * numbers inside a single class. It reads as a filter on the quiz — pick a class
+ * from the dropdown, pick "all classes" to come back — though it swaps the
+ * dataset rather than subsetting one, since per-question correctness in the
+ * rollup has no class dimension to filter on.
  *
- * Back normally goes up one level, to the search screen for the same scope. A
- * link from outside analytics (the overview's class cards) names its own origin
- * instead, so it does not strand the reader on a search box.
+ * `scope` is validated and both ids must look like a uuid, so a hand-edited URL
+ * lands on the search screen (or the unfiltered quiz) rather than a failed read.
+ *
+ * Back normally goes up one level: to the whole quiz when a class is selected,
+ * and otherwise to the search screen for the same scope. A link from outside
+ * analytics (the overview's class cards) names its own origin instead, so it
+ * does not strand the reader on a search box.
  */
 
 const SCOPES: AnalyticsScope[] = ["student", "class", "quiz"];
@@ -61,6 +69,9 @@ export default async function AnalyticsHubPage({
   const params = await searchParams;
   const scope = normalizeScope(params.scope);
   const id = normalizeId(params.id);
+  // Only the quiz scope narrows; a `class` param anywhere else is ignored rather
+  // than redirected, so a stray one degrades to the plain view.
+  const filterClassId = scope === "quiz" ? normalizeId(params.class) : null;
 
   if (!id) {
     return (
@@ -95,11 +106,19 @@ export default async function AnalyticsHubPage({
   return (
     <div className="mx-auto max-w-6xl py-2">
       <header className="mb-6 flex flex-col gap-2">
-        <BackLink
-          href={`/dashboard/analytics?scope=${scope}`}
-          label="חיפוש באנליטיקה"
-          from={params.from}
-        />
+        {filterClassId ? (
+          <BackLink
+            href={quizAnalyticsHref(id)}
+            label="אנליטיקה של החידון"
+            from={params.from}
+          />
+        ) : (
+          <BackLink
+            href={`/dashboard/analytics?scope=${scope}`}
+            label="חיפוש באנליטיקה"
+            from={params.from}
+          />
+        )}
         <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
           <Icon
             name="chartLine"
@@ -110,11 +129,14 @@ export default async function AnalyticsHubPage({
         </h1>
       </header>
 
-      <Suspense key={`${scope}:${id}`} fallback={<ViewSkeleton />}>
+      <Suspense
+        key={`${scope}:${id}:${filterClassId ?? ""}`}
+        fallback={<ViewSkeleton />}
+      >
         {scope === "student" ? (
           <StudentAnalyticsView studentId={id} />
         ) : scope === "quiz" ? (
-          <QuizAnalyticsView quizId={id} />
+          <QuizAnalyticsView quizId={id} classId={filterClassId} />
         ) : (
           <ClassAnalyticsView classId={id} />
         )}

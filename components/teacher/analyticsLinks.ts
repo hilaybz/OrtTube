@@ -18,10 +18,18 @@ export function classAnalyticsHref(classId: string): string {
   return `/dashboard/analytics?scope=class&id=${encodeURIComponent(classId)}`;
 }
 
+/** The hub with one quiz selected — its numbers across every class it runs in. */
+export function quizAnalyticsHref(quizId: string): string {
+  return `/dashboard/analytics?scope=quiz&id=${encodeURIComponent(quizId)}`;
+}
+
 /**
- * One assigned quiz's analytics, as seen from inside this class — the
- * per-class-per-quiz breakdown, not the quiz's cross-class view.
+ * That same quiz narrowed to one class — the per-(class, quiz) breakdown.
+ *
+ * A filter on the quiz view rather than a route of its own, so a teacher
+ * comparing classes stays on the quiz and swaps the class rather than
+ * navigating back out to each one in turn.
  */
 export function classQuizAnalyticsHref(classId: string, quizId: string): string {
-  return `/dashboard/classes/${classId}/analytics/${quizId}`;
+  return `${quizAnalyticsHref(quizId)}&class=${encodeURIComponent(classId)}`;
 }

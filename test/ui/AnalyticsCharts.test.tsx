@@ -356,6 +356,56 @@ describe("ClassCharts", () => {
     expect(within(table).getByText("5")).toBeInTheDocument();
   });
 
+  it("leaves quizzes the class has not started out of the charts", async () => {
+    const user = userEvent.setup();
+    const started = classOverview().quizzes[0];
+    render(
+      <ClassCharts
+        data={classOverview({
+          quiz_count: 2,
+          quizzes: [
+            started,
+            {
+              ...started,
+              quiz_id: "22222222-2222-2222-2222-222222222222",
+              title: "Untouched",
+              assigned_at: "2026-08-05T00:00:00Z",
+              members_completed: 0,
+              students_completed: 0,
+              average_score: null,
+            },
+          ],
+        })}
+        roster={classRoster()}
+      />
+    );
+    const card = cardFor("שיעור השלמה לפי חידון");
+    await user.click(within(card).getByRole("button", { name: "הצגה כטבלה" }));
+    const table = within(card).getByRole("table");
+    expect(within(table).getByText("Photosynthesis")).toBeInTheDocument();
+    expect(within(table).queryByText("Untouched")).not.toBeInTheDocument();
+  });
+
+  it("separates a class with no assignments from one that has not started them", () => {
+    const untouched = {
+      ...classOverview().quizzes[0],
+      members_completed: 0,
+      students_completed: 0,
+      average_score: null,
+    };
+    render(
+      <ClassCharts
+        data={classOverview({ quizzes: [untouched] })}
+        roster={classRoster({ members: [] })}
+      />
+    );
+    expect(
+      within(cardFor("שיעור השלמה לפי חידון")).getByText(
+        "עדיין לא התחילו חידונים בכיתה."
+      )
+    ).toBeInTheDocument();
+  });
+
   it("says a class with nothing finished has nothing to show", () => {
     render(
       <ClassCharts
