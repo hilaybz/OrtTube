@@ -22,9 +22,14 @@ export function analyticsAtRiskNotice(count: number): string {
   return `לחידון הזה נאספו ${attemptsPhrase(count)}. כל שינוי בשאלות, בתשובות או בנקודות העצירה יפסיק לספור אותם בכל הניתוחים.`;
 }
 
-/** What actually happens, spelled out — including the retake trap. */
+/**
+ * What actually happens, spelled out — including the retake trap. A student is
+ * blocked only once their completed attempts reach the class's allowance, which
+ * the cutoff does not lower, so the copy names exhaustion as the condition and
+ * raising the allowance as the remedy.
+ */
 export const ANALYTICS_RESET_CONSEQUENCE =
-  "הנתונים לא נמחקים, אך הם יפסיקו להופיע בדוחות: תלמידים שכבר סיימו יופיעו כמי שלא התחילו, ואם מספר הניסיונות בכיתה מוגבל הם לא יוכלו לענות שוב.";
+  "הנתונים לא נמחקים, אך הם יפסיקו להופיע בדוחות: תלמידים שכבר סיימו יופיעו כמי שלא התחילו, ותלמיד שניצל את כל הניסיונות שהוקצו לכיתה לא יוכל לענות על הגרסה החדשה — אלא אם תגדילו את מספר הניסיונות המותר.";
 
 /**
  * The cutoff date, or `null` for a missing or unparseable timestamp.
