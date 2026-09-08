@@ -199,7 +199,7 @@ describe("sliceTranscriptToPlayhead spoiler bound (tutor acceptance)", () => {
 });
 
 describe("model configuration", () => {
-  it("uses the project's Haiku model", () => {
-    expect(TUTOR_MODEL).toBe("claude-haiku-4-5-20251001");
+  it("uses the project's Sonnet model", () => {
+    expect(TUTOR_MODEL).toBe("claude-sonnet-5");
   });
 });
