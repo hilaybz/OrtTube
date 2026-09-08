@@ -7,7 +7,7 @@ import type { Language } from "@/lib/lang";
  * never passed through here — so a translation can never desync correctness.
  */
 
-const MODEL = "claude-haiku-4-5-20251001";
+const MODEL = "claude-sonnet-5";
 
 export const LANGUAGE_NAMES: Record<Language, string> = {
   he: "Hebrew (עברית)",
