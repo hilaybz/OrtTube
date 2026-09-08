@@ -18,7 +18,7 @@ import type { Language } from "./lang";
 
 export type TutorMode = "off" | "hints" | "full";
 
-export const TUTOR_MODEL = "claude-sonnet-5";
+export const TUTOR_MODEL = "claude-haiku-4-5-20251001";
 export const TUTOR_MAX_TOKENS = 400;
 
 export const TRANSCRIPT_TOKEN_CAP = 2000;
