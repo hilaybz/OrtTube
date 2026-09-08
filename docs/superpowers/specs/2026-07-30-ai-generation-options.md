@@ -27,7 +27,7 @@ respects it).
   - `kind` chosen by the model per question ("single … for most; multi only when
     the content supports it")
   - placement "spread across the WHOLE video at natural topic boundaries"
-  - model `claude-haiku-4-5-20251001`
+  - model `claude-sonnet-5`
   - `normalizeGeneratedQuestion` enforces the answer-key invariant (single =
     exactly one correct; multi ≥1) and caps options at `OPTIONS_PER_QUESTION`.
   - `buildTimestampedTranscript` builds the whole transcript (capped ~28k chars).
@@ -95,9 +95,10 @@ duration; `startSeconds < endSeconds` or reject.
     inject any topic hint into the instruction.
   - avoidQuestions → pass the existing base prompts (and rough positions) so the
     model doesn't restate them.
-- **Model:** keep Haiku 4.5. If `difficulty=hard`/analysis questions come out
-  weak in eval, consider escalating only that path to a stronger model — decide
-  from eval, not upfront.
+- **Model:** Sonnet 5 (`claude-sonnet-5`) for generation. Translation and the
+  tutor stay on Haiku 4.5 — this raises the tier only where question quality is
+  the product, not on the high-volume paths. Decide any further change from
+  eval, not upfront.
 
 ### Correctness items to fix alongside (surfaced while grounding this spec)
 
